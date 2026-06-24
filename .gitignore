@@ -1,0 +1,153 @@
+# =====================
+# .NET / C#
+# =====================
+
+# Build output
+**/bin/
+**/obj/
+**/publish/
+**/out/
+
+# Visual Studio
+.vs/
+*.suo
+*.user
+*.userprefs
+*.sln.ide
+*.sln.docstates
+
+# Visual Studio Code
+.vscode/
+*.code-workspace
+
+# JetBrains Rider / IntelliJ
+.idea/
+*.sln.iml
+*.sln.DotSettings.user
+*.sln.DotSettings
+
+# User-specific files
+*.rsuser
+*.dbmdl
+*.dbproj.schemaview
+*.jfm
+*.pidb
+*.psess
+*.vsp
+*.vspx
+*.sap
+*.e2e
+
+# Publish profiles
+*.pubxml.user
+*.publishproj
+
+# Test results
+**/TestResults/
+*.trx
+*.coverage
+*.coveragexml
+
+# =====================
+# Node.js / React / Frontend
+# =====================
+
+# Dependencies
+**/node_modules/
+**/jspm_packages/
+
+# Build output
+**/dist/
+**/build/
+**/out/
+
+# Environment variables
+**/.env
+**/.env.local
+**/.env.development.local
+**/.env.test.local
+**/.env.production.local
+
+# Logs
+**/npm-debug.log*
+**/yarn-debug.log*
+**/yarn-error.log*
+**/pnpm-debug.log*
+**/lerna-debug.log*
+
+# Cache
+**/.cache/
+**/.parcel-cache/
+**/.next/
+**/.nuxt/
+**/.vite/
+**/.yarn/
+
+# TypeScript
+**/*.tsbuildinfo
+
+# =====================
+# OS / System
+# =====================
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+.directory
+*.swp
+*.swo
+*.swn
+
+# =====================
+# IDE / Editors
+# =====================
+
+# Sublime Text
+*.sublime-workspace
+*.sublime-project
+
+# Vim
+*.vim
+*.vimrc
+*.gvimrc
+
+# =====================
+# Docker
+# =====================
+
+*.pid
+*.pid.lock
+
+# =====================
+# Project-specific
+# =====================
+
+# Local app settings (never commit secrets!)
+**/appsettings.Development.json
+**/appsettings.Local.json
+**/secrets.json
+
+# ML.NET model files (can be large)
+*.zip
+*.onnx
+*.pb
+
+# Coverage reports
+**/coverage/
+**/CoverageReport/
+
+# Temporary files
+*.tmp
+*.temp
+*.log
