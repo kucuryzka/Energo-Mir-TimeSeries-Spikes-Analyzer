@@ -34,8 +34,6 @@ public class AnalyticsController : ControllerBase
     {
         try
         {
-            await SeedDatabaseIfEmptyAsync();
-
             var rawData = await _context.CallRecords
                 .Where(r => r.Timestamp >= request.StartDate && r.Timestamp <= request.EndDate)
                 .ToListAsync();
@@ -71,45 +69,5 @@ public class AnalyticsController : ControllerBase
         {
             return StatusCode(500, new { message = "An error occurred during spike detection.", details = ex.Message });
         }
-    }
-
-    private async Task SeedDatabaseIfEmptyAsync()
-    {
-        await _context.Database.EnsureCreatedAsync();
-
-        if (!await _context.CallRecords.AnyAsync())
-        {
-            var random = new Random();
-            var now = DateTime.UtcNow;
-            var records = new List<CallRecord>();
-
-            for (int i = 5 * 24 * 60; i >= 0; i -= 2)
-            {
-                var timestamp = now.AddMinutes(-i);
-                int callsCount = random.Next(1, 10);
-                
-                if (random.NextDouble() > 0.98)
-                {
-                    callsCount = random.Next(40, 70);
-                }
-
-                for (int c = 0; c < callsCount; c++)
-                {
-                    var record = CreateCallRecord(timestamp.AddSeconds(random.Next(0, 59)));
-                    records.Add(record);
-                }
-            }
-
-            await _context.CallRecords.AddRangeAsync(records);
-            await _context.SaveChangesAsync();
-        }
-    }
-
-    private CallRecord CreateCallRecord(DateTime timestamp)
-    {
-        var record = (CallRecord)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(typeof(CallRecord));
-        var field = typeof(CallRecord).GetField("<Timestamp>k__BackingField", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-        field?.SetValue(record, timestamp);
-        return record;
     }
 }
