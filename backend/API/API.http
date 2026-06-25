@@ -1,6 +1,42 @@
 @API_HostAddress = http://localhost:5090
 
-GET {{API_HostAddress}}/weatherforecast/
-Accept: application/json
+### Detect spikes with HOURLY granularity (Hour)
+POST {{API_HostAddress}}/api/analytics/detect-spikes
+Content-Type: application/json
+
+{
+  "granularity": "Hour",
+  "confidence": 95,
+  "windowSize": 30,
+  "startDate": "2026-06-20T00:00:00Z",
+  "endDate": "2026-06-25T00:00:00Z"
+}
 
 ###
+
+### Detect spikes with DAILY granularity (Day)
+POST {{API_HostAddress}}/api/analytics/detect-spikes
+Content-Type: application/json
+
+{
+  "granularity": "Day",
+  "confidence": 98,
+  "windowSize": 7,
+  "startDate": "2026-06-01T00:00:00Z",
+  "endDate": "2026-06-25T00:00:00Z"
+}
+
+###
+
+### Detect spikes with CUSTOM 15-minute granularity (Custom)
+POST {{API_HostAddress}}/api/analytics/detect-spikes
+Content-Type: application/json
+
+{
+  "granularity": "Custom",
+  "customMinutes": 15,
+  "confidence": 95,
+  "windowSize": 60,
+  "startDate": "2026-06-24T00:00:00Z",
+  "endDate": "2026-06-25T00:00:00Z"
+}
