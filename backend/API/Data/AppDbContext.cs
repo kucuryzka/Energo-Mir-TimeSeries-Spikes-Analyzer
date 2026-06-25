@@ -19,6 +19,7 @@ public class AppDbContext : DbContext
         {
             entity.HasNoKey();
             entity.ToTable("CallRecords");
+            entity.Property(e => e.Timestamp).IsRequired();
         });
     }
 }
