@@ -1,0 +1,228 @@
+.app-container {
+  width: 100%;
+  min-height: 100vh;
+  background: #f0f4f8;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-header {
+  background: linear-gradient(135deg, #467edd 0%, #254d91 50%, #1a3a6b 100%);
+  padding: 24px 40px;
+  box-shadow: 0 2px 12px rgba(26, 58, 107, 0.25);
+  flex-shrink: 0;
+}
+
+.app-header-content {
+  max-width: 1440px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.app-title {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.app-title-icon {
+  font-size: 32px;
+  line-height: 1;
+}
+
+.app-title h1 {
+  color: #ffffff;
+  font-size: 26px;
+  font-weight: 700;
+  margin: 0;
+  letter-spacing: 0.5px;
+}
+
+.app-title .subtitle {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 13px;
+  font-weight: 400;
+  margin: 0;
+  margin-top: 2px;
+}
+
+.app-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.app-header-actions .badge {
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+  padding: 6px 16px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 500;
+  backdrop-filter: blur(4px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  transition: all 0.3s ease;
+}
+
+.app-header-actions .badge:hover {
+  background: rgba(255, 255, 255, 0.25);
+  transform: scale(1.02);
+}
+
+.app-main {
+  flex: 1;
+  padding: 24px 40px 40px;
+  max-width: 1440px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.dashboard-card {
+  background: #ffffff;
+  border-radius: 16px;
+  box-shadow: 0 1px 3px rgba(26, 58, 107, 0.08), 0 4px 16px rgba(26, 58, 107, 0.06);
+  padding: 24px;
+  transition: all 0.25s ease;
+}
+
+.dashboard-card:hover {
+  box-shadow: 0 4px 8px rgba(26, 58, 107, 0.12), 0 8px 32px rgba(26, 58, 107, 0.08);
+  transform: translateY(-2px);
+}
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.stat-item {
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 20px 24px;
+  border: 1px solid #eef2f6;
+  transition: all 0.25s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.stat-item::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  border-radius: 12px 12px 0 0;
+  background: #4a90d9;
+  opacity: 0.7;
+  transition: opacity 0.3s ease;
+}
+
+.stat-item:hover::before {
+  opacity: 1;
+}
+
+.stat-item:nth-child(1)::before { background: #2a5298; }
+.stat-item:nth-child(2)::before { background: #d94a4a; }
+.stat-item:nth-child(3)::before { background: #e8a838; }
+.stat-item:nth-child(4)::before { background: #22a67e; }
+.stat-item:nth-child(5)::before { background: #e8a838; }
+.stat-item:nth-child(6)::before { background: #4a90d9; }
+
+.stat-item:hover {
+  border-color: #4a90d9;
+  box-shadow: 0 2px 8px rgba(74, 144, 217, 0.1);
+  transform: translateY(-2px);
+}
+
+.stat-item .stat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.stat-item .label {
+  font-size: 13px;
+  font-weight: 500;
+  color: #6b7a8f;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.stat-item .stat-icon {
+  font-size: 18px;
+  opacity: 0.6;
+}
+
+.stat-item .value {
+  font-size: 28px;
+  font-weight: 700;
+  color: #1a2332;
+  margin-top: 2px;
+}
+
+.stat-item .value.primary {
+  color: #2a5298;
+}
+
+.stat-item .value.success {
+  color: #22a67e;
+}
+
+.stat-item .value.danger {
+  color: #d94a4a;
+}
+
+.stat-item .value.warning {
+  color: #e8a838;
+}
+
+.stat-item .trend {
+  font-size: 12px;
+  color: #6b7a8f;
+  margin-top: 4px;
+}
+
+@media (max-width: 768px) {
+  .app-header {
+    padding: 16px 20px;
+  }
+  
+  .app-header-content {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  
+  .app-main {
+    padding: 16px 20px 32px;
+  }
+  
+  .app-title h1 {
+    font-size: 20px;
+  }
+  
+  .stat-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+  }
+  
+  .stat-item .value {
+    font-size: 22px;
+  }
+
+  .stat-item {
+    padding: 16px;
+  }
+}
+
+@media (max-width: 480px) {
+  .stat-grid {
+    grid-template-columns: 1fr;
+  }
+}
