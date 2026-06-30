@@ -41,7 +41,7 @@ public class AnalyticsController : ControllerBase
             var sql = @"
                 SELECT c.Id, o.OBJECT_NAME as Name
                 FROM em_protocol.Channels c
-                JOIN dbo.OBJECTS o ON c.ObjectId = o.IDOBJECT";
+                JOIN dbo.OBJECTS o ON c.ObjectId = o.IDGLOBAL";
             
             var parameters = new List<object>();
 
@@ -68,10 +68,6 @@ public class AnalyticsController : ControllerBase
     {
         try
         {
-            if (request.ChannelId <= 0)
-            {
-                return BadRequest("ChannelId is required.");
-            }
             if (request.StartDate >= request.EndDate)
             {
                 return BadRequest("StartDate must be before EndDate.");
@@ -83,9 +79,15 @@ public class AnalyticsController : ControllerBase
                 return BadRequest("Date range cannot exceed 90 days to prevent excessive memory usage.");
             }
 
-            var rawData = await _context.Records
-                .Where(r => r.ChannelId == request.ChannelId && r.EventTime >= request.StartDate && r.EventTime <= request.EndDate)
-                .ToListAsync();
+            var query = _context.Records
+                .Where(r => r.EventTime >= request.StartDate && r.EventTime <= request.EndDate);
+
+            if (request.ChannelId.HasValue && request.ChannelId.Value > 0)
+            {
+                query = query.Where(r => r.ChannelId == request.ChannelId.Value);
+            }
+
+            var rawData = await query.ToListAsync();
 
             var groupedSeries = _timeSeriesService.GroupByGranularity(
                 rawData,
