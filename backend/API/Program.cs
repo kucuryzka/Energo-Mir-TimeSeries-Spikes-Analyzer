@@ -16,7 +16,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 
 // Register implementations of Core interfaces
 builder.Services.AddScoped<Core.Interfaces.ITimeSeriesService, Core.Services.TimeService>();
-builder.Services.AddScoped<Core.Interfaces.ISpikeDetectionService, API.Services.SpikeDetectionServiceStub>();
+builder.Services.AddScoped<Core.Interfaces.ISpikeDetectionService, Core.Services.SpikeDetectionService>();
 
 // Configure CORS for React client integration
 builder.Services.AddCors(options =>
