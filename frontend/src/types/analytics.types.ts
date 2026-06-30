@@ -1,12 +1,18 @@
 export type TimeGranularity = 'Minute' | 'Hour' | 'Day' | 'Week' | 'Custom';
 
 export interface DetectSpikesRequest {
+  channelId?: number | null;
   granularity: TimeGranularity;
   customMinutes?: number | null;
   confidence: number;
   windowSize: number;
   startDate: string; // ISO формат
   endDate: string;   // ISO формат
+}
+
+export interface ChannelDto {
+  id: number;
+  name: string;
 }
 
 export interface AnomalyResultDto {
