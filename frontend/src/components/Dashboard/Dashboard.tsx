@@ -71,8 +71,9 @@ export const Dashboard: React.FC = () => {
       } else {
         message.success('Аномалий не обнаружено');
       }
-    } catch (err) {
-      setError('Ошибка при загрузке данных. Проверьте подключение к серверу.');
+    } catch (err: any) {
+      const errorText = err.response?.data?.message || err.response?.data || err.message || String(err);
+      setError(`Ошибка при загрузке данных: ${errorText}`);
       console.error(err);
     } finally {
       setLoading(false);
