@@ -6,7 +6,7 @@ import { ControlsPanel } from '../Controls/ControlsPanel';
 import { SpikeTable } from '../Stats/SpikeTable';
 import { analyticsApi } from '../../api/analyticsApi';
 import { enrichSpikeData, getSpikesOnly, getStatistics } from '../../utils/spikeUtils';
-import type { TimeGranularity, ChannelDto } from '../../types/analytics.types';
+import type { TimeGranularity, ChannelDto, DataSourceDto } from '../../types/analytics.types';
 import dayjs from 'dayjs';
 
 export const Dashboard: React.FC = () => {
@@ -27,12 +27,18 @@ export const Dashboard: React.FC = () => {
     dayjs().endOf('day').toISOString(),
   ]);
 
+  const [sources, setSources] = useState<DataSourceDto[]>([]);
+  const [sourceId, setSourceId] = useState<string>('');
+
   const fetchData = async () => {
+    if (!sourceId) return;
+    
     setLoading(true);
     setError(null);
 
     try {
       const response = await analyticsApi.detectSpikes({
+        sourceId,
         channelId,
         granularity,
         customMinutes: granularity === 'Custom' ? customMinutes : null,
@@ -59,21 +65,44 @@ export const Dashboard: React.FC = () => {
   };
 
   const fetchChannels = async (search: string = '') => {
+    if (!sourceId) return;
     try {
-      const data = await analyticsApi.getChannels(search);
+      const data = await analyticsApi.getChannels(sourceId, search);
       setChannels(data);
     } catch (err) {
       console.error('Ошибка при загрузке каналов', err);
     }
   };
 
+  const initSources = async () => {
+    try {
+      const data = await analyticsApi.getSources();
+      setSources(data);
+      if (data.length > 0) {
+        setSourceId(data[0].id);
+      }
+    } catch (err) {
+      console.error('Ошибка при загрузке источников', err);
+      setError('Не удалось загрузить источники данных.');
+    }
+  };
+
   useEffect(() => {
-    fetchChannels();
-    fetchData();
+    initSources();
   }, []);
+
+  useEffect(() => {
+    if (sourceId) {
+      setChannelId(null);
+      setChannels([]);
+      fetchChannels();
+      fetchData();
+    }
+  }, [sourceId]);
 
   // Debounce-поиск каналов
   useEffect(() => {
+    if (!sourceId) return;
     const timer = setTimeout(() => {
       fetchChannels(channelSearch);
     }, 500);
@@ -107,6 +136,9 @@ export const Dashboard: React.FC = () => {
       <main className="app-main">
         <div className="dashboard-card" style={{ marginBottom: 24 }}>
           <ControlsPanel
+            sourceId={sourceId}
+            onSourceChange={setSourceId}
+            sources={sources}
             granularity={granularity}
             onGranularityChange={setGranularity}
             customMinutes={customMinutes}

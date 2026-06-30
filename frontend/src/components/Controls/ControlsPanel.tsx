@@ -2,9 +2,12 @@ import React from 'react';
 import { Row, Col, Select, Slider, DatePicker, Button, InputNumber } from 'antd';
 import { SearchOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
-import type { TimeGranularity, ChannelDto } from '../../types/analytics.types';
+import type { TimeGranularity, ChannelDto, DataSourceDto } from '../../types/analytics.types';
 
 interface Props {
+  sourceId: string;
+  onSourceChange: (value: string) => void;
+  sources: DataSourceDto[];
   granularity: TimeGranularity;
   onGranularityChange: (value: TimeGranularity) => void;
   customMinutes: number | null;
@@ -24,6 +27,9 @@ interface Props {
 }
 
 export const ControlsPanel: React.FC<Props> = ({
+  sourceId,
+  onSourceChange,
+  sources,
   granularity,
   onGranularityChange,
   customMinutes,
@@ -44,6 +50,21 @@ export const ControlsPanel: React.FC<Props> = ({
   return (
     <div style={{ width: '100%' }}>
       <Row gutter={[16, 16]} align="middle" wrap>
+        <Col>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 13, fontWeight: 500, color: '#4a5a6e', whiteSpace: 'nowrap' }}>
+              Источник:
+            </span>
+            <Select
+              value={sourceId}
+              onChange={onSourceChange}
+              style={{ width: 140 }}
+              size="middle"
+              options={sources.map(s => ({ value: s.id, label: s.name }))}
+            />
+          </div>
+        </Col>
+
         <Col>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ fontSize: 13, fontWeight: 500, color: '#4a5a6e', whiteSpace: 'nowrap' }}>
