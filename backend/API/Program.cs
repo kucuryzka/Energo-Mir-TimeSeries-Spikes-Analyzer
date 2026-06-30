@@ -20,6 +20,7 @@ builder.Services.AddScoped<Core.Interfaces.ISpikeDetectionService, Core.Services
 
 // Register data sources
 builder.Services.AddScoped<API.DataSources.IDataSourceStrategy, API.DataSources.EmProtocolDataSource>();
+builder.Services.AddScoped<API.DataSources.IDataSourceStrategy, API.DataSources.DboDataSource>();
 
 // Configure CORS for React client integration
 builder.Services.AddCors(options =>
