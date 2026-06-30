@@ -12,6 +12,5 @@ public interface IDataSourceStrategy
     string Id { get; }
     string Name { get; }
     
-    Task<List<ChannelDto>> GetChannelsAsync(string? search, int page, int pageSize);
     Task<SpikeResponse> ExecuteAnalysisAsync(DetectSpikesRequest request, Core.Interfaces.ISpikeDetectionService spikeDetectionService);
 }

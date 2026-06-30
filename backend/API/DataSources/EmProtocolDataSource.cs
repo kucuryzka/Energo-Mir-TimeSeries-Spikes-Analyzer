@@ -11,7 +11,7 @@ using Core.Interfaces;
 
 namespace API.DataSources;
 
-public class EmProtocolDataSource : IDataSourceStrategy
+public class EmProtocolDataSource : IDataSourceStrategy, ISupportsChannels
 {
     private readonly AppDbContext _context;
 

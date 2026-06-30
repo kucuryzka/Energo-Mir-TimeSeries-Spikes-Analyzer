@@ -44,8 +44,13 @@ public class AnalyticsController : ControllerBase
             if (strategy == null)
                 return BadRequest("Invalid sourceId");
 
-            var channels = await strategy.GetChannelsAsync(search, page, pageSize);
-            return Ok(channels);
+            if (strategy is ISupportsChannels channelStrategy)
+            {
+                var channels = await channelStrategy.GetChannelsAsync(search, page, pageSize);
+                return Ok(channels);
+            }
+            
+            return Ok(new List<ChannelDto>());
         }
         catch (Exception ex)
         {
