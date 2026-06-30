@@ -178,13 +178,13 @@ export const ControlsPanel: React.FC<Props> = ({
             icon={<SearchOutlined />}
             style={{
               width: '100%',
-              background: 'linear-gradient(135deg, #1890ff 0%, #0958d9 100%)',
+              background: 'linear-gradient(135deg, #2a5298 0%, #1a3a6b 100%)',
               border: 'none',
               borderRadius: 8,
               height: 48,
               fontSize: 16,
               fontWeight: 600,
-              boxShadow: '0 4px 12px rgba(24, 144, 255, 0.3)',
+              boxShadow: '0 4px 12px rgba(42, 82, 152, 0.3)',
             }}
           >
             {loading ? 'Анализируем данные...' : 'Анализировать'}
