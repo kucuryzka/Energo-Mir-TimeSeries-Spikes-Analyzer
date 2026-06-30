@@ -351,24 +351,59 @@ export const Dashboard: React.FC = () => {
               </div>
             </div>
 
-            <Title level={5} style={{ marginTop: 24, marginBottom: 16 }}>Источники / Коды событий</Title>
+            <Title level={5} style={{ marginTop: 24, marginBottom: 16 }}>Источники</Title>
             <Table
-              dataSource={selectedPoint.channelBreakdown}
-              rowKey="channelName"
+              dataSource={
+                Object.entries(
+                  (selectedPoint.channelBreakdown || []).reduce((acc, curr) => {
+                    const match = curr.channelName.match(/^(.*?)\s*\((.*?)\)$/);
+                    const source = match ? match[1].trim() : curr.channelName;
+                    acc[source] = (acc[source] || 0) + curr.count;
+                    return acc;
+                  }, {} as Record<string, number>)
+                ).map(([name, count]) => ({ name, count }))
+              }
+              rowKey="name"
               size="small"
               pagination={false}
               columns={[
-                {
-                  title: 'Источник',
-                  dataIndex: 'channelName',
-                  key: 'channelName',
-                },
-                {
-                  title: 'Кол-во',
-                  dataIndex: 'count',
+                { title: 'Источник', dataIndex: 'name', key: 'name' },
+                { 
+                  title: 'Кол-во', 
+                  dataIndex: 'count', 
                   key: 'count',
                   render: (val: number) => val.toLocaleString('ru-RU'),
-                  sorter: (a, b) => a.count - b.count,
+                  sorter: (a: any, b: any) => a.count - b.count,
+                  defaultSortOrder: 'descend',
+                }
+              ]}
+            />
+
+            <Title level={5} style={{ marginTop: 24, marginBottom: 16 }}>Коды событий</Title>
+            <Table
+              dataSource={
+                Object.entries(
+                  (selectedPoint.channelBreakdown || []).reduce((acc, curr) => {
+                    const match = curr.channelName.match(/^(.*?)\s*\((.*?)\)$/);
+                    if (match) {
+                      const code = match[2].trim();
+                      acc[code] = (acc[code] || 0) + curr.count;
+                    }
+                    return acc;
+                  }, {} as Record<string, number>)
+                ).map(([code, count]) => ({ code, count }))
+              }
+              rowKey="code"
+              size="small"
+              pagination={false}
+              columns={[
+                { title: 'Код', dataIndex: 'code', key: 'code' },
+                { 
+                  title: 'Кол-во', 
+                  dataIndex: 'count', 
+                  key: 'count',
+                  render: (val: number) => val.toLocaleString('ru-RU'),
+                  sorter: (a: any, b: any) => a.count - b.count,
                   defaultSortOrder: 'descend',
                 }
               ]}
