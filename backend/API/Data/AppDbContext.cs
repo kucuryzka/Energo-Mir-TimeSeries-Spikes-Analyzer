@@ -18,7 +18,8 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<Record>(entity =>
         {
             entity.ToTable("Records", "em_protocol");
-            entity.HasKey(e => e.Id);
+            entity.HasNoKey();
+            entity.Ignore(e => e.Id);
             entity.Property(e => e.EventTime).HasColumnName("EventTime").IsRequired();
             entity.Property(e => e.ChannelId).HasColumnName("ChannelId").IsRequired();
         });
