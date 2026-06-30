@@ -16,7 +16,7 @@ public class CSVDataLoader : IDataLoader
         _file = file;
     }
 
-    public IEnumerable<CallRecord> LoadData()
+    public IEnumerable<Record> LoadData()
     {
         using var reader = Sep.New(',').Reader().FromFile(_file);
 
@@ -27,9 +27,11 @@ public class CSVDataLoader : IDataLoader
         
         foreach (var row in reader)
         {
-            yield return new CallRecord
+            yield return new Record
             {
-                Timestamp = DateTime.Parse(row["Timestamp"].Span),
+                Id = int.Parse(row["Id"].Span),
+                ChannelId = int.Parse(row["ChannelId"].Span),
+                EventTime = DateTime.Parse(row["EventTime"].Span),
             };
         }
     }

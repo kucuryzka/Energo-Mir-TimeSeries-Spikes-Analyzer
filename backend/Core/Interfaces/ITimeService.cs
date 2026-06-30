@@ -7,7 +7,7 @@ namespace Core.Interfaces;
 public interface ITimeSeriesService
 {
     public IEnumerable<DataPoint> GroupByGranularity(
-        IEnumerable<CallRecord> rawData,
+        IEnumerable<Record> rawData,
         TimeGranularity granularity,
         int? customMinutes = null
     );
