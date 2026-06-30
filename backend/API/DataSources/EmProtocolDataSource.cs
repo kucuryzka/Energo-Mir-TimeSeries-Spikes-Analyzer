@@ -11,7 +11,7 @@ using Core.Interfaces;
 
 namespace API.DataSources;
 
-public class EmProtocolDataSource : IDataSourceStrategy, ISupportsChannels
+public class EmProtocolDataSource : IDataSourceStrategy, ISupportsChannels, ISupportsDistribution
 {
     private readonly AppDbContext _context;
 
@@ -22,6 +22,7 @@ public class EmProtocolDataSource : IDataSourceStrategy, ISupportsChannels
 
     public string Id => "em_protocol";
     public string Name => "Протокол EM";
+    public string[] SupportedDistributions => new[] { "EventCode" };
 
     public async Task<List<ChannelDto>> GetChannelsAsync(string? search, int page, int pageSize)
     {
@@ -128,5 +129,27 @@ public class EmProtocolDataSource : IDataSourceStrategy, ISupportsChannels
                     .ToList()
             }).ToList()
         };
+    }
+
+    public async Task<List<DistributionItemDto>> GetDistributionAsync(DateTime start, DateTime end, string categoryName)
+    {
+        if (categoryName != "EventCode")
+        {
+            return new List<DistributionItemDto>();
+        }
+
+        var sql = @"
+            SELECT CAST(c.EventCode as NVARCHAR(100)) as Category, COUNT_BIG(*) as Count
+            FROM em_protocol.Records r
+            JOIN em_protocol.Channels c ON r.ChannelId = c.Id
+            WHERE r.InsertTime >= @p0 AND r.InsertTime <= @p1
+            GROUP BY c.EventCode
+            ORDER BY Count DESC";
+
+        var result = await _context.Database
+            .SqlQueryRaw<DistributionItemDto>(sql, start, end)
+            .ToListAsync();
+
+        return result;
     }
 }

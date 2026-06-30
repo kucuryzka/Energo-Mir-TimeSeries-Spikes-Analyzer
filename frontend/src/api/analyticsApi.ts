@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { DetectSpikesRequest, SpikeResponse, ChannelDto, DataSourceDto } from '../types/analytics.types';
+import type { DetectSpikesRequest, SpikeResponse, ChannelDto, DataSourceDto, DistributionItemDto } from '../types/analytics.types';
 import { mockData } from '../mocks/mockData';
 
 // Используем HTTP, порт 5090 (из launchSettings.json)
@@ -11,9 +11,22 @@ const USE_MOCK = false;
 export const analyticsApi = {
   getSources: async (): Promise<DataSourceDto[]> => {
     if (USE_MOCK) {
-      return [{ id: 'mock', name: 'Мок источник' }];
+      return [{ id: 'mock', name: 'Мок источник', supportedDistributions: ['MockCategory'] }];
     }
     const response = await axios.get<DataSourceDto[]>(`${API_BASE_URL}/api/analytics/sources`);
+    return response.data;
+  },
+
+  getDistribution: async (sourceId: string, startDate: string, endDate: string, categoryName: string): Promise<DistributionItemDto[]> => {
+    if (USE_MOCK) {
+      return [
+        { category: 'Mock 1', count: 100 },
+        { category: 'Mock 2', count: 50 },
+      ];
+    }
+    const response = await axios.get<DistributionItemDto[]>(`${API_BASE_URL}/api/analytics/distribution`, {
+      params: { sourceId, startDate, endDate, categoryName }
+    });
     return response.data;
   },
 

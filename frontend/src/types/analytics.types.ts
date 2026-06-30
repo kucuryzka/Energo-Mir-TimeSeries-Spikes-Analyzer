@@ -3,6 +3,12 @@ export type TimeGranularity = 'Minute' | 'Hour' | 'Day' | 'Week' | 'Custom';
 export interface DataSourceDto {
   id: string;
   name: string;
+  supportedDistributions?: string[];
+}
+
+export interface DistributionItemDto {
+  category: string;
+  count: number;
 }
 
 export interface DetectSpikesRequest {
