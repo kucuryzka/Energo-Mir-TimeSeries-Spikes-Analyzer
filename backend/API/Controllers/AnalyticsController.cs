@@ -8,6 +8,7 @@ using Core.Interfaces;
 using Core.Models;
 using API.Data;
 using API.DTOs;
+using Core.Enums;
 
 namespace API.Controllers;
 
@@ -81,26 +82,45 @@ public class AnalyticsController : ControllerBase
                 return BadRequest("WindowSize must be at least 2 for sliding window analysis.");
             }
 
-            var maxDateRange = TimeSpan.FromDays(365);
-            if (request.EndDate - request.StartDate > maxDateRange)
+            var dateAddExpr = request.Granularity switch
             {
-                return BadRequest("Date range cannot exceed 365 days to prevent excessive memory usage.");
-            }
+                TimeGranularity.Minute => "DATEADD(minute, DATEDIFF(minute, 0, EventTime), 0)",
+                TimeGranularity.Hour => "DATEADD(hour, DATEDIFF(hour, 0, EventTime), 0)",
+                TimeGranularity.Day => "DATEADD(day, DATEDIFF(day, 0, EventTime), 0)",
+                TimeGranularity.Week => "DATEADD(week, DATEDIFF(week, 0, EventTime), 0)",
+                TimeGranularity.Month => "DATEADD(month, DATEDIFF(month, 0, EventTime), 0)",
+                TimeGranularity.Custom => $"DATEADD(minute, (DATEDIFF(minute, 0, EventTime) / {(request.CustomMinutes ?? 60)}) * {(request.CustomMinutes ?? 60)}, 0)",
+                _ => "DATEADD(hour, DATEDIFF(hour, 0, EventTime), 0)"
+            };
 
-            var query = _context.Records
-                .Where(r => r.EventTime >= request.StartDate && r.EventTime <= request.EndDate);
+            var channelFilter = (request.ChannelId.HasValue && request.ChannelId.Value > 0) 
+                ? $"AND ChannelId = {request.ChannelId.Value}" 
+                : "";
 
-            if (request.ChannelId.HasValue && request.ChannelId.Value > 0)
-            {
-                query = query.Where(r => r.ChannelId == request.ChannelId.Value);
-            }
+            var sqlAggregate = $@"
+                SELECT 
+                    {dateAddExpr} as Timestamp,
+                    COUNT(*) as Value,
+                    ChannelId
+                FROM em_protocol.Records
+                WHERE EventTime >= @p0 AND EventTime <= @p1 {channelFilter}
+                GROUP BY {dateAddExpr}, ChannelId
+                ORDER BY Timestamp";
 
-            var rawData = await query.ToListAsync();
+            var rawAggregates = await _context.Database
+                .SqlQueryRaw<AggregatedResult>(sqlAggregate, request.StartDate, request.EndDate)
+                .ToListAsync();
 
-            var groupedSeries = _timeSeriesService.GroupByGranularity(
-                rawData,
-                request.Granularity,
-                request.CustomMinutes);
+            var groupedSeries = rawAggregates
+                .GroupBy(a => a.Timestamp)
+                .Select(g => new DataPoint
+                {
+                    Timestamp = g.Key,
+                    Value = g.Sum(x => x.Value),
+                    ChannelBreakdown = g.ToDictionary(x => x.ChannelId, x => x.Value)
+                })
+                .OrderBy(p => p.Timestamp)
+                .ToList();
 
             var anomalyResults = _spikeDetectionService.DetectSpikes(
                 groupedSeries,
