@@ -27,11 +27,12 @@ public class SpikeDetectionService : ISpikeDetectionService
             });
         }
 
-        var dataView = _mlContext.Data.LoadFromEnumerable(data);
+        var mlData = data.Select(p => new MlDataPoint { Value = (float)p.Value }).ToList();
+        var dataView = _mlContext.Data.LoadFromEnumerable(mlData);
 
         var pipeline = _mlContext.Transforms.DetectIidSpike(
             outputColumnName: nameof(SpikePrediction.Prediction),
-            inputColumnName: nameof(DataPoint.Value),
+            inputColumnName: nameof(MlDataPoint.Value),
             confidence: confidence,
             pvalueHistoryLength: windowSize
         );
@@ -56,6 +57,11 @@ public class SpikeDetectionService : ISpikeDetectionService
         } 
 
         return results;
+    }
+
+    private class MlDataPoint
+    {
+        public float Value { get; set; }
     }
 
     private class SpikePrediction
