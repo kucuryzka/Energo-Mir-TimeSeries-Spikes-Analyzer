@@ -3,13 +3,9 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using Core.Interfaces;
-using Core.Models;
-using API.Data;
 using API.DTOs;
 using API.DataSources;
-using Core.Enums;
 
 namespace API.Controllers;
 
@@ -17,18 +13,15 @@ namespace API.Controllers;
 [Route("api/[controller]")]
 public class AnalyticsController : ControllerBase
 {
-    private readonly ITimeSeriesService _timeSeriesService;
-    private readonly ISpikeDetectionService _spikeDetectionService;
     private readonly IEnumerable<IDataSourceStrategy> _dataSourceStrategies;
+    private readonly ISpikeDetectionService _spikeDetectionService;
 
     public AnalyticsController(
-        ITimeSeriesService timeSeriesService,
-        ISpikeDetectionService spikeDetectionService,
-        IEnumerable<IDataSourceStrategy> dataSourceStrategies)
+        IEnumerable<IDataSourceStrategy> dataSourceStrategies,
+        ISpikeDetectionService spikeDetectionService)
     {
-        _timeSeriesService = timeSeriesService;
-        _spikeDetectionService = spikeDetectionService;
         _dataSourceStrategies = dataSourceStrategies;
+        _spikeDetectionService = spikeDetectionService;
     }
 
     [HttpGet("sources")]
@@ -90,55 +83,9 @@ public class AnalyticsController : ControllerBase
                 return BadRequest("Invalid or missing SourceId.");
             }
 
-            var rawAggregates = await strategy.GetAggregatedDataAsync(
-                request.StartDate, 
-                request.EndDate, 
-                request.ChannelId, 
-                request.Granularity, 
-                request.CustomMinutes);
-
-            var groupedSeries = rawAggregates
-                .GroupBy(a => a.Timestamp)
-                .Select(g => new DataPoint
-                {
-                    Timestamp = g.Key,
-                    Value = g.Sum(x => x.Value),
-                    ChannelBreakdown = g.ToDictionary(x => x.ChannelId, x => x.Value)
-                })
-                .OrderBy(p => p.Timestamp)
-                .ToList();
-
-            var anomalyResults = _spikeDetectionService.DetectSpikes(
-                groupedSeries,
-                request.Confidence,
-                request.WindowSize);
-
-            var channelIds = anomalyResults
-                .SelectMany(r => r.ChannelBreakdown.Keys)
-                .Distinct()
-                .ToList();
-
-            var channelNames = await strategy.GetChannelNamesAsync(channelIds);
-
-            var response = new SpikeResponse
-            {
-                Series = anomalyResults.Select(r => new AnomalyResultDto
-                {
-                    Timestamp = r.Timestamp,
-                    Value = r.Value,
-                    IsSpike = r.IsSpike,
-                    PValue = r.PValue,
-                    ChannelBreakdown = r.ChannelBreakdown
-                        .Select(kvp => new ChannelContributionDto
-                        {
-                            ChannelId = kvp.Key,
-                            ChannelName = channelNames.GetValueOrDefault(kvp.Key, "Неизвестный канал"),
-                            Count = kvp.Value
-                        })
-                        .OrderByDescending(c => c.Count)
-                        .ToList()
-                }).ToList()
-            };
+            // The strategy encapsulates all logic including DB querying, aggregation, 
+            // spike detection calling, and channel naming.
+            var response = await strategy.ExecuteAnalysisAsync(request, _spikeDetectionService);
 
             return Ok(response);
         }

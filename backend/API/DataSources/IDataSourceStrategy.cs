@@ -13,6 +13,5 @@ public interface IDataSourceStrategy
     string Name { get; }
     
     Task<List<ChannelDto>> GetChannelsAsync(string? search, int page, int pageSize);
-    Task<List<AggregatedResult>> GetAggregatedDataAsync(DateTime start, DateTime end, int? channelId, TimeGranularity granularity, int? customMinutes);
-    Task<Dictionary<int, string>> GetChannelNamesAsync(List<int> channelIds);
+    Task<SpikeResponse> ExecuteAnalysisAsync(DetectSpikesRequest request, Core.Interfaces.ISpikeDetectionService spikeDetectionService);
 }
