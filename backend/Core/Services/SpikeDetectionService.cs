@@ -23,7 +23,8 @@ public class SpikeDetectionService : ISpikeDetectionService
                 Timestamp = p.Timestamp,
                 Value = p.Value,
                 IsSpike = false,
-                PValue = 1.0
+                PValue = 1.0,
+                ChannelBreakdown = p.ChannelBreakdown
             });
         }
 
@@ -52,7 +53,8 @@ public class SpikeDetectionService : ISpikeDetectionService
                 Timestamp = data[i].Timestamp,
                 Value = data[i].Value,
                 IsSpike = pred.Prediction[0] == 1,
-                PValue = pred.Prediction[2]
+                PValue = pred.Prediction[2],
+                ChannelBreakdown = data[i].ChannelBreakdown
             });
         } 
 
