@@ -5,14 +5,15 @@ import dayjs from 'dayjs';
 
 interface Props {
   data: SpikePoint[];
+  showMarkers?: boolean;
 }
 
-export const SpikeChart: React.FC<Props> = ({ data }) => {
+export const SpikeChart: React.FC<Props> = ({ data, showMarkers = true }) => {
   const option = useMemo(() => {
     const timestamps = data.map(d => d.timestamp);
     const values = data.map(d => d.value);
 
-    const spikeMarkers = data
+    const spikeMarkers = showMarkers ? data
       .filter(d => d.isSpike)
       .map(d => ({
         name: 'Аварийное событие',
@@ -31,7 +32,7 @@ export const SpikeChart: React.FC<Props> = ({ data }) => {
           fontWeight: 'bold',
           fontSize: 12,
         },
-      }));
+      })) : [];
 
     return {
       tooltip: {
