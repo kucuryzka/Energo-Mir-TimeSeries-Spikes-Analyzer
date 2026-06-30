@@ -5,5 +5,5 @@ namespace Core.Interfaces;
 
 public interface IDataLoader
 {
-    IEnumerable<CallRecord> LoadData();
+    IEnumerable<Record> LoadData();
 }

@@ -13,7 +13,7 @@ namespace Core.Services;
 public class TimeService : ITimeSeriesService
 {
     public IEnumerable<DataPoint> GroupByGranularity(
-        IEnumerable<CallRecord> rawData,
+        IEnumerable<Record> rawData,
         TimeGranularity granularity,
         int? customMinutes = null
     )
@@ -26,7 +26,7 @@ public class TimeService : ITimeSeriesService
         var interval = GetInterval(granularity, customMinutes);
 
         var grouped = rawData
-        .GroupBy(record => RoundDown(record.Timestamp, interval))
+        .GroupBy(record => RoundDown(record.EventTime, interval))
         .Select(group => new DataPoint
         {
             Timestamp = group.Key,
