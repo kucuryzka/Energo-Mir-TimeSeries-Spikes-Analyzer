@@ -5,6 +5,7 @@ namespace API.DTOs;
 
 public class DetectSpikesRequest
 {
+    public int ChannelId { get; set; }
     public TimeGranularity Granularity { get; set; } = TimeGranularity.Hour;
     public int? CustomMinutes { get; set; }
     public double Confidence { get; set; } = 95.0;
