@@ -1,5 +1,5 @@
 import React from 'react';
-import { Table, Tag } from 'antd';
+import { Table } from 'antd';
 import type { AnomalyResultDto } from '../../types/analytics.types';
 import dayjs from 'dayjs';
 
@@ -55,19 +55,6 @@ export const SpikeTable: React.FC<Props> = ({ spikes, style }) => {
             {confidence.toFixed(1)}%
           </span>
         );
-      },
-    },
-    {
-      title: 'Тип события',
-      key: 'severity',
-      render: (_: any, record: AnomalyResultDto) => {
-        if (record.pValue < 0.01) {
-          return <Tag color="error" style={{ fontWeight: 600, borderRadius: 6 }}>🔴 Критическая авария</Tag>;
-        }
-        if (record.pValue < 0.05) {
-          return <Tag color="warning" style={{ fontWeight: 600, borderRadius: 6 }}>🟠 Вероятная авария</Tag>;
-        }
-        return <Tag color="gold" style={{ fontWeight: 600, borderRadius: 6 }}>🟡 Подозрительное событие</Tag>;
       },
     },
   ];
