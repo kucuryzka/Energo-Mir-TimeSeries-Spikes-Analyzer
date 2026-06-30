@@ -27,7 +27,11 @@ public class AnalyticsController : ControllerBase
     [HttpGet("sources")]
     public IActionResult GetSources()
     {
-        var sources = _dataSourceStrategies.Select(s => new { Id = s.Id, Name = s.Name }).ToList();
+        var sources = _dataSourceStrategies.Select(s => new { 
+            Id = s.Id, 
+            Name = s.Name,
+            SupportedDistributions = s.SupportedDistributions 
+        }).ToList();
         return Ok(sources);
     }
 
@@ -55,6 +59,29 @@ public class AnalyticsController : ControllerBase
         catch (Exception ex)
         {
             return StatusCode(500, new { message = "An error occurred while fetching channels.", details = ex.Message });
+        }
+    }
+
+    [HttpGet("distribution")]
+    public async Task<IActionResult> GetDistribution([FromQuery] string sourceId, [FromQuery] DateTime startDate, [FromQuery] DateTime endDate, [FromQuery] string categoryName)
+    {
+        try
+        {
+            var strategy = _dataSourceStrategies.FirstOrDefault(s => s.Id == sourceId);
+            if (strategy == null)
+                return BadRequest("Invalid sourceId");
+
+            if (strategy is ISupportsDistribution distributionStrategy && strategy.SupportedDistributions.Contains(categoryName))
+            {
+                var distribution = await distributionStrategy.GetDistributionAsync(startDate, endDate, categoryName);
+                return Ok(distribution);
+            }
+            
+            return BadRequest($"Source does not support distribution by '{categoryName}'.");
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { message = "An error occurred while fetching distribution.", details = ex.Message });
         }
     }
 

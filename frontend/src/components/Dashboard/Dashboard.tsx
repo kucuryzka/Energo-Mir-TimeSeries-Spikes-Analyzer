@@ -2,11 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { Spin, Alert, message } from 'antd';
 import { LoadingOutlined } from '@ant-design/icons';
 import { SpikeChart } from '../Chart/SpikeChart';
+import { DistributionChart } from '../Chart/DistributionChart';
 import { ControlsPanel } from '../Controls/ControlsPanel';
 import { SpikeTable } from '../Stats/SpikeTable';
 import { analyticsApi } from '../../api/analyticsApi';
 import { enrichSpikeData, getSpikesOnly, getStatistics } from '../../utils/spikeUtils';
-import type { TimeGranularity, ChannelDto, DataSourceDto } from '../../types/analytics.types';
+import type { TimeGranularity, ChannelDto, DataSourceDto, DistributionItemDto } from '../../types/analytics.types';
 import dayjs from 'dayjs';
 
 export const Dashboard: React.FC = () => {
@@ -30,6 +31,8 @@ export const Dashboard: React.FC = () => {
   const [sources, setSources] = useState<DataSourceDto[]>([]);
   const [sourceId, setSourceId] = useState<string>('');
 
+  const [distributions, setDistributions] = useState<Record<string, DistributionItemDto[]>>({});
+
   const fetchData = async () => {
     if (!sourceId) return;
     
@@ -49,6 +52,13 @@ export const Dashboard: React.FC = () => {
       });
 
       setData(response);
+      
+      const currentSource = sources.find(s => s.id === sourceId);
+      if (currentSource && currentSource.supportedDistributions) {
+        await fetchDistributions(sourceId, currentSource.supportedDistributions);
+      } else {
+        setDistributions({});
+      }
 
       const spikes = response.series.filter(s => s.isSpike);
       if (spikes.length > 0) {
@@ -71,6 +81,23 @@ export const Dashboard: React.FC = () => {
       setChannels(data);
     } catch (err) {
       console.error('Ошибка при загрузке каналов', err);
+    }
+  };
+
+  const fetchDistributions = async (currentSourceId: string, supportedCats: string[]) => {
+    if (!supportedCats || supportedCats.length === 0) {
+      setDistributions({});
+      return;
+    }
+    try {
+      const newDists: Record<string, DistributionItemDto[]> = {};
+      for (const cat of supportedCats) {
+        const distData = await analyticsApi.getDistribution(currentSourceId, dateRange[0], dateRange[1], cat);
+        newDists[cat] = distData;
+      }
+      setDistributions(newDists);
+    } catch (err) {
+      console.error('Ошибка при загрузке распределений', err);
     }
   };
 
@@ -97,6 +124,13 @@ export const Dashboard: React.FC = () => {
       setChannels([]);
       fetchChannels();
       fetchData();
+      
+      const currentSource = sources.find(s => s.id === sourceId);
+      if (currentSource && currentSource.supportedDistributions) {
+        fetchDistributions(sourceId, currentSource.supportedDistributions);
+      } else {
+        setDistributions({});
+      }
     }
   }, [sourceId]);
 
@@ -217,6 +251,15 @@ export const Dashboard: React.FC = () => {
                   <div className="value primary">{stats.totalPoints}</div>
                 </div>
               </div>
+
+              {Object.keys(distributions).map(category => (
+                <div key={category} style={{ marginBottom: 24 }}>
+                  <DistributionChart 
+                    data={distributions[category]} 
+                    title={`Распределение по: ${category === 'EventCode' ? 'Код события (EventCode)' : category}`}
+                  />
+                </div>
+              ))}
 
               <div className="dashboard-card" style={{ marginBottom: 24 }}>
                 <div style={{ 
