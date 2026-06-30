@@ -105,19 +105,16 @@ export const SpikeTable: React.FC<Props> = ({ spikes, style }) => {
             }
             return (
               <div style={{ padding: '8px 16px', background: '#f8fafc', borderRadius: 8 }}>
-                <h4 style={{ marginTop: 0, marginBottom: 8, color: '#4a5a6e' }}>Топ каналов (по кол-ву записей):</h4>
-                <ul style={{ margin: 0, paddingLeft: 20 }}>
-                  {record.channelBreakdown.slice(0, 5).map(cb => (
-                    <li key={cb.channelId} style={{ color: '#1a2332', marginBottom: 4 }}>
-                      <span style={{ fontWeight: 500 }}>{cb.channelName}</span> — <span style={{ color: '#d94a4a', fontWeight: 600 }}>{cb.count}</span> записей
-                    </li>
-                  ))}
-                  {record.channelBreakdown.length > 5 && (
-                    <li style={{ color: '#6b7a8f', fontStyle: 'italic' }}>
-                      и еще {record.channelBreakdown.length - 5} каналов...
-                    </li>
-                  )}
-                </ul>
+                <h4 style={{ marginTop: 0, marginBottom: 8, color: '#4a5a6e' }}>Каналы (по кол-ву записей):</h4>
+                <div style={{ maxHeight: '200px', overflowY: 'auto', paddingRight: '8px' }}>
+                  <ul style={{ margin: 0, paddingLeft: 20 }}>
+                    {record.channelBreakdown.map(cb => (
+                      <li key={cb.channelId} style={{ color: '#1a2332', marginBottom: 4 }}>
+                        <span style={{ fontWeight: 500 }}>{cb.channelName}</span> — <span style={{ color: '#d94a4a', fontWeight: 600 }}>{cb.count}</span> записей
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               </div>
             );
           },
