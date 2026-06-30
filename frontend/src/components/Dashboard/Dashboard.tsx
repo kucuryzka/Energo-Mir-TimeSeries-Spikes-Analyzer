@@ -123,7 +123,7 @@ export const Dashboard: React.FC = () => {
                   <div className="stat-header">
                     <span className="label">Обнаружено аномалий</span>
                   </div>
-                  <div className={`value ${stats.spikesCount > 0 ? 'danger' : 'success'}`}>
+                  <div className={`value ${stats.spikesCount > 0 ? 'warning' : 'success'}`}>
                     {stats.spikesCount}
                   </div>
                 </div>
