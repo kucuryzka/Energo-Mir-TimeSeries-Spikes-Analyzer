@@ -21,9 +21,6 @@ function App() {
           Card: {
             colorBgContainer: '#ffffff',
             boxShadowTertiary: '0 4px 20px rgba(0, 0, 0, 0.05)',
-          },
-          Table: {
-            colorBgContainer: 'transparent',
           }
         }
       }}
