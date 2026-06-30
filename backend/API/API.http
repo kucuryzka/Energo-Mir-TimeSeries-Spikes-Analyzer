@@ -1,6 +1,18 @@
 @API_HostAddress = http://localhost:5090
 
-### Detect spikes with HOURLY granularity (Hour)
+### Get channels list (paginated, with optional search)
+GET {{API_HostAddress}}/api/analytics/channels?page=1&pageSize=10
+Accept: application/json
+
+###
+
+### Get channels list with search (e.g. search for "110kV")
+GET {{API_HostAddress}}/api/analytics/channels?search=110kV&page=1&pageSize=5
+Accept: application/json
+
+###
+
+### Detect spikes with HOURLY granularity for ALL channels (ChannelId omitted)
 POST {{API_HostAddress}}/api/analytics/detect-spikes
 Content-Type: application/json
 
@@ -14,11 +26,12 @@ Content-Type: application/json
 
 ###
 
-### Detect spikes with DAILY granularity (Day)
+### Detect spikes with DAILY granularity for a SPECIFIC channel
 POST {{API_HostAddress}}/api/analytics/detect-spikes
 Content-Type: application/json
 
 {
+  "channelId": 1234,
   "granularity": "Day",
   "confidence": 98,
   "windowSize": 7,
@@ -28,11 +41,12 @@ Content-Type: application/json
 
 ###
 
-### Detect spikes with CUSTOM 15-minute granularity (Custom)
+### Detect spikes with CUSTOM 15-minute granularity for a SPECIFIC channel
 POST {{API_HostAddress}}/api/analytics/detect-spikes
 Content-Type: application/json
 
 {
+  "channelId": 5678,
   "granularity": "Custom",
   "customMinutes": 15,
   "confidence": 95,
