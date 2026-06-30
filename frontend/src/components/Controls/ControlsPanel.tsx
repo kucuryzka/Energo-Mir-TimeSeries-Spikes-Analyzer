@@ -97,25 +97,27 @@ export const ControlsPanel: React.FC<Props> = ({
           </div>
         </Col>
 
-        <Col>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 13, fontWeight: 500, color: '#4a5a6e', whiteSpace: 'nowrap' }}>
-              Канал:
-            </span>
-            <Select
-              showSearch
-              allowClear
-              placeholder="Все каналы"
-              value={channelId}
-              onChange={onChannelChange}
-              onSearch={onSearchChannels}
-              filterOption={false}
-              style={{ width: 160 }}
-              size="middle"
-              options={channels.map(c => ({ value: c.id, label: c.name }))}
-            />
-          </div>
-        </Col>
+        {channels.length > 0 && (
+          <Col>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 13, fontWeight: 500, color: '#4a5a6e', whiteSpace: 'nowrap' }}>
+                Канал:
+              </span>
+              <Select
+                showSearch
+                allowClear
+                placeholder="Все каналы"
+                value={channelId}
+                onChange={onChannelChange}
+                onSearch={onSearchChannels}
+                filterOption={false}
+                style={{ width: 160 }}
+                size="middle"
+                options={channels.map(c => ({ value: c.id, label: c.name }))}
+              />
+            </div>
+          </Col>
+        )}
 
         <Col flex="1" style={{ minWidth: 160 }}>
           <div>
