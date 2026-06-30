@@ -14,8 +14,8 @@ builder.Services.AddControllers()
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
-// Register stub implementations of Core interfaces
-builder.Services.AddScoped<Core.Interfaces.ITimeSeriesService, API.Services.TimeSeriesServiceStub>();
+// Register implementations of Core interfaces
+builder.Services.AddScoped<Core.Interfaces.ITimeSeriesService, Core.Services.TimeService>();
 builder.Services.AddScoped<Core.Interfaces.ISpikeDetectionService, API.Services.SpikeDetectionServiceStub>();
 
 // Configure CORS for React client integration

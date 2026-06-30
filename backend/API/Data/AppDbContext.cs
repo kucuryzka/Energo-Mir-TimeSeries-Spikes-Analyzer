@@ -9,17 +9,18 @@ public class AppDbContext : DbContext
     {
     }
 
-    public DbSet<CallRecord> CallRecords { get; set; } = null!;
+    public DbSet<Record> Records { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
 
-        modelBuilder.Entity<CallRecord>(entity =>
+        modelBuilder.Entity<Record>(entity =>
         {
-            entity.HasNoKey();
-            entity.ToTable("CallRecords");
-            entity.Property(e => e.Timestamp).IsRequired();
+            entity.ToTable("Records", "em_protocol");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.EventTime).HasColumnName("EventTime").IsRequired();
+            entity.Property(e => e.ChannelId).HasColumnName("ChannelId").IsRequired();
         });
     }
 }
