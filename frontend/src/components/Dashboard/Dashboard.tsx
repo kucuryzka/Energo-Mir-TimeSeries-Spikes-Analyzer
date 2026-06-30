@@ -6,13 +6,17 @@ import { ControlsPanel } from '../Controls/ControlsPanel';
 import { SpikeTable } from '../Stats/SpikeTable';
 import { analyticsApi } from '../../api/analyticsApi';
 import { enrichSpikeData, getSpikesOnly, getStatistics } from '../../utils/spikeUtils';
-import type { TimeGranularity } from '../../types/analytics.types';
+import type { TimeGranularity, ChannelDto } from '../../types/analytics.types';
 import dayjs from 'dayjs';
 
 export const Dashboard: React.FC = () => {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [channels, setChannels] = useState<ChannelDto[]>([]);
+  const [channelId, setChannelId] = useState<number | null>(null);
+  const [channelSearch, setChannelSearch] = useState('');
 
   const [granularity, setGranularity] = useState<TimeGranularity>('Hour');
   const [customMinutes, setCustomMinutes] = useState<number | null>(null);
@@ -29,6 +33,7 @@ export const Dashboard: React.FC = () => {
 
     try {
       const response = await analyticsApi.detectSpikes({
+        channelId,
         granularity,
         customMinutes: granularity === 'Custom' ? customMinutes : null,
         confidence,
@@ -53,9 +58,27 @@ export const Dashboard: React.FC = () => {
     }
   };
 
+  const fetchChannels = async (search: string = '') => {
+    try {
+      const data = await analyticsApi.getChannels(search);
+      setChannels(data);
+    } catch (err) {
+      console.error('Ошибка при загрузке каналов', err);
+    }
+  };
+
   useEffect(() => {
+    fetchChannels();
     fetchData();
   }, []);
+
+  // Debounce-поиск каналов
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fetchChannels(channelSearch);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [channelSearch]);
 
   const enrichedData = data ? enrichSpikeData(data.series) : [];
   const spikesOnly = data ? getSpikesOnly(data.series) : [];
@@ -94,6 +117,10 @@ export const Dashboard: React.FC = () => {
             onWindowSizeChange={setWindowSize}
             dateRange={dateRange}
             onDateRangeChange={setDateRange}
+            channelId={channelId}
+            onChannelChange={setChannelId}
+            channels={channels}
+            onSearchChannels={setChannelSearch}
             onAnalyze={fetchData}
             loading={loading}
           />

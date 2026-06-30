@@ -2,7 +2,7 @@ import React from 'react';
 import { Row, Col, Select, Slider, DatePicker, Button, InputNumber } from 'antd';
 import { SearchOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
-import type { TimeGranularity } from '../../types/analytics.types';
+import type { TimeGranularity, ChannelDto } from '../../types/analytics.types';
 
 interface Props {
   granularity: TimeGranularity;
@@ -15,6 +15,10 @@ interface Props {
   onWindowSizeChange: (value: number | null) => void;
   dateRange: [string, string];
   onDateRangeChange: (dates: [string, string]) => void;
+  channelId: number | null;
+  onChannelChange: (value: number | null) => void;
+  channels: ChannelDto[];
+  onSearchChannels: (search: string) => void;
   onAnalyze: () => void;
   loading: boolean;
 }
@@ -30,6 +34,10 @@ export const ControlsPanel: React.FC<Props> = ({
   onWindowSizeChange,
   dateRange,
   onDateRangeChange,
+  channelId,
+  onChannelChange,
+  channels,
+  onSearchChannels,
   onAnalyze,
   loading,
 }) => {
@@ -65,6 +73,26 @@ export const ControlsPanel: React.FC<Props> = ({
                 style={{ width: 80 }}
               />
             )}
+          </div>
+        </Col>
+
+        <Col>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 13, fontWeight: 500, color: '#4a5a6e', whiteSpace: 'nowrap' }}>
+              Канал:
+            </span>
+            <Select
+              showSearch
+              allowClear
+              placeholder="Все каналы"
+              value={channelId}
+              onChange={onChannelChange}
+              onSearch={onSearchChannels}
+              filterOption={false}
+              style={{ width: 160 }}
+              size="middle"
+              options={channels.map(c => ({ value: c.id, label: c.name }))}
+            />
           </div>
         </Col>
 

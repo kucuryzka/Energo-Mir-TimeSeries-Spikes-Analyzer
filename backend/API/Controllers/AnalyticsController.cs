@@ -39,7 +39,7 @@ public class AnalyticsController : ControllerBase
             if (pageSize > 1000) pageSize = 1000;
 
             var sql = @"
-                SELECT c.Id, o.OBJECT_NAME as Name
+                SELECT c.Id, CONCAT(o.OBJECT_NAME, ' - ', c.Name) as Name
                 FROM em_protocol.Channels c
                 JOIN dbo.OBJECTS o ON c.ObjectId = o.IDGLOBAL";
             
@@ -47,7 +47,7 @@ public class AnalyticsController : ControllerBase
 
             if (!string.IsNullOrWhiteSpace(search))
             {
-                sql += " WHERE o.OBJECT_NAME LIKE {0}";
+                sql += " WHERE o.OBJECT_NAME LIKE {0} OR c.Name LIKE {0}";
                 parameters.Add($"%{search}%");
             }
 
@@ -81,10 +81,10 @@ public class AnalyticsController : ControllerBase
                 return BadRequest("WindowSize must be at least 2 for sliding window analysis.");
             }
 
-            var maxDateRange = TimeSpan.FromDays(90);
+            var maxDateRange = TimeSpan.FromDays(365);
             if (request.EndDate - request.StartDate > maxDateRange)
             {
-                return BadRequest("Date range cannot exceed 90 days to prevent excessive memory usage.");
+                return BadRequest("Date range cannot exceed 365 days to prevent excessive memory usage.");
             }
 
             var query = _context.Records
