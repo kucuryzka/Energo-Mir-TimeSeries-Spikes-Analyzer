@@ -1,0 +1,216 @@
+import React, { useState, useEffect } from 'react';
+import { Spin, Alert, message } from 'antd';
+import { LoadingOutlined } from '@ant-design/icons';
+import { SpikeChart } from '../Chart/SpikeChart';
+import { ControlsPanel } from '../Controls/ControlsPanel';
+import { SpikeTable } from '../Stats/SpikeTable';
+import { analyticsApi } from '../../api/analyticsApi';
+import { enrichSpikeData, getSpikesOnly, getStatistics } from '../../utils/spikeUtils';
+import type { TimeGranularity } from '../../types/analytics.types';
+import dayjs from 'dayjs';
+
+export const Dashboard: React.FC = () => {
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const [granularity, setGranularity] = useState<TimeGranularity>('Hour');
+  const [customMinutes, setCustomMinutes] = useState<number | null>(null);
+  const [confidence, setConfidence] = useState(95);
+  const [windowSize, setWindowSize] = useState<number | null>(30);
+  const [dateRange, setDateRange] = useState<[string, string]>([
+    dayjs().subtract(7, 'day').startOf('day').toISOString(),
+    dayjs().endOf('day').toISOString(),
+  ]);
+
+  const fetchData = async () => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const response = await analyticsApi.detectSpikes({
+        granularity,
+        customMinutes: granularity === 'Custom' ? customMinutes : null,
+        confidence,
+        windowSize: windowSize ?? 30,
+        startDate: dateRange[0],
+        endDate: dateRange[1],
+      });
+
+      setData(response);
+
+      const spikes = response.series.filter(s => s.isSpike);
+      if (spikes.length > 0) {
+        message.warning(`Обнаружено ${spikes.length} аномалий`);
+      } else {
+        message.success('Аномалий не обнаружено');
+      }
+    } catch (err) {
+      setError('Ошибка при загрузке данных. Проверьте подключение к серверу.');
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  const enrichedData = data ? enrichSpikeData(data.series) : [];
+  const spikesOnly = data ? getSpikesOnly(data.series) : [];
+  const stats = data ? getStatistics(data.series) : null;
+
+  const antIcon = <LoadingOutlined style={{ fontSize: 32, color: '#2a5298' }} spin />;
+
+  return (
+    <div className="app-container">
+      <header className="app-header">
+        <div className="app-header-content">
+          <div className="app-title">
+            <div>
+              <h1>Детектор аномалий</h1>
+              <p className="subtitle">Обнаружение выбросов и аномалий в данных</p>
+            </div>
+          </div>
+          <div className="app-header-actions">
+            <span className="badge">
+              🟢 Система активна
+            </span>
+          </div>
+        </div>
+      </header>
+
+      <main className="app-main">
+        <div className="dashboard-card" style={{ marginBottom: 24 }}>
+          <ControlsPanel
+            granularity={granularity}
+            onGranularityChange={setGranularity}
+            customMinutes={customMinutes}
+            onCustomMinutesChange={setCustomMinutes}
+            confidence={confidence}
+            onConfidenceChange={setConfidence}
+            windowSize={windowSize ?? 30}
+            onWindowSizeChange={setWindowSize}
+            dateRange={dateRange}
+            onDateRangeChange={setDateRange}
+            onAnalyze={fetchData}
+            loading={loading}
+          />
+        </div>
+
+        {error && (
+          <Alert
+            message={error}
+            type="error"
+            showIcon
+            style={{ marginBottom: 20, borderRadius: 12 }}
+          />
+        )}
+
+        <Spin spinning={loading} indicator={antIcon}>
+          {enrichedData.length > 0 && stats && (
+            <>
+              <div className="stat-grid">
+                <div className="stat-item">
+                  <div className="stat-header">
+                    <span className="label">Всего значений</span>
+                  </div>
+                  <div className="value primary">{stats.totalCalls.toLocaleString()}</div>
+                </div>
+
+                <div className="stat-item">
+                  <div className="stat-header">
+                    <span className="label">Обнаружено аномалий</span>
+                  </div>
+                  <div className={`value ${stats.spikesCount > 0 ? 'warning' : 'success'}`}>
+                    {stats.spikesCount}
+                  </div>
+                </div>
+
+                <div className="stat-item">
+                  <div className="stat-header">
+                    <span className="label">Критических аномалий</span>
+                  </div>
+                  <div className={`value ${stats.criticalSpikes > 0 ? 'danger' : 'success'}`}>
+                    {stats.criticalSpikes}
+                  </div>
+                </div>
+
+                <div className="stat-item">
+                  <div className="stat-header">
+                    <span className="label">Среднее значение</span>
+                  </div>
+                  <div className="value primary">{stats.average.toFixed(0)}</div>
+                </div>
+
+                <div className="stat-item">
+                  <div className="stat-header">
+                    <span className="label">Максимум</span>
+                  </div>
+                  <div className="value warning">{stats.max}</div>
+                </div>
+
+                <div className="stat-item">
+                  <div className="stat-header">
+                    <span className="label">Всего точек</span>
+                  </div>
+                  <div className="value primary">{stats.totalPoints}</div>
+                </div>
+              </div>
+
+              <div className="dashboard-card" style={{ marginBottom: 24 }}>
+                <div style={{ 
+                  display: 'flex', 
+                  justifyContent: 'space-between', 
+                  alignItems: 'center',
+                  marginBottom: 16,
+                  flexWrap: 'wrap',
+                  gap: 8
+                }}>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: 18, fontWeight: 600, color: '#1a2332' }}>
+                      Временной ряд
+                    </h3>
+                    <span style={{ fontSize: 13, color: '#6b7a8f' }}>
+                      {dayjs(dateRange[0]).format('DD.MM.YYYY')} — {dayjs(dateRange[1]).format('DD.MM.YYYY')}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', gap: 16, fontSize: 13 }}>
+                    <span>
+                      <span style={{ display: 'inline-block', width: 12, height: 3, background: '#4a90d9', borderRadius: 2, marginRight: 6 }}></span>
+                      Значения
+                    </span>
+                    <span>
+                      <span style={{ display: 'inline-block', width: 12, height: 12, background: '#d94a4a', borderRadius: '50%', marginRight: 6 }}></span>
+                      Аномалия
+                    </span>
+                    <span>
+                      <span style={{ display: 'inline-block', width: 12, height: 2, background: '#6b7a8f', borderStyle: 'dashed', marginRight: 6 }}></span>
+                      Среднее
+                    </span>
+                  </div>
+                </div>
+                <SpikeChart data={enrichedData} />
+              </div>
+
+              {spikesOnly.length > 0 && (
+                <div className="dashboard-card">
+                  <SpikeTable spikes={spikesOnly} />
+                </div>
+              )}
+            </>
+          )}
+
+          {!loading && !data && !error && (
+            <div className="dashboard-card" style={{ textAlign: 'center', padding: '60px 20px' }}>
+              <div style={{ fontSize: 48, marginBottom: 16 }}></div>
+              <h3 style={{ color: '#1a2332', marginBottom: 8 }}>Нет данных для отображения</h3>
+              <p style={{ color: '#6b7a8f' }}>Настройте параметры и нажмите «Анализировать»</p>
+            </div>
+          )}
+        </Spin>
+      </main>
+    </div>
+  );
+};
