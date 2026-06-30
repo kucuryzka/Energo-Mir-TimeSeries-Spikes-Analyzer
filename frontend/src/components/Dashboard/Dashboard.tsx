@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Spin, Alert, message, Switch } from 'antd';
+import { Spin, Alert, message, Switch, Drawer, Table, Typography } from 'antd';
 import { LoadingOutlined } from '@ant-design/icons';
 import { SpikeChart } from '../Chart/SpikeChart';
 import { DistributionChart } from '../Chart/DistributionChart';
@@ -7,8 +7,10 @@ import { ControlsPanel } from '../Controls/ControlsPanel';
 import { SpikeTable } from '../Stats/SpikeTable';
 import { analyticsApi } from '../../api/analyticsApi';
 import { enrichSpikeData, getSpikesOnly, getStatistics } from '../../utils/spikeUtils';
-import type { TimeGranularity, ChannelDto, DataSourceDto, DistributionItemDto } from '../../types/analytics.types';
+import type { TimeGranularity, ChannelDto, DataSourceDto, DistributionItemDto, SpikePoint } from '../../types/analytics.types';
 import dayjs from 'dayjs';
+
+const { Title, Text } = Typography;
 
 export const Dashboard: React.FC = () => {
   const [data, setData] = useState<any>(null);
@@ -33,6 +35,8 @@ export const Dashboard: React.FC = () => {
 
   const [distributions, setDistributions] = useState<Record<string, DistributionItemDto[]>>({});
   const [showMarkers, setShowMarkers] = useState(true);
+
+  const [selectedPoint, setSelectedPoint] = useState<SpikePoint | null>(null);
 
   const fetchData = async () => {
     if (!sourceId) return;
@@ -289,7 +293,7 @@ export const Dashboard: React.FC = () => {
                     </span>
                   </div>
                 </div>
-                <SpikeChart data={enrichedData} showMarkers={showMarkers} />
+                <SpikeChart data={enrichedData} showMarkers={showMarkers} onPointClick={setSelectedPoint} />
               </div>
 
               {spikesOnly.length > 0 && (
@@ -318,6 +322,60 @@ export const Dashboard: React.FC = () => {
           )}
         </Spin>
       </main>
+
+      <Drawer
+        title={<Title level={5} style={{ margin: 0 }}>Детали временного среза</Title>}
+        placement="right"
+        width={500}
+        onClose={() => setSelectedPoint(null)}
+        open={selectedPoint !== null}
+      >
+        {selectedPoint && (
+          <div>
+            <div style={{ marginBottom: 24 }}>
+              <div style={{ marginBottom: 8 }}>
+                <Text type="secondary">Время начала среза:</Text><br/>
+                <Text strong>{dayjs(selectedPoint.timestamp).format('DD.MM.YYYY HH:mm:ss')}</Text>
+              </div>
+              <div style={{ marginBottom: 8 }}>
+                <Text type="secondary">Общее число событий:</Text><br/>
+                <Text strong>{selectedPoint.value.toLocaleString('ru-RU')}</Text>
+              </div>
+              <div style={{ marginBottom: 8 }}>
+                <Text type="secondary">Статус:</Text><br/>
+                {selectedPoint.isSpike ? (
+                  <Text type="danger" strong>Аномалия (p-value: {selectedPoint.pValue.toFixed(4)})</Text>
+                ) : (
+                  <Text type="success" strong>Штатный режим</Text>
+                )}
+              </div>
+            </div>
+
+            <Title level={5} style={{ marginTop: 24, marginBottom: 16 }}>Источники / Коды событий</Title>
+            <Table
+              dataSource={selectedPoint.channelBreakdown}
+              rowKey="channelName"
+              size="small"
+              pagination={false}
+              columns={[
+                {
+                  title: 'Источник',
+                  dataIndex: 'channelName',
+                  key: 'channelName',
+                },
+                {
+                  title: 'Кол-во',
+                  dataIndex: 'count',
+                  key: 'count',
+                  render: (val: number) => val.toLocaleString('ru-RU'),
+                  sorter: (a, b) => a.count - b.count,
+                  defaultSortOrder: 'descend',
+                }
+              ]}
+            />
+          </div>
+        )}
+      </Drawer>
     </div>
   );
 };

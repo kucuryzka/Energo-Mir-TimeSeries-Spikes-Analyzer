@@ -6,9 +6,10 @@ import dayjs from 'dayjs';
 interface Props {
   data: SpikePoint[];
   showMarkers?: boolean;
+  onPointClick?: (point: SpikePoint) => void;
 }
 
-export const SpikeChart: React.FC<Props> = ({ data, showMarkers = true }) => {
+export const SpikeChart: React.FC<Props> = ({ data, showMarkers = true, onPointClick }) => {
   const option = useMemo(() => {
     const timestamps = data.map(d => d.timestamp);
     const values = data.map(d => d.value);
@@ -153,11 +154,36 @@ export const SpikeChart: React.FC<Props> = ({ data, showMarkers = true }) => {
     };
   }, [data]);
 
+  const onEvents = {
+    click: (params: any) => {
+      // params.name corresponds to the axis value (timestamp) in a category axis
+      // params.dataIndex is the index in the series
+      let timestamp = null;
+      if (params.componentType === 'series' && params.seriesType === 'line') {
+        if (params.name) {
+          timestamp = params.name;
+        } else if (params.dataIndex !== undefined) {
+          timestamp = data[params.dataIndex]?.timestamp;
+        }
+      } else if (params.componentType === 'markPoint') {
+        timestamp = params.data.coord[0];
+      }
+
+      if (timestamp && onPointClick) {
+        const point = data.find(d => d.timestamp === timestamp);
+        if (point) {
+          onPointClick(point);
+        }
+      }
+    }
+  };
+
   return (
     <ReactECharts
       option={option}
       style={{ height: 480, width: '100%' }}
       opts={{ renderer: 'canvas' }}
+      onEvents={onEvents}
     />
   );
 };
