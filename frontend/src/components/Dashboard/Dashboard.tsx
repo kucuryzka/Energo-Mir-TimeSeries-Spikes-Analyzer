@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Spin, Alert, message } from 'antd';
+import { Spin, Alert, message, Switch } from 'antd';
 import { LoadingOutlined } from '@ant-design/icons';
 import { SpikeChart } from '../Chart/SpikeChart';
 import { DistributionChart } from '../Chart/DistributionChart';
@@ -32,6 +32,7 @@ export const Dashboard: React.FC = () => {
   const [sourceId, setSourceId] = useState<string>('');
 
   const [distributions, setDistributions] = useState<Record<string, DistributionItemDto[]>>({});
+  const [showMarkers, setShowMarkers] = useState(true);
 
   const fetchData = async () => {
     if (!sourceId) return;
@@ -252,15 +253,6 @@ export const Dashboard: React.FC = () => {
                 </div>
               </div>
 
-              {Object.keys(distributions).map(category => (
-                <div key={category} style={{ marginBottom: 24 }}>
-                  <DistributionChart 
-                    data={distributions[category]} 
-                    title={`Распределение по: ${category === 'EventCode' ? 'Код события (EventCode)' : category}`}
-                  />
-                </div>
-              ))}
-
               <div className="dashboard-card" style={{ marginBottom: 24 }}>
                 <div style={{ 
                   display: 'flex', 
@@ -278,7 +270,11 @@ export const Dashboard: React.FC = () => {
                       {dayjs(dateRange[0]).format('DD.MM.YYYY')} — {dayjs(dateRange[1]).format('DD.MM.YYYY')}
                     </span>
                   </div>
-                  <div style={{ display: 'flex', gap: 16, fontSize: 13 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 16, fontSize: 13 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginRight: 8 }}>
+                      <Switch size="small" checked={showMarkers} onChange={setShowMarkers} />
+                      <span style={{ color: '#6b7a8f' }}>Маркеры</span>
+                    </div>
                     <span>
                       <span style={{ display: 'inline-block', width: 12, height: 3, background: '#4a90d9', borderRadius: 2, marginRight: 6 }}></span>
                       Значения
@@ -293,14 +289,23 @@ export const Dashboard: React.FC = () => {
                     </span>
                   </div>
                 </div>
-                <SpikeChart data={enrichedData} />
+                <SpikeChart data={enrichedData} showMarkers={showMarkers} />
               </div>
 
               {spikesOnly.length > 0 && (
-                <div className="dashboard-card">
+                <div className="dashboard-card" style={{ marginBottom: 24 }}>
                   <SpikeTable spikes={spikesOnly} />
                 </div>
               )}
+
+              {Object.keys(distributions).map(category => (
+                <div key={category} style={{ marginBottom: 24 }}>
+                  <DistributionChart 
+                    data={distributions[category]} 
+                    title={`Распределение по: ${category === 'EventCode' ? 'Код события (EventCode)' : category}`}
+                  />
+                </div>
+              ))}
             </>
           )}
 
