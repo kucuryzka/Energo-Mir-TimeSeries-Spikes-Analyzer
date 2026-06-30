@@ -30,7 +30,10 @@ public class TimeService : ITimeSeriesService
         .Select(group => new DataPoint
         {
             Timestamp = group.Key,
-            Value = group.Count()
+            Value = group.Count(),
+            ChannelBreakdown = group
+                .GroupBy(r => r.ChannelId)
+                .ToDictionary(g => g.Key, g => g.Count())
         })
         .OrderBy(point => point.Timestamp);
         

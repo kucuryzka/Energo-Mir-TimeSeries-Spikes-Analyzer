@@ -20,6 +20,13 @@ export interface AnomalyResultDto {
   value: number;
   isSpike: boolean;
   pValue: number;
+  channelBreakdown?: ChannelContributionDto[];
+}
+
+export interface ChannelContributionDto {
+  channelId: number;
+  channelName: string;
+  count: number;
 }
 
 export interface SpikeResponse {

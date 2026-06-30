@@ -39,7 +39,7 @@ public class AnalyticsController : ControllerBase
             if (pageSize > 1000) pageSize = 1000;
 
             var sql = @"
-                SELECT c.Id, CONCAT(o.OBJECT_NAME, ' - ', c.Name) as Name
+                SELECT c.Id, CONCAT(o.OBJECT_NAME, ' (', c.EventCode, ')') as Name
                 FROM em_protocol.Channels c
                 JOIN dbo.OBJECTS o ON c.ObjectId = o.IDGLOBAL";
             
@@ -47,7 +47,7 @@ public class AnalyticsController : ControllerBase
 
             if (!string.IsNullOrWhiteSpace(search))
             {
-                sql += " WHERE o.OBJECT_NAME LIKE {0} OR c.Name LIKE {0}";
+                sql += " WHERE o.OBJECT_NAME LIKE {0} OR CAST(c.EventCode as NVARCHAR) LIKE {0}";
                 parameters.Add($"%{search}%");
             }
 
@@ -107,6 +107,25 @@ public class AnalyticsController : ControllerBase
                 request.Confidence,
                 request.WindowSize);
 
+            var channelIds = anomalyResults
+                .SelectMany(r => r.ChannelBreakdown.Keys)
+                .Distinct()
+                .ToList();
+
+            var channelNames = new Dictionary<int, string>();
+            if (channelIds.Any())
+            {
+                var idsString = string.Join(",", channelIds);
+                var sql = $@"
+                    SELECT c.Id, CONCAT(o.OBJECT_NAME, ' (', c.EventCode, ')') as Name
+                    FROM em_protocol.Channels c
+                    JOIN dbo.OBJECTS o ON c.ObjectId = o.IDGLOBAL
+                    WHERE c.Id IN ({idsString})";
+                
+                var dbChannels = await _context.Database.SqlQueryRaw<ChannelDto>(sql).ToListAsync();
+                channelNames = dbChannels.ToDictionary(c => c.Id, c => c.Name);
+            }
+
             var response = new SpikeResponse
             {
                 Series = anomalyResults.Select(r => new AnomalyResultDto
@@ -114,7 +133,16 @@ public class AnalyticsController : ControllerBase
                     Timestamp = r.Timestamp,
                     Value = r.Value,
                     IsSpike = r.IsSpike,
-                    PValue = r.PValue
+                    PValue = r.PValue,
+                    ChannelBreakdown = r.ChannelBreakdown
+                        .Select(kvp => new ChannelContributionDto
+                        {
+                            ChannelId = kvp.Key,
+                            ChannelName = channelNames.GetValueOrDefault(kvp.Key, "Неизвестный канал"),
+                            Count = kvp.Value
+                        })
+                        .OrderByDescending(c => c.Count)
+                        .ToList()
                 }).ToList()
             };
 

@@ -8,4 +8,5 @@ public class AnomalyResult
     public int Value { get; set; }
     public bool IsSpike { get; set; }
     public double PValue { get; set; }
+    public Dictionary<int, int> ChannelBreakdown { get; set; } = new();
 }
