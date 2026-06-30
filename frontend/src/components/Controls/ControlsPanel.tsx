@@ -1,5 +1,5 @@
 import React from 'react';
-import { Row, Col, Select, Slider, DatePicker, Button, InputNumber } from 'antd';
+import { Select, Slider, DatePicker, Button, InputNumber } from 'antd';
 import { SearchOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import type { TimeGranularity, ChannelDto, DataSourceDto } from '../../types/analytics.types';
@@ -49,32 +49,30 @@ export const ControlsPanel: React.FC<Props> = ({
 }) => {
   return (
     <div style={{ width: '100%' }}>
-      <Row gutter={[16, 16]} align="middle" wrap>
-        <Col>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 13, fontWeight: 500, color: '#4a5a6e', whiteSpace: 'nowrap' }}>
-              Источник:
-            </span>
-            <Select
-              value={sourceId}
-              onChange={onSourceChange}
-              style={{ width: 140 }}
-              size="middle"
-              options={sources.map(s => ({ value: s.id, label: s.name }))}
-            />
-          </div>
-        </Col>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <label style={{ fontSize: 13, fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+            Источник
+          </label>
+          <Select
+            value={sourceId}
+            onChange={onSourceChange}
+            size="large"
+            style={{ width: '100%' }}
+            options={sources.map(s => ({ value: s.id, label: s.name }))}
+          />
+        </div>
 
-        <Col>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 13, fontWeight: 500, color: '#4a5a6e', whiteSpace: 'nowrap' }}>
-              Детализация:
-            </span>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <label style={{ fontSize: 13, fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+            Детализация
+          </label>
+          <div style={{ display: 'flex', gap: 8 }}>
             <Select
               value={granularity}
               onChange={onGranularityChange}
-              style={{ width: 110 }}
-              size="middle"
+              size="large"
+              style={{ flex: 1 }}
               options={[
                 { value: 'Minute', label: 'Поминутно' },
                 { value: 'Hour', label: 'Почасово' },
@@ -90,117 +88,109 @@ export const ControlsPanel: React.FC<Props> = ({
                 value={customMinutes}
                 onChange={onCustomMinutesChange}
                 placeholder="мин"
-                size="middle"
+                size="large"
                 style={{ width: 80 }}
               />
             )}
           </div>
-        </Col>
+        </div>
 
         {channels.length > 0 && (
-          <Col>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 13, fontWeight: 500, color: '#4a5a6e', whiteSpace: 'nowrap' }}>
-                Канал:
-              </span>
-              <Select
-                showSearch
-                allowClear
-                placeholder="Все каналы"
-                value={channelId}
-                onChange={onChannelChange}
-                onSearch={onSearchChannels}
-                filterOption={false}
-                style={{ width: 160 }}
-                size="middle"
-                options={channels.map(c => ({ value: c.id, label: c.name }))}
-              />
-            </div>
-          </Col>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <label style={{ fontSize: 13, fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              Канал
+            </label>
+            <Select
+              showSearch
+              allowClear
+              placeholder="Все каналы"
+              value={channelId}
+              onChange={onChannelChange}
+              onSearch={onSearchChannels}
+              filterOption={false}
+              size="large"
+              style={{ width: '100%' }}
+              options={channels.map(c => ({ value: c.id, label: c.name }))}
+            />
+          </div>
         )}
 
-        <Col flex="1" style={{ minWidth: 160 }}>
-          <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, fontWeight: 500, color: '#4a5a6e' }}>
-              <span>Чувствительность</span>
-              <span style={{ color: '#2a5298' }}>{confidence}%</span>
-            </div>
-            <Slider
-              min={80}
-              max={99}
-              value={confidence}
-              onChange={onConfidenceChange}
-              style={{ marginTop: 4 }}
-              trackStyle={{ background: 'linear-gradient(90deg, #4a90d9, #2a5298)' }}
-              railStyle={{ background: '#e8edf3' }}
-              handleStyle={{ borderColor: '#2a5298' }}
-            />
-          </div>
-        </Col>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <label style={{ fontSize: 13, fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+            Период
+          </label>
+          <DatePicker.RangePicker
+            value={[
+              dateRange[0] ? dayjs(dateRange[0]) : null,
+              dateRange[1] ? dayjs(dateRange[1]) : null,
+            ]}
+            onChange={(dates) => {
+              if (dates && dates[0] && dates[1]) {
+                onDateRangeChange([
+                  dates[0].startOf('day').toISOString(),
+                  dates[1].endOf('day').toISOString(),
+                ]);
+              }
+            }}
+            size="large"
+            style={{ width: '100%' }}
+          />
+        </div>
 
-        <Col>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 13, fontWeight: 500, color: '#4a5a6e', whiteSpace: 'nowrap' }}>
-              Глубина анализа:
-            </span>
-            <InputNumber
-              min={10}
-              max={100}
-              value={windowSize}
-              onChange={onWindowSizeChange}
-              size="middle"
-              style={{ width: 70 }}
-            />
-            <span style={{ fontSize: 12, color: '#6b7a8f', whiteSpace: 'nowrap' }}>
-              точек
-            </span>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <label style={{ fontSize: 13, fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              Чувствительность
+            </label>
+            <span style={{ color: '#1890ff', fontWeight: 600, fontSize: 14 }}>{confidence}%</span>
           </div>
-        </Col>
+          <Slider
+            min={80}
+            max={99}
+            value={confidence}
+            onChange={onConfidenceChange}
+            style={{ margin: '12px 8px' }}
+            trackStyle={{ background: '#1890ff' }}
+            handleStyle={{ borderColor: '#1890ff' }}
+          />
+        </div>
 
-        <Col>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 13, fontWeight: 500, color: '#4a5a6e', whiteSpace: 'nowrap' }}>
-              Период:
-            </span>
-            <DatePicker.RangePicker
-              value={[
-                dateRange[0] ? dayjs(dateRange[0]) : null,
-                dateRange[1] ? dayjs(dateRange[1]) : null,
-              ]}
-              onChange={(dates) => {
-                if (dates && dates[0] && dates[1]) {
-                  onDateRangeChange([
-                    dates[0].startOf('day').toISOString(),
-                    dates[1].endOf('day').toISOString(),
-                  ]);
-                }
-              }}
-              size="middle"
-              style={{ minWidth: 220 }}
-            />
-          </div>
-        </Col>
-
-        <Col>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <label style={{ fontSize: 13, fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+            Глубина (точек)
+          </label>
+          <InputNumber
+            min={10}
+            max={100}
+            value={windowSize}
+            onChange={onWindowSizeChange}
+            size="large"
+            style={{ width: '100%' }}
+          />
+        </div>
+        
+        <div style={{ display: 'flex', alignItems: 'flex-end', gridColumn: '1 / -1', marginTop: '12px' }}>
           <Button
             type="primary"
             onClick={onAnalyze}
             loading={loading}
-            size="middle"
+            size="large"
             icon={<SearchOutlined />}
             style={{
-              background: 'linear-gradient(135deg, #2a5298 0%, #1a3a6b 100%)',
+              width: '100%',
+              background: 'linear-gradient(135deg, #1890ff 0%, #0958d9 100%)',
               border: 'none',
               borderRadius: 8,
-              height: 40,
-              fontWeight: 500,
-              boxShadow: '0 2px 8px rgba(42, 82, 152, 0.25)',
+              height: 48,
+              fontSize: 16,
+              fontWeight: 600,
+              boxShadow: '0 4px 12px rgba(24, 144, 255, 0.3)',
             }}
           >
-            {loading ? 'Анализируем...' : 'Анализировать'}
+            {loading ? 'Анализируем данные...' : 'Анализировать'}
           </Button>
-        </Col>
-      </Row>
+        </div>
+      </div>
     </div>
   );
 };
