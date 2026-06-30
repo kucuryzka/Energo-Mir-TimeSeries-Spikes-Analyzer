@@ -72,6 +72,14 @@ public class AnalyticsController : ControllerBase
             {
                 return BadRequest("StartDate must be before EndDate.");
             }
+            if (request.Confidence <= 0 || request.Confidence >= 100)
+            {
+                return BadRequest("Confidence must be greater than 0 and less than 100 (e.g. 95).");
+            }
+            if (request.WindowSize < 2)
+            {
+                return BadRequest("WindowSize must be at least 2 for sliding window analysis.");
+            }
 
             var maxDateRange = TimeSpan.FromDays(90);
             if (request.EndDate - request.StartDate > maxDateRange)
