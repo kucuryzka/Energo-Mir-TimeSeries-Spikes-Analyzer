@@ -82,15 +82,21 @@ public class AnalyticsController : ControllerBase
                 return BadRequest("WindowSize must be at least 2 for sliding window analysis.");
             }
 
+            var maxDateRange = TimeSpan.FromDays(547); // 1.5 years
+            if (request.EndDate - request.StartDate > maxDateRange)
+            {
+                return BadRequest("Date range cannot exceed 1.5 years.");
+            }
+
             var dateAddExpr = request.Granularity switch
             {
-                TimeGranularity.Minute => "DATEADD(minute, DATEDIFF(minute, 0, EventTime), 0)",
-                TimeGranularity.Hour => "DATEADD(hour, DATEDIFF(hour, 0, EventTime), 0)",
-                TimeGranularity.Day => "DATEADD(day, DATEDIFF(day, 0, EventTime), 0)",
-                TimeGranularity.Week => "DATEADD(week, DATEDIFF(week, 0, EventTime), 0)",
-                TimeGranularity.Month => "DATEADD(month, DATEDIFF(month, 0, EventTime), 0)",
-                TimeGranularity.Custom => $"DATEADD(minute, (DATEDIFF(minute, 0, EventTime) / {(request.CustomMinutes ?? 60)}) * {(request.CustomMinutes ?? 60)}, 0)",
-                _ => "DATEADD(hour, DATEDIFF(hour, 0, EventTime), 0)"
+                TimeGranularity.Minute => "DATEADD(minute, DATEDIFF(minute, 0, InsertTime), 0)",
+                TimeGranularity.Hour => "DATEADD(hour, DATEDIFF(hour, 0, InsertTime), 0)",
+                TimeGranularity.Day => "DATEADD(day, DATEDIFF(day, 0, InsertTime), 0)",
+                TimeGranularity.Week => "DATEADD(week, DATEDIFF(week, 0, InsertTime), 0)",
+                TimeGranularity.Month => "DATEADD(month, DATEDIFF(month, 0, InsertTime), 0)",
+                TimeGranularity.Custom => $"DATEADD(minute, (DATEDIFF(minute, 0, InsertTime) / {(request.CustomMinutes ?? 60)}) * {(request.CustomMinutes ?? 60)}, 0)",
+                _ => "DATEADD(hour, DATEDIFF(hour, 0, InsertTime), 0)"
             };
 
             var channelFilter = (request.ChannelId.HasValue && request.ChannelId.Value > 0) 
@@ -103,7 +109,7 @@ public class AnalyticsController : ControllerBase
                     COUNT(*) as Value,
                     ChannelId
                 FROM em_protocol.Records
-                WHERE EventTime >= @p0 AND EventTime <= @p1 {channelFilter}
+                WHERE InsertTime >= @p0 AND InsertTime <= @p1 {channelFilter}
                 GROUP BY {dateAddExpr}, ChannelId
                 ORDER BY Timestamp";
 
