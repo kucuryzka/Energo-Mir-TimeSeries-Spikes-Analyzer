@@ -57,9 +57,10 @@ export const DistributionChart: React.FC<Props> = ({ data, title }) => {
 
   return (
     <Card 
-      title={<Title level={5} style={{ margin: 0 }}>{title}</Title>} 
+      title={<Title level={5} style={{ margin: 0, color: '#0f172a' }}>{title}</Title>} 
       bordered={false}
-      style={{ height: '100%', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', borderRadius: 12 }}
+      className="dashboard-card"
+      style={{ height: '100%', padding: 0 }}
     >
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '24px' }}>
         {/* Диаграмма */}
@@ -83,9 +84,10 @@ export const DistributionChart: React.FC<Props> = ({ data, title }) => {
               </Pie>
               <Tooltip 
                 formatter={(value: any) => [Number(value).toLocaleString('ru-RU'), 'Количество']}
-                contentStyle={{ borderRadius: 8 }}
+                contentStyle={{ borderRadius: 8, backgroundColor: '#ffffff', border: '1px solid #e2e8f0', color: '#0f172a' }}
+                itemStyle={{ color: '#0f172a' }}
               />
-              <Legend verticalAlign="bottom" height={36}/>
+              <Legend verticalAlign="bottom" height={36} wrapperStyle={{ color: '#64748b' }}/>
             </PieChart>
           </ResponsiveContainer>
         </div>
