@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef, useEffect } from 'react';
 import ReactECharts from 'echarts-for-react';
 import type { SpikePoint } from '../../types/analytics.types';
 import dayjs from 'dayjs';
@@ -10,6 +10,36 @@ interface Props {
 }
 
 export const SpikeChart: React.FC<Props> = ({ data, showMarkers = true, onPointClick }) => {
+  const chartRef = useRef<ReactECharts>(null);
+
+  useEffect(() => {
+    if (!chartRef.current) return;
+    const echartsInstance = chartRef.current.getEchartsInstance();
+    const zr = echartsInstance.getZr();
+
+    const handleClick = (params: any) => {
+      const pointInPixel = [params.offsetX, params.offsetY];
+      if (echartsInstance.containPixel('grid', pointInPixel)) {
+        const pointInGrid = echartsInstance.convertFromPixel({ seriesIndex: 0 }, pointInPixel);
+        if (pointInGrid && pointInGrid.length > 0) {
+          // xAxis is category axis, so pointInGrid[0] is the index
+          const xIndex = Math.round(pointInGrid[0]);
+          if (xIndex >= 0 && xIndex < data.length) {
+            const dataPoint = data[xIndex];
+            if (dataPoint && onPointClick) {
+              onPointClick(dataPoint);
+            }
+          }
+        }
+      }
+    };
+
+    zr.on('click', handleClick);
+    return () => {
+      zr.off('click', handleClick);
+    };
+  }, [data, onPointClick]);
+
   const option = useMemo(() => {
     const timestamps = data.map(d => d.timestamp);
     const values = data.map(d => d.value);
@@ -180,6 +210,7 @@ export const SpikeChart: React.FC<Props> = ({ data, showMarkers = true, onPointC
 
   return (
     <ReactECharts
+      ref={chartRef}
       option={option}
       style={{ height: 480, width: '100%' }}
       opts={{ renderer: 'canvas' }}

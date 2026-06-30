@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Spin, Alert, message, Switch, Drawer, Table, Typography } from 'antd';
+import { Spin, Alert, message, Switch, Drawer, Table, Typography, Tabs } from 'antd';
 import { LoadingOutlined } from '@ant-design/icons';
 import { SpikeChart } from '../Chart/SpikeChart';
 import { DistributionChart } from '../Chart/DistributionChart';
@@ -351,60 +351,75 @@ export const Dashboard: React.FC = () => {
               </div>
             </div>
 
-            <Title level={5} style={{ marginTop: 24, marginBottom: 16 }}>Источники</Title>
-            <Table
-              dataSource={
-                Object.entries(
-                  (selectedPoint.channelBreakdown || []).reduce((acc, curr) => {
-                    const match = curr.channelName.match(/^(.*?)\s*\((.*?)\)$/);
-                    const source = match ? match[1].trim() : curr.channelName;
-                    acc[source] = (acc[source] || 0) + curr.count;
-                    return acc;
-                  }, {} as Record<string, number>)
-                ).map(([name, count]) => ({ name, count }))
-              }
-              rowKey="name"
-              size="small"
-              pagination={false}
-              columns={[
-                { title: 'Источник', dataIndex: 'name', key: 'name' },
-                { 
-                  title: 'Кол-во', 
-                  dataIndex: 'count', 
-                  key: 'count',
-                  render: (val: number) => val.toLocaleString('ru-RU'),
-                  sorter: (a: any, b: any) => a.count - b.count,
-                  defaultSortOrder: 'descend',
-                }
-              ]}
-            />
-
-            <Title level={5} style={{ marginTop: 24, marginBottom: 16 }}>Коды событий</Title>
-            <Table
-              dataSource={
-                Object.entries(
-                  (selectedPoint.channelBreakdown || []).reduce((acc, curr) => {
-                    const match = curr.channelName.match(/^(.*?)\s*\((.*?)\)$/);
-                    if (match) {
-                      const code = match[2].trim();
-                      acc[code] = (acc[code] || 0) + curr.count;
-                    }
-                    return acc;
-                  }, {} as Record<string, number>)
-                ).map(([code, count]) => ({ code, count }))
-              }
-              rowKey="code"
-              size="small"
-              pagination={false}
-              columns={[
-                { title: 'Код', dataIndex: 'code', key: 'code' },
-                { 
-                  title: 'Кол-во', 
-                  dataIndex: 'count', 
-                  key: 'count',
-                  render: (val: number) => val.toLocaleString('ru-RU'),
-                  sorter: (a: any, b: any) => a.count - b.count,
-                  defaultSortOrder: 'descend',
+            <Tabs 
+              defaultActiveKey="sources" 
+              style={{ marginTop: 24 }}
+              items={[
+                {
+                  key: 'sources',
+                  label: 'Источники',
+                  children: (
+                    <Table
+                      dataSource={
+                        Object.entries(
+                          (selectedPoint.channelBreakdown || []).reduce((acc, curr) => {
+                            const match = curr.channelName.match(/^(.*?)\s*\((.*?)\)$/);
+                            const source = match ? match[1].trim() : curr.channelName;
+                            acc[source] = (acc[source] || 0) + curr.count;
+                            return acc;
+                          }, {} as Record<string, number>)
+                        ).map(([name, count]) => ({ name, count }))
+                      }
+                      rowKey="name"
+                      size="small"
+                      pagination={false}
+                      columns={[
+                        { title: 'Источник', dataIndex: 'name', key: 'name' },
+                        { 
+                          title: 'Кол-во', 
+                          dataIndex: 'count', 
+                          key: 'count',
+                          render: (val: number) => val.toLocaleString('ru-RU'),
+                          sorter: (a: any, b: any) => a.count - b.count,
+                          defaultSortOrder: 'descend',
+                        }
+                      ]}
+                    />
+                  )
+                },
+                {
+                  key: 'events',
+                  label: 'Коды событий',
+                  children: (
+                    <Table
+                      dataSource={
+                        Object.entries(
+                          (selectedPoint.channelBreakdown || []).reduce((acc, curr) => {
+                            const match = curr.channelName.match(/^(.*?)\s*\((.*?)\)$/);
+                            if (match) {
+                              const code = match[2].trim();
+                              acc[code] = (acc[code] || 0) + curr.count;
+                            }
+                            return acc;
+                          }, {} as Record<string, number>)
+                        ).map(([code, count]) => ({ code, count }))
+                      }
+                      rowKey="code"
+                      size="small"
+                      pagination={false}
+                      columns={[
+                        { title: 'Код', dataIndex: 'code', key: 'code' },
+                        { 
+                          title: 'Кол-во', 
+                          dataIndex: 'count', 
+                          key: 'count',
+                          render: (val: number) => val.toLocaleString('ru-RU'),
+                          sorter: (a: any, b: any) => a.count - b.count,
+                          defaultSortOrder: 'descend',
+                        }
+                      ]}
+                    />
+                  )
                 }
               ]}
             />
