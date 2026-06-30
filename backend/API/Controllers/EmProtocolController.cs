@@ -10,33 +10,23 @@ using API.DataSources;
 namespace API.Controllers;
 
 [ApiController]
-[Route("api/[controller]")]
-public class AnalyticsController : ControllerBase
+[Route("api/em-protocol")]
+public class EmProtocolController : ControllerBase
 {
-    private readonly IEnumerable<IDataSourceStrategy> _dataSourceStrategies;
+    private readonly EmProtocolDataSource _dataSource;
     private readonly ISpikeDetectionService _spikeDetectionService;
 
-    public AnalyticsController(
+    public EmProtocolController(
         IEnumerable<IDataSourceStrategy> dataSourceStrategies,
         ISpikeDetectionService spikeDetectionService)
     {
-        _dataSourceStrategies = dataSourceStrategies;
+        _dataSource = dataSourceStrategies.OfType<EmProtocolDataSource>().FirstOrDefault() 
+            ?? throw new Exception("EmProtocolDataSource not registered.");
         _spikeDetectionService = spikeDetectionService;
     }
 
-    [HttpGet("sources")]
-    public IActionResult GetSources()
-    {
-        var sources = _dataSourceStrategies.Select(s => new { 
-            Id = s.Id, 
-            Name = s.Name,
-            SupportedDistributions = s.SupportedDistributions 
-        }).ToList();
-        return Ok(sources);
-    }
-
     [HttpGet("channels")]
-    public async Task<IActionResult> GetChannels([FromQuery] string sourceId, [FromQuery] string? search, [FromQuery] int page = 1, [FromQuery] int pageSize = 50)
+    public async Task<IActionResult> GetChannels([FromQuery] string? search, [FromQuery] int page = 1, [FromQuery] int pageSize = 50)
     {
         try
         {
@@ -44,17 +34,8 @@ public class AnalyticsController : ControllerBase
             if (pageSize < 1) pageSize = 1;
             if (pageSize > 1000) pageSize = 1000;
 
-            var strategy = _dataSourceStrategies.FirstOrDefault(s => s.Id == sourceId);
-            if (strategy == null)
-                return BadRequest("Invalid sourceId");
-
-            if (strategy is ISupportsChannels channelStrategy)
-            {
-                var channels = await channelStrategy.GetChannelsAsync(search, page, pageSize);
-                return Ok(channels);
-            }
-            
-            return Ok(new List<ChannelDto>());
+            var channels = await _dataSource.GetChannelsAsync(search, page, pageSize);
+            return Ok(channels);
         }
         catch (Exception ex)
         {
@@ -63,17 +44,13 @@ public class AnalyticsController : ControllerBase
     }
 
     [HttpGet("distribution")]
-    public async Task<IActionResult> GetDistribution([FromQuery] string sourceId, [FromQuery] DateTime startDate, [FromQuery] DateTime endDate, [FromQuery] string categoryName)
+    public async Task<IActionResult> GetDistribution([FromQuery] DateTime startDate, [FromQuery] DateTime endDate, [FromQuery] string categoryName)
     {
         try
         {
-            var strategy = _dataSourceStrategies.FirstOrDefault(s => s.Id == sourceId);
-            if (strategy == null)
-                return BadRequest("Invalid sourceId");
-
-            if (strategy is ISupportsDistribution distributionStrategy && strategy.SupportedDistributions.Contains(categoryName))
+            if (_dataSource.SupportedDistributions.Contains(categoryName))
             {
-                var distribution = await distributionStrategy.GetDistributionAsync(startDate, endDate, categoryName);
+                var distribution = await _dataSource.GetDistributionAsync(startDate, endDate, categoryName);
                 return Ok(distribution);
             }
             
@@ -91,33 +68,19 @@ public class AnalyticsController : ControllerBase
         try
         {
             if (request.StartDate >= request.EndDate)
-            {
                 return BadRequest("StartDate must be before EndDate.");
-            }
             if (request.Confidence <= 0 || request.Confidence >= 100)
-            {
                 return BadRequest("Confidence must be greater than 0 and less than 100 (e.g. 95).");
-            }
             if (request.WindowSize < 2)
-            {
                 return BadRequest("WindowSize must be at least 2 for sliding window analysis.");
-            }
 
             var maxDateRange = TimeSpan.FromDays(547); // 1.5 years
             if (request.EndDate - request.StartDate > maxDateRange)
-            {
                 return BadRequest("Date range cannot exceed 1.5 years.");
-            }
-
-            var strategy = _dataSourceStrategies.FirstOrDefault(s => s.Id == request.SourceId);
-            if (strategy == null)
-            {
-                return BadRequest("Invalid or missing SourceId.");
-            }
 
             // The strategy encapsulates all logic including DB querying, aggregation, 
             // spike detection calling, and channel naming.
-            var response = await strategy.ExecuteAnalysisAsync(request, _spikeDetectionService);
+            var response = await _dataSource.ExecuteAnalysisAsync(request, _spikeDetectionService);
 
             return Ok(response);
         }
