@@ -21,7 +21,7 @@ public class EmProtocolDataSource : IDataSourceStrategy, ISupportsChannels, ISup
     }
 
     public string Id => "em_protocol";
-    public string Name => "Протокол EM";
+    public string Name => "em_protocol";
     public string[] SupportedDistributions => new[] { "EventCode" };
 
     public async Task<List<ChannelDto>> GetChannelsAsync(string? search, int page, int pageSize)
