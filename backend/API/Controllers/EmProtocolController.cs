@@ -74,10 +74,6 @@ public class EmProtocolController : ControllerBase
             if (request.WindowSize < 2)
                 return BadRequest("WindowSize must be at least 2 for sliding window analysis.");
 
-            var maxDateRange = TimeSpan.FromDays(547); // 1.5 years
-            if (request.EndDate - request.StartDate > maxDateRange)
-                return BadRequest("Date range cannot exceed 1.5 years.");
-
             // The strategy encapsulates all logic including DB querying, aggregation, 
             // spike detection calling, and channel naming.
             var response = await _dataSource.ExecuteAnalysisAsync(request, _spikeDetectionService);

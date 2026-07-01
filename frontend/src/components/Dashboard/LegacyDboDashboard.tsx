@@ -367,7 +367,7 @@ export const LegacyDboDashboard: React.FC = () => {
                       }
                       rowKey="name"
                       size="small"
-                      pagination={false}
+                      pagination={{ pageSize: 10, showSizeChanger: true }}
                       columns={[
                         { title: 'Источник', dataIndex: 'name', key: 'name' },
                         { 
@@ -398,7 +398,7 @@ export const LegacyDboDashboard: React.FC = () => {
                       }
                       rowKey="code"
                       size="small"
-                      pagination={false}
+                      pagination={{ pageSize: 10, showSizeChanger: true }}
                       columns={[
                         { title: 'Код', dataIndex: 'code', key: 'code' },
                         { 
