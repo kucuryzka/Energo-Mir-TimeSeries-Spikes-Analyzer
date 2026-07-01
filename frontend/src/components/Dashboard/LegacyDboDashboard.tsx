@@ -80,9 +80,6 @@ export const LegacyDboDashboard: React.FC = () => {
 
 
 
-  useEffect(() => {
-    fetchData();
-  }, [granularity, customMinutes, confidence, windowSize, dateRange]);
 
   const initSources = async () => {
     try {
@@ -105,9 +102,9 @@ export const LegacyDboDashboard: React.FC = () => {
     if (sourceId) {
       setChannelId(null);
       setChannels([]);
-      fetchChannels();
-      fetchData();
+      setData(null);
       setDistributions({});
+      fetchChannels();
     }
   }, [sourceId]);
 

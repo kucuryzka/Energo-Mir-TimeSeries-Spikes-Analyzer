@@ -116,8 +116,9 @@ export const Dashboard: React.FC = () => {
     if (sourceId) {
       setChannelId(null);
       setChannels([]);
+      setData(null);
+      setDistributions({});
       fetchChannels();
-      fetchData();
     }
   }, [sourceId]); // Fetch on source change
 
