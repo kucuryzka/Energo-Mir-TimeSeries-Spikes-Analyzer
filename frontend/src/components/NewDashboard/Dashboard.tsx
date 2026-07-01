@@ -54,7 +54,7 @@ export const Dashboard: React.FC = () => {
     if (!sourceId) return;
     try {
       if (sourceId.toLowerCase() === 'dbo') {
-        const data = await analyticsApi.dbo.getChannels(search);
+        const data = await analyticsApi.dbo.getObjects(search);
         setChannels(data);
       } else {
         const data = await analyticsApi.emProtocol.getChannels(search);
@@ -136,6 +136,26 @@ export const Dashboard: React.FC = () => {
   const spikesOnly = data ? getSpikesOnly(data.series) : [];
   const stats = data ? getStatistics(data.series) : null;
 
+  const objectDistribution = React.useMemo(() => {
+    if (!data || !data.series) return [];
+    
+    const objCounts: Record<string, number> = {};
+    data.series.forEach((point: any) => {
+      if (point.channelBreakdown) {
+        point.channelBreakdown.forEach((cb: any) => {
+          const match = cb.channelName.match(/^(.*?)\s*\((.*?)\)$/);
+          const source = match ? match[1].trim() : cb.channelName;
+          objCounts[source] = (objCounts[source] || 0) + cb.count;
+        });
+      }
+    });
+
+    return Object.entries(objCounts).map(([category, count]) => ({
+      category,
+      count
+    })).sort((a, b) => b.count - a.count);
+  }, [data]);
+
   return (
     <DashboardLayout>
       <TopHeader />
@@ -187,14 +207,25 @@ export const Dashboard: React.FC = () => {
               </div>
             )}
 
-            {Object.keys(distributions).map(category => (
-              <div key={category} style={{ background: 'var(--bg-surface)', borderRadius: 30, padding: 24, width: '100%', boxShadow: '0 4px 15px rgba(0,0,0,0.05)' }}>
-                <DistributionChart 
-                  data={distributions[category]} 
-                  title={`Распределение по: ${category === 'EventCode' ? 'Код события (EventCode)' : category}`}
-                />
+            {(Object.keys(distributions).length > 0 || objectDistribution.length > 0) && (
+            <div className="distributions-container">
+              <Title level={4} style={{ marginTop: 24, marginBottom: 16 }}>Распределение</Title>
+              <div className="distributions-grid">
+                {objectDistribution.length > 0 && (
+                  <div className="distribution-card dashboard-card">
+                    <Title level={5} className="distribution-title">По объектам / каналам</Title>
+                    <DistributionChart data={objectDistribution} title="" />
+                  </div>
+                )}
+                {Object.entries(distributions).map(([category, items]) => (
+                  <div key={category} className="distribution-card dashboard-card">
+                    <Title level={5} className="distribution-title">{category}</Title>
+                    <DistributionChart data={items} title="" />
+                  </div>
+                ))}
               </div>
-            ))}
+            </div>
+          )}
           </div>
         </>
       )}

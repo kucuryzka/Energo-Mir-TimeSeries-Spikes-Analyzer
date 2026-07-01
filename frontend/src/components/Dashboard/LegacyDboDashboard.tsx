@@ -76,7 +76,7 @@ export const LegacyDboDashboard: React.FC = () => {
 
   const fetchChannels = async (search: string = '') => {
     try {
-      const data = await analyticsApi.dbo.getChannels(search);
+      const data = await analyticsApi.dbo.getObjects(search);
       setChannels(data);
     } catch (err) {
       console.error('Ошибка при загрузке каналов', err);
@@ -125,6 +125,26 @@ export const LegacyDboDashboard: React.FC = () => {
   const spikesOnly = data ? getSpikesOnly(data.series) : [];
   const stats = data ? getStatistics(data.series) : null;
 
+  const objectDistribution = React.useMemo(() => {
+    if (!data || !data.series) return [];
+    
+    const objCounts: Record<string, number> = {};
+    data.series.forEach((point: any) => {
+      if (point.channelBreakdown) {
+        point.channelBreakdown.forEach((cb: any) => {
+          const match = cb.channelName.match(/^(.*?)\s*\((.*?)\)$/);
+          const source = match ? match[1].trim() : cb.channelName;
+          objCounts[source] = (objCounts[source] || 0) + cb.count;
+        });
+      }
+    });
+
+    return Object.entries(objCounts).map(([category, count]) => ({
+      category,
+      count
+    })).sort((a, b) => b.count - a.count);
+  }, [data]);
+
   const antIcon = <LoadingOutlined style={{ fontSize: 32, color: '#2a5298' }} spin />;
 
   return (
@@ -148,7 +168,7 @@ export const LegacyDboDashboard: React.FC = () => {
             channelId={channelId}
             onChannelChange={setChannelId}
             channels={channels}
-            onSearchChannels={() => {}}
+            onSearchChannels={setChannelSearch}
             onAnalyze={fetchData}
             loading={loading}
           />
@@ -256,6 +276,15 @@ export const LegacyDboDashboard: React.FC = () => {
               {spikesOnly.length > 0 && (
                 <div className="dashboard-card" style={{ marginBottom: 24 }}>
                   <SpikeTable spikes={spikesOnly} />
+                </div>
+              )}
+
+              {objectDistribution.length > 0 && (
+                <div style={{ marginBottom: 24 }}>
+                  <DistributionChart 
+                    data={objectDistribution} 
+                    title="Распределение по объектам"
+                  />
                 </div>
               )}
 
