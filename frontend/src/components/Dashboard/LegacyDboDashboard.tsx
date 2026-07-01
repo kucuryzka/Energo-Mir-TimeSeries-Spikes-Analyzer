@@ -38,6 +38,28 @@ export const LegacyDboDashboard: React.FC = () => {
   const [showMarkers, setShowMarkers] = useState(true);
 
   const [selectedPoint, setSelectedPoint] = useState<SpikePoint | null>(null);
+  const [pointDetails, setPointDetails] = useState<any[]>([]);
+  const [loadingDetails, setLoadingDetails] = useState(false);
+
+  useEffect(() => {
+    if (selectedPoint) {
+      setLoadingDetails(true);
+      analyticsApi.dbo.getPointDetails(
+        selectedPoint.timestamp,
+        granularity,
+        granularity === 'Custom' ? customMinutes ?? undefined : undefined,
+        channelId ?? undefined
+      ).then(data => {
+        setPointDetails(data);
+      }).catch(err => {
+        console.error(err);
+      }).finally(() => {
+        setLoadingDetails(false);
+      });
+    } else {
+      setPointDetails([]);
+    }
+  }, [selectedPoint, granularity, customMinutes, channelId]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -391,6 +413,30 @@ export const LegacyDboDashboard: React.FC = () => {
                           sorter: (a: any, b: any) => a.count - b.count,
                           defaultSortOrder: 'descend',
                         }
+                      ]}
+                    />
+                  )
+                },
+                {
+                  key: 'info',
+                  label: 'Инфо',
+                  children: (
+                    <Table
+                      dataSource={pointDetails}
+                      rowKey={(record, index) => `${record.idobject}-${index}`}
+                      size="small"
+                      loading={loadingDetails}
+                      pagination={{ pageSize: 20 }}
+                      scroll={{ x: 'max-content' }}
+                      columns={[
+                        { title: 'IDOBJECT', dataIndex: 'idObject', key: 'idObject' },
+                        { title: 'Объект', dataIndex: 'objectName', key: 'objectName' },
+                        { title: 'IDOBJECT_AGGREGATE', dataIndex: 'idObjectAggregate', key: 'idObjectAggregate' },
+                        { title: 'IDOBJECT_AVERAGE', dataIndex: 'idObjectAverage', key: 'idObjectAverage' },
+                        { title: 'QUALITY', dataIndex: 'quality', key: 'quality' },
+                        { title: 'QUALITY_SOURCE', dataIndex: 'qualitySource', key: 'qualitySource' },
+                        { title: 'SOURCE', dataIndex: 'source', key: 'source' },
+                        { title: 'VALUE_METERING', dataIndex: 'valueMetering', key: 'valueMetering' }
                       ]}
                     />
                   )
