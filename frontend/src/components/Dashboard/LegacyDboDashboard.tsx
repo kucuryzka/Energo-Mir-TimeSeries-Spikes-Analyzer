@@ -64,28 +64,58 @@ export const LegacyDboDashboard: React.FC = () => {
   const fetchData = async () => {
     setLoading(true);
     setError(null);
+    setData(null);
 
     try {
-      const response = await analyticsApi.dbo.detectSpikes({
-        sourceId: 'Dbo',
-        channelId,
-        granularity,
-        customMinutes: granularity === 'Custom' ? customMinutes : null,
-        confidence,
-        windowSize: windowSize ?? 30,
-        startDate: dateRange[0],
-        endDate: dateRange[1],
-      });
-
-      setData(response);
+      const start = dayjs(dateRange[0]);
+      const end = dayjs(dateRange[1]);
+      const totalDays = end.diff(start, 'day');
       
+      let chunkSize = 1;
+      if (totalDays > 180) chunkSize = 30;
+      else if (totalDays > 60) chunkSize = 7;
+
+      let accumulatedSeries: any[] = [];
+      let currentStart = start;
+      let finalResponse: any = null;
+
+      while (currentStart.isBefore(end)) {
+        let chunkEnd = currentStart.add(chunkSize, 'day');
+        if (chunkEnd.isAfter(end)) chunkEnd = end;
+
+        const response = await analyticsApi.dbo.detectSpikes({
+          sourceId: 'Dbo',
+          channelId,
+          granularity,
+          customMinutes: granularity === 'Custom' ? customMinutes : null,
+          confidence,
+          windowSize: windowSize ?? 30,
+          startDate: currentStart.toISOString(),
+          endDate: chunkEnd.toISOString(),
+        });
+
+        accumulatedSeries = [...accumulatedSeries, ...response.series];
+        
+        finalResponse = {
+          ...response,
+          series: accumulatedSeries,
+        };
+
+        // Обновляем стейт сразу, чтобы график рисовался по мере загрузки
+        setData(finalResponse);
+
+        currentStart = chunkEnd;
+      }
+
       setDistributions({});
 
-      const spikes = response.series.filter(s => s.isSpike);
-      if (spikes.length > 0) {
-        message.warning(`Обнаружено ${spikes.length} аномалий`);
-      } else {
-        message.success('Аномалий не обнаружено');
+      if (finalResponse) {
+        const spikes = finalResponse.series.filter((s: any) => s.isSpike);
+        if (spikes.length > 0) {
+          message.warning(`Обнаружено ${spikes.length} аномалий`);
+        } else {
+          message.success('Аномалий не обнаружено');
+        }
       }
     } catch (err: any) {
       const errorText = err.response?.data?.message || err.response?.data || err.message || String(err);
