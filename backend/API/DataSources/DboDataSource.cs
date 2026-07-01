@@ -113,15 +113,51 @@ public class DboDataSource : IDataSourceStrategy
             "SELECT IDOBJECT as Id, OBJECT_NAME as Name FROM dbo.OBJECTS"
         );
         
-        if (!string.IsNullOrWhiteSpace(search))
+        var list = await query.ToListAsync();
+        
+        if (!string.IsNullOrEmpty(search))
         {
-            query = query.Where(c => c.Name.Contains(search));
+            var searchLower = search.ToLower();
+            list = list.Where(c => c.Name.ToLower().Contains(searchLower)).ToList();
         }
 
-        return await query
-            .OrderBy(c => c.Name)
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
+        return list.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+    }
+
+    public async Task<List<MeteringInfoDto>> GetPointDetailsAsync(DateTime timestamp, TimeGranularity granularity, int? customMinutes, int? channelId)
+    {
+        var endDate = granularity switch
+        {
+            TimeGranularity.Minute => timestamp.AddMinutes(1),
+            TimeGranularity.Hour => timestamp.AddHours(1),
+            TimeGranularity.Day => timestamp.AddDays(1),
+            TimeGranularity.Week => timestamp.AddDays(7),
+            TimeGranularity.Month => timestamp.AddMonths(1),
+            TimeGranularity.Custom => timestamp.AddMinutes(customMinutes ?? 60),
+            _ => timestamp.AddHours(1)
+        };
+
+        var sql = $@"
+            SELECT TOP 1000
+                m.IDOBJECT_AGGREGATE as IdObjectAggregate, 
+                m.IDOBJECT_AVERAGE as IdObjectAverage, 
+                m.QUALITY as Quality, 
+                m.QUALITY_SOURCE as QualitySource, 
+                m.[SOURCE] as Source, 
+                m.VALUE_METERING as ValueMetering,
+                m.IDOBJECT as IdObject,
+                o.OBJECT_NAME as ObjectName
+            FROM dbo.METERINGS m
+            LEFT JOIN dbo.OBJECTS o ON m.IDOBJECT = o.IDOBJECT
+            WHERE m.TIME_INSERT >= @p0 AND m.TIME_INSERT < @p1
+            {(channelId.HasValue ? "AND m.IDOBJECT = @p2" : "")}
+        ";
+
+        var parameters = new List<object> { timestamp, endDate };
+        if (channelId.HasValue) parameters.Add(channelId.Value);
+
+        return await _context.Database
+            .SqlQueryRaw<MeteringInfoDto>(sql, parameters.ToArray())
             .ToListAsync();
     }
 }

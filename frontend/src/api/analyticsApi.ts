@@ -47,6 +47,12 @@ export const analyticsApi = {
         params: { search, page, pageSize }
       });
       return response.data;
+    },
+    getPointDetails: async (timestamp: string, granularity: string, customMinutes?: number, channelId?: number): Promise<any[]> => {
+      const response = await axios.get<any[]>(`${API_BASE_URL}/api/dbo/point-details`, {
+        params: { timestamp, granularity, customMinutes, channelId }
+      });
+      return response.data;
     }
   }
 };

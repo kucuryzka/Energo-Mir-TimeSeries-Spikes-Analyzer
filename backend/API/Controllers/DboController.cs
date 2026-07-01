@@ -74,4 +74,18 @@ public class DboController : ControllerBase
             return StatusCode(500, new { message = "An error occurred during spike detection.", details = ex.Message });
         }
     }
+
+    [HttpGet("point-details")]
+    public async Task<IActionResult> GetPointDetails([FromQuery] DateTime timestamp, [FromQuery] Core.Enums.TimeGranularity granularity, [FromQuery] int? customMinutes, [FromQuery] int? channelId)
+    {
+        try
+        {
+            var details = await _dataSource.GetPointDetailsAsync(timestamp, granularity, customMinutes, channelId);
+            return Ok(details);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { message = "An error occurred while fetching point details.", details = ex.Message });
+        }
+    }
 }
