@@ -24,6 +24,7 @@ public class SpikeDetectionService : ISpikeDetectionService
                 Value = p.Value,
                 IsSpike = false,
                 PValue = 1.0
+                
             });
         }
 
