@@ -25,6 +25,24 @@ public class DboController : ControllerBase
         _spikeDetectionService = spikeDetectionService;
     }
 
+    [HttpGet("channels")]
+    public async Task<IActionResult> GetChannels([FromQuery] string? search, [FromQuery] int page = 1, [FromQuery] int pageSize = 50)
+    {
+        try
+        {
+            if (page < 1) page = 1;
+            if (pageSize < 1) pageSize = 1;
+            if (pageSize > 1000) pageSize = 1000;
+
+            var channels = await _dataSource.GetChannelsAsync(search, page, pageSize);
+            return Ok(channels);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { message = "An error occurred while fetching channels.", details = ex.Message });
+        }
+    }
+
     [HttpPost("detect-spikes")]
     public async Task<IActionResult> DetectSpikes([FromBody] DetectSpikesRequest request)
     {

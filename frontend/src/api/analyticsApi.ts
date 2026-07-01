@@ -41,6 +41,12 @@ export const analyticsApi = {
         headers: { 'Content-Type': 'application/json' }
       });
       return response.data;
+    },
+    getChannels: async (search?: string, page: number = 1, pageSize: number = 50): Promise<ChannelDto[]> => {
+      const response = await axios.get<ChannelDto[]>(`${API_BASE_URL}/api/dbo/channels`, {
+        params: { search, page, pageSize }
+      });
+      return response.data;
     }
   }
 };

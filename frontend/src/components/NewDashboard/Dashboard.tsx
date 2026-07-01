@@ -51,13 +51,15 @@ export const Dashboard: React.FC = () => {
   };
 
   const fetchChannels = async (search: string = '') => {
-    if (sourceId.toLowerCase() !== 'emprotocol' && sourceId.toLowerCase() !== 'em_protocol') {
-      setChannels([]);
-      return;
-    }
+    if (!sourceId) return;
     try {
-      const data = await analyticsApi.emProtocol.getChannels(search);
-      setChannels(data);
+      if (sourceId.toLowerCase() === 'dbo') {
+        const data = await analyticsApi.dbo.getChannels(search);
+        setChannels(data);
+      } else {
+        const data = await analyticsApi.emProtocol.getChannels(search);
+        setChannels(data);
+      }
     } catch (err) {
       console.error('Ошибка при загрузке каналов', err);
     }
@@ -123,7 +125,7 @@ export const Dashboard: React.FC = () => {
   }, [sourceId]); // Fetch on source change
 
   useEffect(() => {
-    if (!sourceId || (sourceId.toLowerCase() !== 'emprotocol' && sourceId.toLowerCase() !== 'em_protocol')) return;
+    if (!sourceId) return;
     const timer = setTimeout(() => {
       fetchChannels(channelSearch);
     }, 500);

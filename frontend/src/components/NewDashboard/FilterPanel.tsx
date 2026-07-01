@@ -88,22 +88,20 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
           </div>
         </div>
         
-        {sourceId === 'em_protocol' && (
-          <div className="filter-item">
-            <label>Канал:</label>
-            <Select
-              showSearch
-              allowClear
-              placeholder="Все каналы"
-              value={channelId}
-              onChange={(val) => setChannelId(val)}
-              onSearch={onSearchChannels}
-              filterOption={false}
-              style={{ width: 180, height: 32 }}
-              options={channels.map(c => ({ value: c.id, label: c.name }))}
-            />
-          </div>
-        )}
+        <div className="filter-item">
+          <label>Канал/Объект:</label>
+          <Select
+            showSearch
+            allowClear
+            placeholder="Все элементы"
+            value={channelId}
+            onChange={(val) => setChannelId(val)}
+            onSearch={onSearchChannels}
+            filterOption={false}
+            style={{ width: 180, height: 32 }}
+            options={channels.map(c => ({ value: c.id, label: c.name }))}
+          />
+        </div>
         
         <div className="filter-item">
           <label>Период:</label>
