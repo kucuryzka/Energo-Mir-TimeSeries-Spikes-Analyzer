@@ -81,7 +81,7 @@ public class DboDataSource : IDataSourceStrategy
         {
             var idsString = string.Join(",", channelIds);
             var sql = $@"
-                SELECT IDOBJECT as Id, OBJECT_NAME as Name 
+                SELECT IDOBJECT as Id, OBJECT_NAME as Name, NULL as EventCode 
                 FROM dbo.OBJECTS 
                 WHERE IDOBJECT IN ({idsString})";
             

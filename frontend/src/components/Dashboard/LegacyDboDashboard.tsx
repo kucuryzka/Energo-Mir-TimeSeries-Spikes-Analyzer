@@ -31,7 +31,7 @@ export const LegacyDboDashboard: React.FC = () => {
     dayjs().endOf('day').toISOString(),
   ]);
 
-  const [sources, setSources] = useState<DataSourceDto[]>([]);
+  const [sources] = useState<DataSourceDto[]>([]);
   const [sourceId, setSourceId] = useState<string>('');
 
   const [distributions, setDistributions] = useState<Record<string, DistributionItemDto[]>>({});
@@ -359,8 +359,7 @@ export const LegacyDboDashboard: React.FC = () => {
                       dataSource={
                         Object.entries(
                           (selectedPoint.channelBreakdown || []).reduce((acc, curr) => {
-                            const match = curr.channelName.match(/^(.*?)\s*\((.*?)\)$/);
-                            const source = match ? match[1].trim() : curr.channelName;
+                            const source = curr.channelName;
                             acc[source] = (acc[source] || 0) + curr.count;
                             return acc;
                           }, {} as Record<string, number>)
@@ -391,11 +390,8 @@ export const LegacyDboDashboard: React.FC = () => {
                       dataSource={
                         Object.entries(
                           (selectedPoint.channelBreakdown || []).reduce((acc, curr) => {
-                            const match = curr.channelName.match(/^(.*?)\s*\((.*?)\)$/);
-                            if (match) {
-                              const code = match[2].trim();
-                              acc[code] = (acc[code] || 0) + curr.count;
-                            }
+                            const code = curr.eventCode || 'Неизвестный код';
+                            acc[code] = (acc[code] || 0) + curr.count;
                             return acc;
                           }, {} as Record<string, number>)
                         ).map(([code, count]) => ({ code, count }))

@@ -21,5 +21,6 @@ public class ChannelContributionDto
 {
     public int ChannelId { get; set; }
     public string ChannelName { get; set; } = string.Empty;
+    public string? EventCode { get; set; }
     public int Count { get; set; }
 }

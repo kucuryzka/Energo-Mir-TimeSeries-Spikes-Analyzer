@@ -27,7 +27,7 @@ public class EmProtocolDataSource : IDataSourceStrategy, ISupportsChannels, ISup
     public async Task<List<ChannelDto>> GetChannelsAsync(string? search, int page, int pageSize)
     {
         var sql = @"
-            SELECT c.Id, CONCAT(o.OBJECT_NAME, ' (', c.EventCode, ')') as Name
+            SELECT c.Id, CONCAT(o.OBJECT_NAME, ' (', c.EventCode, ')') as Name, CAST(c.EventCode as NVARCHAR(100)) as EventCode
             FROM em_protocol.Channels c
             JOIN dbo.OBJECTS o ON c.ObjectId = o.IDGLOBAL";
         
@@ -96,18 +96,18 @@ public class EmProtocolDataSource : IDataSourceStrategy, ISupportsChannels, ISup
             .Distinct()
             .ToList();
 
-        var channelNames = new Dictionary<int, string>();
+        var channelInfos = new Dictionary<int, ChannelDto>();
         if (channelIds.Any())
         {
             var idsString = string.Join(",", channelIds);
             var sql = $@"
-                SELECT c.Id, CONCAT(o.OBJECT_NAME, ' (', c.EventCode, ')') as Name
+                SELECT c.Id, o.OBJECT_NAME as Name, CAST(c.EventCode as NVARCHAR(100)) as EventCode
                 FROM em_protocol.Channels c
                 JOIN dbo.OBJECTS o ON c.ObjectId = o.IDGLOBAL
                 WHERE c.Id IN ({idsString})";
             
             var dbChannels = await _context.Database.SqlQueryRaw<ChannelDto>(sql).ToListAsync();
-            channelNames = dbChannels.ToDictionary(c => c.Id, c => c.Name);
+            channelInfos = dbChannels.ToDictionary(c => c.Id, c => c);
         }
 
         return new SpikeResponse
@@ -119,11 +119,16 @@ public class EmProtocolDataSource : IDataSourceStrategy, ISupportsChannels, ISup
                 IsSpike = r.IsSpike,
                 PValue = r.PValue,
                 ChannelBreakdown = r.ChannelBreakdown
-                    .Select(kvp => new ChannelContributionDto
+                    .Select(kvp => 
                     {
-                        ChannelId = kvp.Key,
-                        ChannelName = channelNames.GetValueOrDefault(kvp.Key, "Неизвестный канал"),
-                        Count = kvp.Value
+                        var info = channelInfos.GetValueOrDefault(kvp.Key);
+                        return new ChannelContributionDto
+                        {
+                            ChannelId = kvp.Key,
+                            ChannelName = info?.Name ?? "Неизвестный канал",
+                            EventCode = info?.EventCode,
+                            Count = kvp.Value
+                        };
                     })
                     .OrderByDescending(c => c.Count)
                     .ToList()

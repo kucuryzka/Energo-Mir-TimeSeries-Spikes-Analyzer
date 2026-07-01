@@ -38,6 +38,7 @@ export interface AnomalyResultDto {
 export interface ChannelContributionDto {
   channelId: number;
   channelName: string;
+  eventCode?: string;
   count: number;
 }
 
