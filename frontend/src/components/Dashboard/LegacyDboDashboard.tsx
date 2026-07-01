@@ -223,8 +223,13 @@ export const LegacyDboDashboard: React.FC = () => {
           />
         )}
 
-        <Spin spinning={loading} indicator={antIcon}>
-          {enrichedData.length > 0 && stats && (
+        {!data && loading && !error && (
+          <div style={{ display: 'flex', justifyContent: 'center', padding: '60px 20px' }}>
+            <Spin indicator={antIcon} />
+          </div>
+        )}
+
+        {enrichedData.length > 0 && stats && (
             <>
               <div className="stat-grid">
                 <div className="stat-item">
@@ -339,14 +344,13 @@ export const LegacyDboDashboard: React.FC = () => {
             </>
           )}
 
-          {!loading && !data && !error && (
+          {!data && !loading && !error && (
             <div className="dashboard-card" style={{ textAlign: 'center', padding: '60px 20px' }}>
               <div style={{ fontSize: 48, marginBottom: 16 }}></div>
               <h3 style={{ color: '#1a2332', marginBottom: 8 }}>Нет данных для отображения</h3>
               <p style={{ color: '#6b7a8f' }}>Настройте параметры и нажмите «Анализировать»</p>
             </div>
           )}
-        </Spin>
       </main>
 
       <Drawer
