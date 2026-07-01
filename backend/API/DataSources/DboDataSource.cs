@@ -21,7 +21,7 @@ public class DboDataSource : IDataSourceStrategy
     }
 
     public string Id => "Dbo";
-    public string Name => "Дбо";
+    public string Name => "dbo";
     public string[] SupportedDistributions => new string[] { };
 
     public async Task<SpikeResponse> ExecuteAnalysisAsync(DetectSpikesRequest request, ISpikeDetectionService spikeDetectionService)
