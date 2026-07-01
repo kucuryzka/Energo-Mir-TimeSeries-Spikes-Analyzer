@@ -94,21 +94,9 @@ export const LegacyDboDashboard: React.FC = () => {
 
 
 
-  const initSources = async () => {
-    try {
-      const data = await analyticsApi.getSources();
-      setSources(data);
-      if (data.length > 0) {
-        setSourceId(data[0].id);
-      }
-    } catch (err) {
-      console.error('Ошибка при загрузке источников', err);
-      setError('Не удалось загрузить источники данных.');
-    }
-  };
-
   useEffect(() => {
-    initSources();
+    // This is the DBO dashboard, so we hardcode the sourceId
+    setSourceId('Dbo');
   }, []);
 
   useEffect(() => {
