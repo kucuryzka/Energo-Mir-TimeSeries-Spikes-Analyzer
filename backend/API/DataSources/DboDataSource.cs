@@ -71,6 +71,24 @@ public class DboDataSource : IDataSourceStrategy
             request.Confidence,
             request.WindowSize);
 
+        var channelIds = anomalyResults
+            .SelectMany(r => r.ChannelBreakdown.Keys)
+            .Distinct()
+            .ToList();
+
+        var channelNames = new Dictionary<int, string>();
+        if (channelIds.Any())
+        {
+            var idsString = string.Join(",", channelIds);
+            var sql = $@"
+                SELECT IDOBJECT as Id, OBJECT_NAME as Name 
+                FROM dbo.OBJECTS 
+                WHERE IDOBJECT IN ({idsString})";
+            
+            var dbChannels = await _context.Database.SqlQueryRaw<ChannelDto>(sql).ToListAsync();
+            channelNames = dbChannels.ToDictionary(c => c.Id, c => c.Name);
+        }
+
         return new SpikeResponse
         {
             Series = anomalyResults.Select(r => new AnomalyResultDto
@@ -79,13 +97,19 @@ public class DboDataSource : IDataSourceStrategy
                 Value = r.Value,
                 IsSpike = r.IsSpike,
                 PValue = r.PValue,
+                ChannelBreakdown = r.ChannelBreakdown.Select(cb => new ChannelContributionDto
+                {
+                    ChannelId = cb.Key,
+                    ChannelName = channelNames.TryGetValue(cb.Key, out var name) ? name : $"Объект {cb.Key}",
+                    Count = cb.Value
+                }).ToList()
             }).ToList()
         };
     }
 
-    public async Task<List<ChannelDto>> GetChannelsAsync(string? search, int page = 1, int pageSize = 50)
+    public async Task<List<ObjectDto>> GetObjectsAsync(string? search, int page = 1, int pageSize = 50)
     {
-        var query = _context.Database.SqlQueryRaw<ChannelDto>(
+        var query = _context.Database.SqlQueryRaw<ObjectDto>(
             "SELECT IDOBJECT as Id, OBJECT_NAME as Name FROM dbo.OBJECTS"
         );
         
