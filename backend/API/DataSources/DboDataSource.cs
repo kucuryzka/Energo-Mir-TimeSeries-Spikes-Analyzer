@@ -28,6 +28,7 @@ public class DboDataSource : IDataSourceStrategy
     {
         var dateAddExpr = request.Granularity switch
         {
+            TimeGranularity.Second => "DATEADD(second, DATEDIFF(second, '2000-01-01', TIME_INSERT), '2000-01-01')",
             TimeGranularity.Minute => "DATEADD(minute, DATEDIFF(minute, 0, TIME_INSERT), 0)",
             TimeGranularity.Hour => "DATEADD(hour, DATEDIFF(hour, 0, TIME_INSERT), 0)",
             TimeGranularity.Day => "DATEADD(day, DATEDIFF(day, 0, TIME_INSERT), 0)",
@@ -43,17 +44,30 @@ public class DboDataSource : IDataSourceStrategy
                 COUNT(*) as Value,
                 m.IDOBJECT as ChannelId
             FROM dbo.METERINGS m
-            WHERE m.TIME_INSERT >= @p0 AND m.TIME_INSERT <= @p1
+            WHERE m.TIME_INSERT >= @p0 AND m.TIME_INSERT < @p1
             {(request.ChannelId.HasValue ? "AND m.IDOBJECT = @p2" : "")}
             GROUP BY {dateAddExpr}, m.IDOBJECT
             ORDER BY Timestamp";
 
-        var parameters = new List<object> { request.StartDate, request.EndDate };
-        if (request.ChannelId.HasValue) parameters.Add(request.ChannelId.Value);
+        var rawAggregates = new List<AggregatedResult>();
+        var currentStart = request.StartDate;
 
-        var rawAggregates = await _context.Database
-            .SqlQueryRaw<AggregatedResult>(sqlAggregate, parameters.ToArray())
-            .ToListAsync();
+        while (currentStart < request.EndDate)
+        {
+            var currentEnd = currentStart.AddDays(1);
+            if (currentEnd > request.EndDate) currentEnd = request.EndDate;
+
+            var parameters = new List<object> { currentStart, currentEnd };
+            if (request.ChannelId.HasValue) parameters.Add(request.ChannelId.Value);
+
+            var batchAggregates = await _context.Database
+                .SqlQueryRaw<AggregatedResult>(sqlAggregate, parameters.ToArray())
+                .ToListAsync();
+
+            rawAggregates.AddRange(batchAggregates);
+
+            currentStart = currentEnd;
+        }
 
         var groupedSeries = rawAggregates
             .GroupBy(a => a.Timestamp)
@@ -79,14 +93,22 @@ public class DboDataSource : IDataSourceStrategy
         var channelNames = new Dictionary<int, string>();
         if (channelIds.Any())
         {
-            var idsString = string.Join(",", channelIds);
-            var sql = $@"
-                SELECT IDOBJECT as Id, OBJECT_NAME as Name, NULL as EventCode 
-                FROM dbo.OBJECTS 
-                WHERE IDOBJECT IN ({idsString})";
-            
-            var dbChannels = await _context.Database.SqlQueryRaw<ChannelDto>(sql).ToListAsync();
-            channelNames = dbChannels.ToDictionary(c => c.Id, c => c.Name);
+            var chunkSize = 1000;
+            for (int i = 0; i < channelIds.Count; i += chunkSize)
+            {
+                var chunk = channelIds.Skip(i).Take(chunkSize);
+                var idsString = string.Join(",", chunk);
+                var sql = $@"
+                    SELECT IDOBJECT as Id, OBJECT_NAME as Name, NULL as EventCode 
+                    FROM dbo.OBJECTS 
+                    WHERE IDOBJECT IN ({idsString})";
+                
+                var dbChannels = await _context.Database.SqlQueryRaw<ChannelDto>(sql).ToListAsync();
+                foreach (var c in dbChannels)
+                {
+                    channelNames[c.Id] = c.Name;
+                }
+            }
         }
 
         return new SpikeResponse

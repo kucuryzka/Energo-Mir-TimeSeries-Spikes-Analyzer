@@ -61,6 +61,7 @@ export const ControlsPanel: React.FC<Props> = ({
               size="large"
               style={{ flex: 1 }}
               options={[
+                { value: 'Second', label: 'Посекундно' },
                 { value: 'Minute', label: 'Поминутно' },
                 { value: 'Hour', label: 'Почасово' },
                 { value: 'Day', label: 'Посуточно' },
