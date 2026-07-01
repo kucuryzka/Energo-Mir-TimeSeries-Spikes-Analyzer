@@ -426,7 +426,7 @@ export const LegacyDboDashboard: React.FC = () => {
                       rowKey={(record, index) => `${record.idobject}-${index}`}
                       size="small"
                       loading={loadingDetails}
-                      pagination={{ pageSize: 20 }}
+                      pagination={{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }}
                       scroll={{ x: 'max-content' }}
                       columns={[
                         { title: 'IDOBJECT', dataIndex: 'idObject', key: 'idObject' },
