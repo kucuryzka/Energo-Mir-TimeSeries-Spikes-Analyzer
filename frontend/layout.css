@@ -1,0 +1,1427 @@
+/* Desktop - 2 */
+
+position: relative;
+width: 1440px;
+height: 1024px;
+
+background: #FCFAF7;
+
+
+/* Rectangle 3 */
+
+position: absolute;
+width: 85px;
+height: 984px;
+left: 20px;
+top: 20px;
+
+background: linear-gradient(180deg, #E4E0D5 0%, #CCE6FF 100%);
+border-radius: 30px;
+
+
+/* image-Photoroom 2 */
+
+position: absolute;
+width: 85px;
+height: 984px;
+left: 20px;
+top: 20px;
+
+background: url(image-Photoroom.png);
+
+
+/* Line 6 */
+
+position: absolute;
+width: 1282px;
+height: 0px;
+left: 138px;
+top: 109px;
+
+border: 1px solid #DDDDDD;
+
+
+/* Детектор аномалий */
+
+position: absolute;
+width: 421px;
+height: 46px;
+left: 138px;
+top: 51px;
+
+font-family: 'Kanotie Deco';
+font-style: normal;
+font-weight: 400;
+font-size: 32px;
+line-height: 46px;
+
+/* 1 */
+color: #1F1F1F;
+
+
+
+/* Frame 1 */
+
+/* Auto layout */
+display: flex;
+flex-direction: row;
+align-items: center;
+padding: 0px;
+gap: 17px;
+
+position: absolute;
+width: 511px;
+height: 34px;
+left: 910px;
+top: 55px;
+
+
+
+/* Мониторинг */
+
+width: 148px;
+height: 34px;
+
+font-family: 'Manrope';
+font-style: normal;
+font-weight: 400;
+font-size: 25px;
+line-height: 34px;
+
+/* 1 */
+color: #1F1F1F;
+
+
+/* Inside auto layout */
+flex: none;
+order: 0;
+flex-grow: 0;
+
+
+/* . */
+
+width: 5px;
+height: 5px;
+
+/* 1 */
+background: #1F1F1F;
+
+/* Inside auto layout */
+flex: none;
+order: 1;
+flex-grow: 0;
+
+
+/* Детекция */
+
+width: 117px;
+height: 34px;
+
+font-family: 'Manrope';
+font-style: normal;
+font-weight: 400;
+font-size: 25px;
+line-height: 34px;
+
+/* 1 */
+color: #1F1F1F;
+
+
+/* Inside auto layout */
+flex: none;
+order: 2;
+flex-grow: 0;
+
+
+/* . */
+
+width: 5px;
+height: 5px;
+
+/* 1 */
+background: #1F1F1F;
+
+/* Inside auto layout */
+flex: none;
+order: 3;
+flex-grow: 0;
+
+
+/* Визуализация */
+
+width: 168px;
+height: 34px;
+
+font-family: 'Manrope';
+font-style: normal;
+font-weight: 400;
+font-size: 25px;
+line-height: 34px;
+
+/* 1 */
+color: #1F1F1F;
+
+
+/* Inside auto layout */
+flex: none;
+order: 4;
+flex-grow: 0;
+
+
+/* Период: */
+
+position: absolute;
+width: 105px;
+height: 27px;
+left: 138px;
+top: 214px;
+
+font-family: 'Inter';
+font-style: normal;
+font-weight: 500;
+font-size: 22px;
+line-height: 27px;
+/* identical to box height */
+
+/* 1 */
+color: #1F1F1F;
+
+
+
+/* Чувствительность */
+
+position: absolute;
+width: 203px;
+height: 24px;
+left: 801px;
+top: 137.5px;
+
+font-family: 'Inter';
+font-style: normal;
+font-weight: 500;
+font-size: 20px;
+line-height: 24px;
+
+/* 1 */
+color: #1F1F1F;
+
+
+
+/* 80% */
+
+position: absolute;
+width: 43px;
+height: 24px;
+left: 1046px;
+top: 137px;
+
+font-family: 'Inter';
+font-style: normal;
+font-weight: 500;
+font-size: 20px;
+line-height: 24px;
+
+color: #AEAC55;
+
+
+
+/* Frame 3 */
+
+/* Auto layout */
+display: flex;
+flex-direction: column;
+justify-content: center;
+align-items: center;
+padding: 12px 11px;
+gap: 10px;
+
+position: absolute;
+width: 45px;
+height: 45px;
+left: 40px;
+top: 936px;
+
+background: #FFFFFF;
+border-radius: 30px;
+
+
+/* icon */
+
+width: 25px;
+height: 23px;
+
+background: #122C4F;
+
+/* Inside auto layout */
+flex: none;
+order: 0;
+flex-grow: 0;
+
+
+/* Иконка НПО Мир */
+
+position: absolute;
+width: 45px;
+height: 45px;
+left: 40px;
+top: 52px;
+
+
+
+/* Rectangle 4 */
+
+position: absolute;
+width: 45px;
+height: 45px;
+left: 40px;
+top: 52px;
+
+background: #FFFFFF;
+border-radius: 30px;
+
+
+/* image-Photoroom 1 */
+
+position: absolute;
+width: 45px;
+height: 45px;
+left: 40px;
+top: 52px;
+
+background: url(image-Photoroom);
+
+
+/* Frame 5 */
+
+box-sizing: border-box;
+
+/* Auto layout */
+display: flex;
+flex-direction: column;
+justify-content: center;
+align-items: center;
+padding: 10px 12px 10px 10px;
+gap: 10px;
+
+position: absolute;
+width: 224px;
+height: 44px;
+left: 579px;
+top: 50px;
+
+background: #FFFFFF;
+border: 1.5px solid #D8D1BE;
+border-radius: 15px;
+
+
+/* Frame 4 */
+
+/* Auto layout */
+display: flex;
+flex-direction: row;
+align-items: center;
+padding: 0px;
+gap: 10px;
+
+width: 202px;
+height: 24px;
+
+
+/* Inside auto layout */
+flex: none;
+order: 0;
+flex-grow: 0;
+
+
+/* Rectangle 5 */
+
+width: 22px;
+height: 22px;
+
+background: #AEAC55;
+border-radius: 30px;
+
+/* Inside auto layout */
+flex: none;
+order: 0;
+flex-grow: 0;
+
+
+/* Система активна */
+
+width: 170px;
+height: 24px;
+
+font-family: 'Inter';
+font-style: normal;
+font-weight: 400;
+font-size: 20px;
+line-height: 24px;
+
+/* 1 */
+color: #1F1F1F;
+
+
+/* Inside auto layout */
+flex: none;
+order: 1;
+flex-grow: 0;
+
+
+/* Frame 2 */
+
+/* Auto layout */
+display: flex;
+flex-direction: row;
+justify-content: center;
+align-items: center;
+padding: 5px 9px 6px;
+gap: 10px;
+
+position: absolute;
+width: 45px;
+height: 45px;
+left: 40px;
+top: 881px;
+
+background: #FFFFFF;
+border-radius: 30px;
+
+
+/* icon */
+
+width: 22px;
+height: 27px;
+
+background: #122C4F;
+
+/* Inside auto layout */
+flex: none;
+order: 0;
+flex-grow: 0;
+
+
+/* Rectangle 13 */
+
+position: absolute;
+width: 1283px;
+height: 514px;
+left: 138px;
+top: 476px;
+
+background: #FEFEFF;
+border-radius: 30px;
+
+
+/* Rectangle 7 */
+
+position: absolute;
+width: 198px;
+height: 158px;
+left: 138px;
+top: 286px;
+
+background: #FEFEFF;
+box-shadow: 2px 4px 10px rgba(91, 136, 178, 0.6);
+border-radius: 30px;
+
+
+/* Rectangle 8 */
+
+position: absolute;
+width: 198px;
+height: 158px;
+left: 355px;
+top: 286px;
+
+background: #FFFFFE;
+box-shadow: 2px 4px 10px rgba(217, 217, 80, 0.6);
+border-radius: 30px;
+
+
+/* Rectangle 9 */
+
+position: absolute;
+width: 199px;
+height: 158px;
+left: 570px;
+top: 286px;
+
+background: #FEFEFF;
+box-shadow: 2px 4px 10px rgba(165, 38, 38, 0.6);
+border-radius: 30px;
+
+
+/* Rectangle 10 */
+
+position: absolute;
+width: 199px;
+height: 158px;
+left: 786px;
+top: 286px;
+
+background: #FEFEFF;
+box-shadow: 2px 4px 10px rgba(91, 136, 178, 0.6);
+border-radius: 30px;
+
+
+/* Rectangle 11 */
+
+position: absolute;
+width: 198px;
+height: 158px;
+left: 1003px;
+top: 286px;
+
+background: #FEFEFF;
+box-shadow: 2px 4px 10px rgba(217, 217, 80, 0.6);
+border-radius: 30px;
+
+
+/* Rectangle 12 */
+
+position: absolute;
+width: 198px;
+height: 158px;
+left: 1222px;
+top: 286px;
+
+background: #FEFEFF;
+box-shadow: 2px 4px 10px rgba(91, 136, 178, 0.6);
+border-radius: 30px;
+
+
+/* Line 7 */
+
+position: absolute;
+width: 10px;
+height: 0px;
+left: 483px;
+top: 158px;
+
+/* 1 */
+border: 1px solid #1F1F1F;
+
+
+/* Line 8 */
+
+position: absolute;
+width: 9px;
+height: 0px;
+left: 779px;
+top: 158px;
+
+/* 1 */
+border: 1px solid #1F1F1F;
+
+
+/* Frame 13 */
+
+/* Auto layout */
+display: flex;
+flex-direction: row;
+align-items: center;
+padding: 0px;
+gap: 11px;
+
+position: absolute;
+width: 325px;
+height: 41px;
+left: 138px;
+top: 137.5px;
+
+
+
+/* Детализация: */
+
+width: 154px;
+height: 27px;
+
+font-family: 'Inter';
+font-style: normal;
+font-weight: 500;
+font-size: 22px;
+line-height: 27px;
+/* identical to box height */
+
+/* 1 */
+color: #1F1F1F;
+
+
+/* Inside auto layout */
+flex: none;
+order: 0;
+flex-grow: 0;
+
+
+/* Frame 7 */
+
+/* Auto layout */
+display: flex;
+flex-direction: column;
+justify-content: center;
+align-items: flex-start;
+padding: 10px 10px 11px;
+gap: 10px;
+
+width: 169px;
+height: 41px;
+
+background: #FEFEFF;
+border: 1.5px solid #D8D1BE;
+border-radius: 10px;
+
+/* Inside auto layout */
+flex: none;
+order: 1;
+flex-grow: 0;
+
+
+/* Frame 6 */
+
+/* Auto layout */
+display: flex;
+flex-direction: row;
+align-items: center;
+padding: 0px;
+gap: 36px;
+
+width: 149px;
+height: 20px;
+
+
+/* Inside auto layout */
+flex: none;
+order: 0;
+flex-grow: 0;
+
+
+/* Посуточно */
+
+width: 96px;
+height: 22px;
+
+font-family: 'Inter';
+font-style: normal;
+font-weight: 400;
+font-size: 18px;
+line-height: 22px;
+/* identical to box height */
+
+color: #777777;
+
+
+/* Inside auto layout */
+flex: none;
+order: 0;
+flex-grow: 0;
+
+
+/* icon */
+
+width: 17px;
+height: 10px;
+
+background: #D8D1BE;
+
+/* Inside auto layout */
+flex: none;
+order: 1;
+flex-grow: 0;
+
+
+/* Frame 11 */
+
+box-sizing: border-box;
+
+/* Auto layout */
+display: flex;
+flex-direction: column;
+justify-content: center;
+align-items: flex-start;
+padding: 10px 10px 11px;
+gap: 10px;
+
+position: absolute;
+width: 511px;
+height: 41px;
+left: 255px;
+top: 207px;
+
+background: #FEFEFF;
+border: 1.5px solid #D8D1BE;
+border-radius: 10px;
+
+
+/* Frame 15 */
+
+/* Auto layout */
+display: flex;
+flex-direction: row;
+justify-content: center;
+align-items: center;
+padding: 10px;
+gap: 10px;
+
+position: absolute;
+width: 301px;
+height: 57px;
+left: 801px;
+top: 199px;
+
+background: linear-gradient(90deg, #5B88B2 0%, #AEAC55 100%);
+border-radius: 10px;
+
+
+/* icon */
+
+width: 27px;
+height: 27px;
+
+background: #FFFFFF;
+
+/* Inside auto layout */
+flex: none;
+order: 0;
+flex-grow: 0;
+
+
+/* Запустить анализ */
+
+width: 210px;
+height: 33px;
+
+font-family: 'Manrope';
+font-style: normal;
+font-weight: 600;
+font-size: 24px;
+line-height: 33px;
+/* identical to box height */
+
+color: #FEFEFF;
+
+
+/* Inside auto layout */
+flex: none;
+order: 1;
+flex-grow: 0;
+
+
+/* Line 9 */
+
+position: absolute;
+width: 10px;
+height: 0px;
+left: 1100px;
+top: 158px;
+
+/* 1 */
+border: 1px solid #1F1F1F;
+
+
+/* Frame 14 */
+
+/* Auto layout */
+display: flex;
+flex-direction: row;
+align-items: center;
+padding: 0px;
+gap: 11px;
+
+position: absolute;
+width: 300px;
+height: 41px;
+left: 1120px;
+top: 137px;
+
+
+
+/* Глубина анализа: */
+
+width: 196px;
+height: 27px;
+
+font-family: 'Inter';
+font-style: normal;
+font-weight: 500;
+font-size: 22px;
+line-height: 27px;
+/* identical to box height */
+
+/* 1 */
+color: #1F1F1F;
+
+
+/* Inside auto layout */
+flex: none;
+order: 0;
+flex-grow: 0;
+
+
+/* Frame 10 */
+
+box-sizing: border-box;
+
+/* Auto layout */
+display: flex;
+flex-direction: column;
+justify-content: center;
+align-items: center;
+padding: 10px 10px 11px;
+gap: 10px;
+
+width: 93px;
+height: 41px;
+
+background: #FEFEFF;
+border: 1.5px solid #D8D1BE;
+border-radius: 10px;
+
+/* Inside auto layout */
+flex: none;
+order: 1;
+flex-grow: 0;
+
+
+/* Frame 6 */
+
+/* Auto layout */
+display: flex;
+flex-direction: row;
+justify-content: center;
+align-items: center;
+padding: 0px;
+gap: 16px;
+
+width: 69px;
+height: 20px;
+
+
+/* Inside auto layout */
+flex: none;
+order: 0;
+flex-grow: 0;
+
+
+/* N точек */
+
+width: 69px;
+height: 22px;
+
+font-family: 'Inter';
+font-style: normal;
+font-weight: 400;
+font-size: 18px;
+line-height: 22px;
+/* identical to box height */
+
+color: #777777;
+
+
+/* Inside auto layout */
+flex: none;
+order: 0;
+flex-grow: 0;
+
+
+/* Frame 16 */
+
+/* Auto layout */
+display: flex;
+flex-direction: row;
+justify-content: center;
+align-items: center;
+padding: 10px;
+gap: 10px;
+
+position: absolute;
+width: 276px;
+height: 57px;
+left: 1145px;
+top: 199px;
+
+background: #A9AA5A;
+border-radius: 10px;
+
+
+/* icon */
+
+width: 27px;
+height: 27px;
+
+background: #FFFFFF;
+
+/* Inside auto layout */
+flex: none;
+order: 0;
+flex-grow: 0;
+
+
+/* Экспорт в Excel */
+
+width: 183px;
+height: 33px;
+
+font-family: 'Manrope';
+font-style: normal;
+font-weight: 600;
+font-size: 24px;
+line-height: 33px;
+/* identical to box height */
+
+color: #FEFEFF;
+
+
+/* Inside auto layout */
+flex: none;
+order: 1;
+flex-grow: 0;
+
+
+/* Frame 12 */
+
+/* Auto layout */
+display: flex;
+flex-direction: row;
+align-items: center;
+padding: 0px;
+gap: 11px;
+
+position: absolute;
+width: 255px;
+height: 41px;
+left: 504px;
+top: 137.5px;
+
+
+
+/* Канал: */
+
+width: 75px;
+height: 27px;
+
+font-family: 'Inter';
+font-style: normal;
+font-weight: 500;
+font-size: 22px;
+line-height: 27px;
+/* identical to box height */
+
+/* 1 */
+color: #1F1F1F;
+
+
+/* Inside auto layout */
+flex: none;
+order: 0;
+flex-grow: 0;
+
+
+/* Frame 8 */
+
+/* Auto layout */
+display: flex;
+flex-direction: column;
+justify-content: center;
+align-items: flex-start;
+padding: 10px 10px 11px;
+gap: 10px;
+
+width: 176px;
+height: 41px;
+
+background: #FEFEFF;
+border: 1.5px solid #D8D1BE;
+border-radius: 10px;
+
+/* Inside auto layout */
+flex: none;
+order: 1;
+flex-grow: 0;
+
+
+/* Frame 6 */
+
+/* Auto layout */
+display: flex;
+flex-direction: row;
+align-items: center;
+padding: 0px;
+gap: 36px;
+
+width: 156px;
+height: 20px;
+
+
+/* Inside auto layout */
+flex: none;
+order: 0;
+align-self: stretch;
+flex-grow: 0;
+
+
+/* Все каналы */
+
+width: 102px;
+height: 22px;
+
+font-family: 'Inter';
+font-style: normal;
+font-weight: 400;
+font-size: 18px;
+line-height: 22px;
+/* identical to box height */
+
+color: #777777;
+
+
+/* Inside auto layout */
+flex: none;
+order: 0;
+flex-grow: 0;
+
+
+/* icon */
+
+width: 15px;
+height: 15px;
+
+background: #D8D1BE;
+border: 0.5px solid #D8D1BE;
+
+/* Inside auto layout */
+flex: none;
+order: 1;
+flex-grow: 0;
+
+
+/* Group 1 */
+
+position: absolute;
+width: 287.35px;
+height: 14px;
+left: 801.34px;
+top: 168.5px;
+
+
+
+/* Rectangle 14 */
+
+position: absolute;
+width: 287.35px;
+height: 2px;
+left: 801.34px;
+top: 174.5px;
+
+background: #AEAC55;
+
+
+/* Frame 9 */
+
+/* Auto layout */
+display: flex;
+flex-direction: row;
+justify-content: center;
+align-items: center;
+padding: 1px;
+gap: 10px;
+
+position: absolute;
+width: 14px;
+height: 14px;
+left: 936.64px;
+top: 168.5px;
+
+background: #AEAC55;
+border-radius: 30px;
+
+
+/* Ellipse 2 */
+
+width: 10px;
+height: 10px;
+
+background: #FCFAF7;
+
+/* Inside auto layout */
+flex: none;
+order: 0;
+flex-grow: 0;
+
+
+/* Frame 17 */
+
+/* Auto layout */
+display: flex;
+flex-direction: column;
+align-items: flex-start;
+padding: 0px;
+gap: 10px;
+
+position: absolute;
+width: 155px;
+height: 75px;
+left: 159px;
+top: 314px;
+
+
+
+/* Всего значений */
+
+width: 155px;
+height: 27px;
+
+font-family: 'Manrope';
+font-style: normal;
+font-weight: 600;
+font-size: 20px;
+line-height: 27px;
+
+/* 1 */
+color: #1F1F1F;
+
+
+/* Inside auto layout */
+flex: none;
+order: 0;
+align-self: stretch;
+flex-grow: 0;
+
+
+/* ЧИСЛО */
+
+width: 155px;
+height: 38px;
+
+font-family: 'Manrope';
+font-style: normal;
+font-weight: 800;
+font-size: 28px;
+line-height: 38px;
+
+color: #000000;
+
+
+/* Inside auto layout */
+flex: none;
+order: 1;
+align-self: stretch;
+flex-grow: 0;
+
+
+/* Frame 18 */
+
+/* Auto layout */
+display: flex;
+flex-direction: column;
+align-items: flex-start;
+padding: 0px;
+gap: 10px;
+
+position: absolute;
+width: 155px;
+height: 102px;
+left: 376px;
+top: 314px;
+
+
+
+/* Обнаружено аномалий */
+
+width: 155px;
+height: 54px;
+
+font-family: 'Manrope';
+font-style: normal;
+font-weight: 600;
+font-size: 20px;
+line-height: 27px;
+
+/* 1 */
+color: #1F1F1F;
+
+
+/* Inside auto layout */
+flex: none;
+order: 0;
+align-self: stretch;
+flex-grow: 0;
+
+
+/* ЧИСЛО */
+
+width: 155px;
+height: 38px;
+
+font-family: 'Manrope';
+font-style: normal;
+font-weight: 800;
+font-size: 28px;
+line-height: 38px;
+
+color: #000000;
+
+
+/* Inside auto layout */
+flex: none;
+order: 1;
+align-self: stretch;
+flex-grow: 0;
+
+
+/* Frame 19 */
+
+/* Auto layout */
+display: flex;
+flex-direction: column;
+align-items: flex-start;
+padding: 0px;
+gap: 10px;
+
+position: absolute;
+width: 155px;
+height: 102px;
+left: 592px;
+top: 314px;
+
+
+
+/* Критических аномалий */
+
+width: 155px;
+height: 54px;
+
+font-family: 'Manrope';
+font-style: normal;
+font-weight: 600;
+font-size: 20px;
+line-height: 27px;
+
+/* 1 */
+color: #1F1F1F;
+
+
+/* Inside auto layout */
+flex: none;
+order: 0;
+align-self: stretch;
+flex-grow: 0;
+
+
+/* ЧИСЛО */
+
+width: 155px;
+height: 38px;
+
+font-family: 'Manrope';
+font-style: normal;
+font-weight: 800;
+font-size: 28px;
+line-height: 38px;
+
+color: #000000;
+
+
+/* Inside auto layout */
+flex: none;
+order: 1;
+align-self: stretch;
+flex-grow: 0;
+
+
+/* Frame 20 */
+
+/* Auto layout */
+display: flex;
+flex-direction: column;
+align-items: flex-start;
+padding: 0px;
+gap: 10px;
+
+position: absolute;
+width: 155px;
+height: 102px;
+left: 808px;
+top: 314px;
+
+
+
+/* Среднее значение */
+
+width: 155px;
+height: 54px;
+
+font-family: 'Manrope';
+font-style: normal;
+font-weight: 600;
+font-size: 20px;
+line-height: 27px;
+
+/* 1 */
+color: #1F1F1F;
+
+
+/* Inside auto layout */
+flex: none;
+order: 0;
+align-self: stretch;
+flex-grow: 0;
+
+
+/* ЧИСЛО */
+
+width: 155px;
+height: 38px;
+
+font-family: 'Manrope';
+font-style: normal;
+font-weight: 800;
+font-size: 28px;
+line-height: 38px;
+
+color: #000000;
+
+
+/* Inside auto layout */
+flex: none;
+order: 1;
+align-self: stretch;
+flex-grow: 0;
+
+
+/* Frame 21 */
+
+/* Auto layout */
+display: flex;
+flex-direction: column;
+align-items: flex-start;
+padding: 0px;
+gap: 10px;
+
+position: absolute;
+width: 155px;
+height: 75px;
+left: 1024px;
+top: 314px;
+
+
+
+/* Максимум */
+
+width: 155px;
+height: 27px;
+
+font-family: 'Manrope';
+font-style: normal;
+font-weight: 600;
+font-size: 20px;
+line-height: 27px;
+
+/* 1 */
+color: #1F1F1F;
+
+
+/* Inside auto layout */
+flex: none;
+order: 0;
+align-self: stretch;
+flex-grow: 0;
+
+
+/* ЧИСЛО */
+
+width: 155px;
+height: 38px;
+
+font-family: 'Manrope';
+font-style: normal;
+font-weight: 800;
+font-size: 28px;
+line-height: 38px;
+
+color: #000000;
+
+
+/* Inside auto layout */
+flex: none;
+order: 1;
+align-self: stretch;
+flex-grow: 0;
+
+
+/* Frame 22 */
+
+/* Auto layout */
+display: flex;
+flex-direction: column;
+align-items: flex-start;
+padding: 0px;
+gap: 10px;
+
+position: absolute;
+width: 155px;
+height: 75px;
+left: 1243px;
+top: 314px;
+
+
+
+/* Всего точек */
+
+width: 155px;
+height: 27px;
+
+font-family: 'Manrope';
+font-style: normal;
+font-weight: 600;
+font-size: 20px;
+line-height: 27px;
+
+/* 1 */
+color: #1F1F1F;
+
+
+/* Inside auto layout */
+flex: none;
+order: 0;
+align-self: stretch;
+flex-grow: 0;
+
+
+/* ЧИСЛО */
+
+width: 155px;
+height: 38px;
+
+font-family: 'Manrope';
+font-style: normal;
+font-weight: 800;
+font-size: 28px;
+line-height: 38px;
+
+color: #000000;
+
+
+/* Inside auto layout */
+flex: none;
+order: 1;
+align-self: stretch;
+flex-grow: 0;
+
+
+/* ТУТ ГРАФИК И ТАБЛИЧКА ПОТОМ ТАКИЕ КАК И БЫЛИ */
+
+position: absolute;
+width: 733px;
+height: 38px;
+left: 389px;
+top: 714px;
+
+font-family: 'Manrope';
+font-style: normal;
+font-weight: 800;
+font-size: 28px;
+line-height: 38px;
+
+color: #000000;
+

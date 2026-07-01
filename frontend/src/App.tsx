@@ -1,6 +1,7 @@
 import { ConfigProvider } from 'antd';
 import ruRU from 'antd/locale/ru_RU';
-import { Dashboard } from './components/Dashboard/Dashboard';
+import { LegacyDashboard } from './components/Dashboard/LegacyDashboard';
+import { Dashboard } from './components/NewDashboard/Dashboard';
 import './App.css';
 
 function App() {
@@ -25,7 +26,13 @@ function App() {
         }
       }}
     >
-      <Dashboard />
+      <main>
+        {window.location.pathname === '/legacy' ? (
+          <LegacyDashboard />
+        ) : (
+          <Dashboard />
+        )}
+      </main>
     </ConfigProvider>
   );
 }

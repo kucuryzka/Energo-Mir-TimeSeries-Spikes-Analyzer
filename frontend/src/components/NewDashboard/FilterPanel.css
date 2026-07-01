@@ -1,0 +1,133 @@
+.filter-panel-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.filter-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.filter-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.filter-item label {
+  font-family: 'Inter', sans-serif;
+  font-weight: 500;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.filter-separator {
+  color: #1F1F1F;
+  font-weight: bold;
+}
+
+.filter-select, .filter-input {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-family: 'Inter', sans-serif;
+  font-size: 14px;
+  color: var(--text-main);
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.filter-select:focus, .filter-input:focus {
+  border-color: var(--primary-accent);
+}
+
+.filter-select {
+  width: 140px;
+}
+
+.filter-input {
+  width: 160px;
+}
+
+.short-input {
+  width: 100px;
+}
+
+.period-input {
+  width: 400px;
+}
+
+.filter-sensitivity {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.sensitivity-header {
+  display: flex;
+  justify-content: space-between;
+  width: 200px;
+}
+
+.sensitivity-value {
+  color: var(--primary-accent);
+  font-weight: 500;
+  font-size: 14px;
+}
+
+.sensitivity-slider {
+  width: 200px;
+  accent-color: var(--primary-accent);
+  margin-top: 4px;
+}
+
+.action-buttons {
+  display: flex;
+  gap: 16px;
+}
+
+.btn-start-analysis {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--gradient-btn);
+  border: none;
+  border-radius: 8px;
+  padding: 8px 16px;
+  color: var(--bg-surface);
+  font-family: 'Inter', sans-serif;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.btn-start-analysis:hover {
+  opacity: 0.9;
+}
+
+.btn-export {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--primary-accent);
+  border: none;
+  border-radius: 8px;
+  padding: 8px 16px;
+  color: var(--bg-surface);
+  font-family: 'Inter', sans-serif;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.btn-export:hover {
+  opacity: 0.9;
+}

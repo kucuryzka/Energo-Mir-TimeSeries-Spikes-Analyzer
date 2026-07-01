@@ -50,7 +50,18 @@ export const ControlsPanel: React.FC<Props> = ({
   return (
     <div style={{ width: '100%' }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px' }}>
-
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <label style={{ fontSize: 13, fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+            Источник
+          </label>
+          <Select
+            value={sourceId}
+            onChange={onSourceChange}
+            size="large"
+            style={{ width: '100%' }}
+            options={sources.map(s => ({ value: s.id, label: s.name }))}
+          />
+        </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <label style={{ fontSize: 13, fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
@@ -109,19 +120,6 @@ export const ControlsPanel: React.FC<Props> = ({
             Период
           </label>
           <DatePicker.RangePicker
-            showTime={{ format: 'HH:mm' }}
-            format="YYYY-MM-DD HH:mm"
-            presets={[
-              { label: 'Сегодня', value: [dayjs().startOf('day'), dayjs().endOf('day')] },
-              { label: 'Вчера', value: [dayjs().subtract(1, 'day').startOf('day'), dayjs().subtract(1, 'day').endOf('day')] },
-              { label: 'Последние 7 дней', value: [dayjs().subtract(7, 'day').startOf('day'), dayjs().endOf('day')] },
-              { label: 'Последние 30 дней', value: [dayjs().subtract(30, 'day').startOf('day'), dayjs().endOf('day')] },
-              { label: 'Последние 90 дней', value: [dayjs().subtract(90, 'day').startOf('day'), dayjs().endOf('day')] },
-              { label: 'Последние 120 дней', value: [dayjs().subtract(120, 'day').startOf('day'), dayjs().endOf('day')] },
-              { label: 'Последние 365 дней', value: [dayjs().subtract(365, 'day').startOf('day'), dayjs().endOf('day')] },
-              { label: 'Последние 2 года', value: [dayjs().subtract(2, 'year').startOf('day'), dayjs().endOf('day')] },
-              { label: 'Последние 3 года', value: [dayjs().subtract(3, 'year').startOf('day'), dayjs().endOf('day')] },
-            ]}
             value={[
               dateRange[0] ? dayjs(dateRange[0]) : null,
               dateRange[1] ? dayjs(dateRange[1]) : null,
@@ -129,8 +127,8 @@ export const ControlsPanel: React.FC<Props> = ({
             onChange={(dates) => {
               if (dates && dates[0] && dates[1]) {
                 onDateRangeChange([
-                  dates[0].toISOString(),
-                  dates[1].toISOString(),
+                  dates[0].startOf('day').toISOString(),
+                  dates[1].endOf('day').toISOString(),
                 ]);
               }
             }}

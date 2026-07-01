@@ -1,0 +1,14 @@
+.new-dashboard-divider {
+  width: 100%;
+  height: 1px;
+  background: var(--border-light);
+  margin-bottom: 24px;
+}
+
+.new-chart-container {
+  flex: 1;
+  display: flex;
+  min-height: 400px;
+  color: var(--text-main);
+  font-family: 'Inter', sans-serif;
+}
