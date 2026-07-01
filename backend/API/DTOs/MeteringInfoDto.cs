@@ -6,7 +6,7 @@ namespace API.DTOs
         public int? IdObjectAverage { get; set; }
         public int? Quality { get; set; }
         public int? QualitySource { get; set; }
-        public string Source { get; set; } = string.Empty;
+        public int? Source { get; set; }
         public double? ValueMetering { get; set; }
         public int IdObject { get; set; }
         public string ObjectName { get; set; } = string.Empty;
