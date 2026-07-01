@@ -194,13 +194,9 @@ export const Dashboard: React.FC = () => {
         onSearch={fetchData}
       />
       
-      {loading ? (
-        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '400px' }}>
-          <Spin size="large" />
-        </div>
-      ) : !data || enrichedData.length === 0 ? (
-        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '400px', color: 'var(--text-secondary)', fontSize: 18 }}>
-          Нет данных для отображения
+      {!data || enrichedData.length === 0 ? (
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '400px', color: 'var(--text-secondary)', fontSize: 18, flexDirection: 'column', gap: 16 }}>
+          {loading ? <Spin size="large" /> : 'Нет данных для отображения'}
         </div>
       ) : (
         <>
