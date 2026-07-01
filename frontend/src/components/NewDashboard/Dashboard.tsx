@@ -67,26 +67,48 @@ export const Dashboard: React.FC = () => {
 
   const fetchData = async () => {
     setLoading(true);
+    setData(null);
     try {
-      const requestPayload = {
-        sourceId,
-        channelId,
-        granularity,
-        customMinutes: granularity === 'Custom' ? customMinutes : null,
-        confidence,
-        windowSize: windowSize ?? 30,
-        startDate: dateRange[0],
-        endDate: dateRange[1],
-      };
+      const start = dayjs(dateRange[0]);
+      const end = dayjs(dateRange[1]);
+      const totalDays = end.diff(start, 'day');
       
-      let response;
-      if (sourceId.toLowerCase() === 'dbo') {
-        response = await analyticsApi.dbo.detectSpikes(requestPayload);
-      } else {
-        response = await analyticsApi.emProtocol.detectSpikes(requestPayload);
+      let chunkSize = 1;
+      if (totalDays > 180) chunkSize = 30;
+      else if (totalDays > 60) chunkSize = 7;
+
+      let accumulatedSeries: any[] = [];
+      let currentStart = start;
+      let finalResponse: any = null;
+
+      while (currentStart.isBefore(end)) {
+        let chunkEnd = currentStart.add(chunkSize, 'day');
+        if (chunkEnd.isAfter(end)) chunkEnd = end;
+
+        const requestPayload = {
+          sourceId,
+          channelId,
+          granularity,
+          customMinutes: granularity === 'Custom' ? customMinutes : null,
+          confidence,
+          windowSize: windowSize ?? 30,
+          startDate: currentStart.toISOString(),
+          endDate: chunkEnd.toISOString(),
+        };
+        
+        let response;
+        if (sourceId.toLowerCase() === 'dbo') {
+          response = await analyticsApi.dbo.detectSpikes(requestPayload);
+        } else {
+          response = await analyticsApi.emProtocol.detectSpikes(requestPayload);
+        }
+
+        accumulatedSeries = [...accumulatedSeries, ...response.series];
+        finalResponse = { ...response, series: accumulatedSeries };
+
+        setData(finalResponse);
+        currentStart = chunkEnd;
       }
-      
-      setData(response);
 
       const currentSource = sources.find(s => s.value === sourceId);
       if (currentSource && currentSource.supportedDistributions) {
