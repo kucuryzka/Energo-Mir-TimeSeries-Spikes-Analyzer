@@ -28,8 +28,6 @@ interface Props {
 
 export const ControlsPanel: React.FC<Props> = ({
   sourceId,
-  onSourceChange,
-  sources,
   granularity,
   onGranularityChange,
   customMinutes,
