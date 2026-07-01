@@ -132,15 +132,9 @@ export const LegacyEmProtocolDashboard: React.FC = () => {
     if (sourceId) {
       setChannelId(null);
       setChannels([]);
+      setData(null);
+      setDistributions({});
       fetchChannels();
-      fetchData();
-      
-      const currentSource = sources.find(s => s.id === sourceId);
-      if (currentSource && currentSource.supportedDistributions) {
-        fetchDistributions(currentSource.supportedDistributions);
-      } else {
-        setDistributions({});
-      }
     }
   }, [sourceId]);
 
