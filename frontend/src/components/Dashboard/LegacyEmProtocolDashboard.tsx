@@ -309,7 +309,7 @@ export const LegacyEmProtocolDashboard: React.FC = () => {
       <Drawer
         title={<Title level={5} style={{ margin: 0 }}>Детали временного среза</Title>}
         placement="right"
-        width={500}
+        size="large"
         onClose={() => setSelectedPoint(null)}
         open={selectedPoint !== null}
       >

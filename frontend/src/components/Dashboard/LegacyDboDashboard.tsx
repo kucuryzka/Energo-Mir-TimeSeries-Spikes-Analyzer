@@ -19,6 +19,7 @@ export const LegacyDboDashboard: React.FC = () => {
 
   const [channels, setChannels] = useState<ChannelDto[]>([]);
   const [channelId, setChannelId] = useState<number | null>(null);
+  const [channelSearch, setChannelSearch] = useState<string>('');
 
 
   const [granularity, setGranularity] = useState<TimeGranularity>('Hour');
@@ -282,7 +283,7 @@ export const LegacyDboDashboard: React.FC = () => {
       <Drawer
         title={<Title level={5} style={{ margin: 0 }}>Детали временного среза</Title>}
         placement="right"
-        width={500}
+        size="large"
         onClose={() => setSelectedPoint(null)}
         open={selectedPoint !== null}
       >
