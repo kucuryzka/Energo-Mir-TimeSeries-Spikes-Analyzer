@@ -12,7 +12,13 @@ builder.Services.AddControllers()
 
 // Configure EF Core DbContext with SQL Server
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+    options.UseSqlServer(
+        builder.Configuration.GetConnectionString("DefaultConnection"),
+        sqlServerOptionsAction: sqlOptions =>
+        {
+            sqlOptions.CommandTimeout(300); // 5 minutes timeout for heavy queries
+        }
+    ));
 
 // Register implementations of Core interfaces
 builder.Services.AddScoped<Core.Interfaces.ITimeSeriesService, Core.Services.TimeService>();
