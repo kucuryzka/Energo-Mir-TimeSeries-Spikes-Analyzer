@@ -112,6 +112,9 @@ export const SpikeChart: React.FC<Props> = ({ data, showMarkers = true, onPointC
       yAxis: {
         type: 'value',
         name: 'Количество сообщений телеметрии',
+        nameLocation: 'middle',
+        nameRotate: 90,
+        nameGap: 50,
         nameTextStyle: { color: '#6b7a8f', fontSize: 12 },
         axisLine: { show: false },
         axisTick: { show: false },

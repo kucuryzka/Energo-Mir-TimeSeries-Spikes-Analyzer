@@ -12,7 +12,7 @@ import dayjs from 'dayjs';
 
 const { Title, Text } = Typography;
 
-export const Dashboard: React.FC = () => {
+export const LegacyEmProtocolDashboard: React.FC = () => {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -45,8 +45,8 @@ export const Dashboard: React.FC = () => {
     setError(null);
 
     try {
-      const response = await analyticsApi.detectSpikes({
-        sourceId,
+      const response = await analyticsApi.emProtocol.detectSpikes({
+        sourceId: 'EmProtocol',
         channelId,
         granularity,
         customMinutes: granularity === 'Custom' ? customMinutes : null,
@@ -60,7 +60,7 @@ export const Dashboard: React.FC = () => {
       
       const currentSource = sources.find(s => s.id === sourceId);
       if (currentSource && currentSource.supportedDistributions) {
-        await fetchDistributions(sourceId, currentSource.supportedDistributions);
+        await fetchDistributions(currentSource.supportedDistributions);
       } else {
         setDistributions({});
       }
@@ -83,23 +83,27 @@ export const Dashboard: React.FC = () => {
   const fetchChannels = async (search: string = '') => {
     if (!sourceId) return;
     try {
-      const data = await analyticsApi.getChannels(sourceId, search);
+      const data = await analyticsApi.emProtocol.getChannels(search);
       setChannels(data);
     } catch (err) {
       console.error('Ошибка при загрузке каналов', err);
     }
   };
 
-  const fetchDistributions = async (currentSourceId: string, supportedCats: string[]) => {
+  const fetchDistributions = async (supportedCats: string[]) => {
     if (!supportedCats || supportedCats.length === 0) {
       setDistributions({});
       return;
     }
     try {
       const newDists: Record<string, DistributionItemDto[]> = {};
-      for (const cat of supportedCats) {
-        const distData = await analyticsApi.getDistribution(currentSourceId, dateRange[0], dateRange[1], cat);
-        newDists[cat] = distData;
+      for (const category of supportedCats) {
+        const distData = await analyticsApi.emProtocol.getDistribution(
+          dateRange[0],
+          dateRange[1],
+          category
+        );
+        newDists[category] = distData;
       }
       setDistributions(newDists);
     } catch (err) {
@@ -133,7 +137,7 @@ export const Dashboard: React.FC = () => {
       
       const currentSource = sources.find(s => s.id === sourceId);
       if (currentSource && currentSource.supportedDistributions) {
-        fetchDistributions(sourceId, currentSource.supportedDistributions);
+        fetchDistributions(currentSource.supportedDistributions);
       } else {
         setDistributions({});
       }
@@ -156,23 +160,7 @@ export const Dashboard: React.FC = () => {
   const antIcon = <LoadingOutlined style={{ fontSize: 32, color: '#2a5298' }} spin />;
 
   return (
-    <div className="app-container">
-      <header className="app-header">
-        <div className="app-header-content">
-          <div className="app-title">
-            <div>
-              <h1>Детектор аномалий</h1>
-              <p className="subtitle">Обнаружение выбросов и аномалий в данных</p>
-            </div>
-          </div>
-          <div className="app-header-actions">
-            <span className="badge">
-              🟢 Система активна
-            </span>
-          </div>
-        </div>
-      </header>
-
+    <>
       <main className="app-main">
         <div className="dashboard-card" style={{ marginBottom: 24 }}>
           <ControlsPanel
@@ -427,6 +415,6 @@ export const Dashboard: React.FC = () => {
           </div>
         )}
       </Drawer>
-    </div>
+    </>
   );
 };

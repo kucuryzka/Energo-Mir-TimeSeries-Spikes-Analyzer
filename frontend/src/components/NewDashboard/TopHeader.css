@@ -1,0 +1,56 @@
+.new-top-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0 24px 0;
+}
+
+.new-header-title {
+  font-family: 'Georgia', serif; /* fallback for Kanotie Deco */
+  font-size: 24px;
+  font-weight: 700;
+  color: #1F1F1F;
+  letter-spacing: 0.5px;
+}
+
+.new-header-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #FFFFFF;
+  border: 1.5px solid #D8D1BE;
+  border-radius: 16px;
+  padding: 6px 12px;
+  font-size: 14px;
+  color: #1F1F1F;
+  font-weight: 500;
+}
+
+.status-dot {
+  width: 10px;
+  height: 10px;
+  background: #AEAC55;
+  border-radius: 50%;
+}
+
+.new-header-nav {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-family: 'Inter', sans-serif;
+  font-size: 16px;
+  color: #555555;
+  font-weight: 500;
+}
+
+.new-header-nav span:hover {
+  color: #1F1F1F;
+  cursor: pointer;
+}
+
+.nav-dot {
+  width: 4px;
+  height: 4px;
+  background: #1F1F1F;
+  border-radius: 50%;
+}
