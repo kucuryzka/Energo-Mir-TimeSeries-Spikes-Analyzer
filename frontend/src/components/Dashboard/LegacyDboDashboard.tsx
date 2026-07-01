@@ -73,11 +73,23 @@ export const LegacyDboDashboard: React.FC = () => {
     }
   };
 
-  const fetchChannels = async () => {
-    // Dbo does not support channels
-    setChannels([]);
+  const fetchChannels = async (search: string = '') => {
+    try {
+      const data = await analyticsApi.dbo.getChannels(search);
+      setChannels(data);
+    } catch (err) {
+      console.error('Ошибка при загрузке каналов', err);
+    }
   };
 
+  // Debounce-поиск каналов
+  useEffect(() => {
+    if (!sourceId) return;
+    const timer = setTimeout(() => {
+      fetchChannels(channelSearch);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [channelSearch]);
 
 
 

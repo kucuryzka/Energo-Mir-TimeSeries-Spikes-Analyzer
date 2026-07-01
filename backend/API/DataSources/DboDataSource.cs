@@ -41,14 +41,18 @@ public class DboDataSource : IDataSourceStrategy
             SELECT 
                 {dateAddExpr} as Timestamp,
                 COUNT(*) as Value,
-                0 as ChannelId
-            FROM dbo.METERINGS
-            WHERE TIME_INSERT >= @p0 AND TIME_INSERT <= @p1
-            GROUP BY {dateAddExpr}
+                m.IDOBJECT as ChannelId
+            FROM dbo.METERINGS m
+            WHERE m.TIME_INSERT >= @p0 AND m.TIME_INSERT <= @p1
+            {(request.ChannelId.HasValue ? "AND m.IDOBJECT = @p2" : "")}
+            GROUP BY {dateAddExpr}, m.IDOBJECT
             ORDER BY Timestamp";
 
+        var parameters = new List<object> { request.StartDate, request.EndDate };
+        if (request.ChannelId.HasValue) parameters.Add(request.ChannelId.Value);
+
         var rawAggregates = await _context.Database
-            .SqlQueryRaw<AggregatedResult>(sqlAggregate, request.StartDate, request.EndDate)
+            .SqlQueryRaw<AggregatedResult>(sqlAggregate, parameters.ToArray())
             .ToListAsync();
 
         var groupedSeries = rawAggregates
@@ -57,7 +61,7 @@ public class DboDataSource : IDataSourceStrategy
             {
                 Timestamp = g.Key,
                 Value = g.Sum(x => x.Value),
-                ChannelBreakdown = new Dictionary<int, int>()
+                ChannelBreakdown = g.Where(x => x.ChannelId != 0).GroupBy(x => x.ChannelId).ToDictionary(x => x.Key, x => x.Sum(y => y.Value))
             })
             .OrderBy(p => p.Timestamp)
             .ToList();
@@ -77,5 +81,23 @@ public class DboDataSource : IDataSourceStrategy
                 PValue = r.PValue,
             }).ToList()
         };
+    }
+
+    public async Task<List<ChannelDto>> GetChannelsAsync(string? search, int page = 1, int pageSize = 50)
+    {
+        var query = _context.Database.SqlQueryRaw<ChannelDto>(
+            "SELECT IDOBJECT as Id, OBJECT_NAME as Name FROM dbo.OBJECTS"
+        );
+        
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            query = query.Where(c => c.Name.Contains(search));
+        }
+
+        return await query
+            .OrderBy(c => c.Name)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
     }
 }
