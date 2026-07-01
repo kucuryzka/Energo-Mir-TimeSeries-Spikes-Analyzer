@@ -89,11 +89,11 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
         </div>
         
         <div className="filter-item">
-          <label>Канал/Объект:</label>
+          <label>{sourceId === 'dbo' ? 'Объект:' : 'Канал:'}</label>
           <Select
             showSearch
             allowClear
-            placeholder="Все элементы"
+            placeholder={sourceId === 'dbo' ? 'Все объекты' : 'Все каналы'}
             value={channelId}
             onChange={(val) => setChannelId(val)}
             onSearch={onSearchChannels}
