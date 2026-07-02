@@ -12,7 +12,7 @@ import dayjs from 'dayjs';
 
 const { Title, Text } = Typography;
 
-export const LegacyDboDashboard: React.FC = () => {
+export const LegacyDboDashboard: React.FC<{ database: string }> = ({ database }) => {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -45,6 +45,7 @@ export const LegacyDboDashboard: React.FC = () => {
     if (selectedPoint) {
       setLoadingDetails(true);
       analyticsApi.dbo.getPointDetails(
+        database,
         selectedPoint.timestamp,
         granularity,
         granularity === 'Custom' ? customMinutes ?? undefined : undefined,
@@ -84,6 +85,7 @@ export const LegacyDboDashboard: React.FC = () => {
         if (chunkEnd.isAfter(end)) chunkEnd = end;
 
         const response = await analyticsApi.dbo.detectSpikes({
+          database,
           sourceId: 'Dbo',
           channelId,
           granularity,
@@ -128,7 +130,7 @@ export const LegacyDboDashboard: React.FC = () => {
 
   const fetchChannels = async (search: string = '') => {
     try {
-      const data = await analyticsApi.dbo.getObjects(search);
+      const data = await analyticsApi.dbo.getObjects(database, search);
       setChannels(data);
     } catch (err) {
       console.error('Ошибка при загрузке каналов', err);
@@ -315,12 +317,16 @@ export const LegacyDboDashboard: React.FC = () => {
                     </span>
                   </div>
                 </div>
-                <SpikeChart data={enrichedData} showMarkers={showMarkers} onPointClick={setSelectedPoint} />
+                <SpikeChart 
+                  data={enrichedData} 
+                  showMarkers={showMarkers} 
+                  onPointClick={setSelectedPoint}
+                />
               </div>
 
               {spikesOnly.length > 0 && (
                 <div className="dashboard-card" style={{ marginBottom: 24 }}>
-                  <SpikeTable spikes={spikesOnly} />
+                  <SpikeTable spikes={spikesOnly} entityLabel="Объекты" />
                 </div>
               )}
 
@@ -416,37 +422,7 @@ export const LegacyDboDashboard: React.FC = () => {
                     />
                   )
                 },
-                {
-                  key: 'events',
-                  label: 'Коды событий',
-                  children: (
-                    <Table
-                      dataSource={
-                        Object.entries(
-                          (selectedPoint.channelBreakdown || []).reduce((acc, curr) => {
-                            const code = curr.eventCode || 'Неизвестный код';
-                            acc[code] = (acc[code] || 0) + curr.count;
-                            return acc;
-                          }, {} as Record<string, number>)
-                        ).map(([code, count]) => ({ code, count }))
-                      }
-                      rowKey="code"
-                      size="small"
-                      pagination={{ pageSize: 10, showSizeChanger: true }}
-                      columns={[
-                        { title: 'Код', dataIndex: 'code', key: 'code' },
-                        { 
-                          title: 'Кол-во', 
-                          dataIndex: 'count', 
-                          key: 'count',
-                          render: (val: number) => val.toLocaleString('ru-RU'),
-                          sorter: (a: any, b: any) => a.count - b.count,
-                          defaultSortOrder: 'descend',
-                        }
-                      ]}
-                    />
-                  )
-                },
+
                 {
                   key: 'info',
                   label: 'Инфо',
