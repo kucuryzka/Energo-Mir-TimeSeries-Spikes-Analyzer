@@ -220,7 +220,7 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({ db, schema, ta
           {granularity === 'Custom' && (
             <div>
               <Text type="secondary" style={{ display: 'block', marginBottom: 4 }}>Минут</Text>
-              <InputNumber value={customMinutes} onChange={setCustomMinutes} min={1} />
+              <InputNumber value={customMinutes} onChange={(val) => setCustomMinutes(val ? Number(val) : null)} min={1} />
             </div>
           )}
           <div>
@@ -235,7 +235,7 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({ db, schema, ta
           </div>
           <div>
             <Text type="secondary" style={{ display: 'block', marginBottom: 4 }}>Глубина (точек)</Text>
-            <InputNumber value={windowSize} onChange={(val) => setWindowSize(val || 30)} min={5} max={1000} />
+            <InputNumber value={windowSize} onChange={(val) => setWindowSize(Number(val) || 30)} min={5} max={1000} />
           </div>
           <div style={{ alignSelf: 'flex-end', marginTop: 12 }}>
             <Button 
