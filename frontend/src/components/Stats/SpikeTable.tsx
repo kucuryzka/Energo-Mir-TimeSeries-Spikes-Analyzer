@@ -6,9 +6,10 @@ import dayjs from 'dayjs';
 interface Props {
   spikes: AnomalyResultDto[];
   style?: React.CSSProperties;
+  entityLabel?: string;
 }
 
-export const SpikeTable: React.FC<Props> = ({ spikes, style }) => {
+export const SpikeTable: React.FC<Props> = ({ spikes, style, entityLabel = 'Каналы' }) => {
   const columns = [
     {
       title: 'Время события',
@@ -70,7 +71,7 @@ export const SpikeTable: React.FC<Props> = ({ spikes, style }) => {
         gap: 8,
       }}>
         <h3 style={{ margin: 0, fontSize: 18, fontWeight: 600, color: '#1a2332' }}>
-          Список аварийных событий
+          Список аномальных событий
         </h3>
         <span style={{ fontSize: 14, color: '#6b7a8f', background: '#f0f4f8', padding: '4px 14px', borderRadius: 20 }}>
           Всего: <b style={{ color: '#d94a4a' }}>{spikes.length}</b>
@@ -92,7 +93,7 @@ export const SpikeTable: React.FC<Props> = ({ spikes, style }) => {
             }
             return (
               <div style={{ padding: '8px 16px', background: '#f8fafc', borderRadius: 8 }}>
-                <h4 style={{ marginTop: 0, marginBottom: 8, color: '#4a5a6e' }}>Каналы (по кол-ву записей):</h4>
+                <h4 style={{ marginTop: 0, marginBottom: 8, color: '#4a5a6e' }}>{entityLabel} (по кол-ву записей):</h4>
                 <div style={{ maxHeight: '200px', overflowY: 'auto', paddingRight: '8px' }}>
                   <ul style={{ margin: 0, paddingLeft: 20 }}>
                     {record.channelBreakdown.map(cb => (

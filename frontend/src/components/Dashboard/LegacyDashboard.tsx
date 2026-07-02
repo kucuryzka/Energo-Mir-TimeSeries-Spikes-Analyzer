@@ -50,9 +50,9 @@ export const LegacyDashboard: React.FC = () => {
       </header>
 
       {activeKey === 'em_protocol' ? (
-        <LegacyEmProtocolDashboard />
+        <LegacyEmProtocolDashboard database="" />
       ) : activeKey === 'Dbo' ? (
-        <LegacyDboDashboard />
+        <LegacyDboDashboard database="" />
       ) : (
         <Alert type="warning" message="Неизвестный источник" style={{ margin: 24 }} />
       )}

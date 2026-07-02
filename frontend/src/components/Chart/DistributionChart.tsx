@@ -71,12 +71,16 @@ export const DistributionChart: React.FC<Props> = ({ data, title }) => {
                 data={chartData}
                 cx="50%"
                 cy="50%"
-                innerRadius={60}
-                outerRadius={100}
+                innerRadius={50}
+                outerRadius={80}
                 paddingAngle={5}
                 dataKey="value"
                 nameKey="name"
-                label={({ name, percent }: any) => `${name || 'Неизвестно'} (${((percent || 0) * 100).toFixed(0)}%)`}
+                label={({ name, percent }: any) => {
+                  const safeName = name || 'Неизвестно';
+                  const truncated = safeName.length > 25 ? safeName.substring(0, 25) + '...' : safeName;
+                  return `${truncated} (${((percent || 0) * 100).toFixed(0)}%)`;
+                }}
               >
                 {chartData.map((_, index) => (
                   <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
@@ -87,7 +91,6 @@ export const DistributionChart: React.FC<Props> = ({ data, title }) => {
                 contentStyle={{ borderRadius: 8, backgroundColor: '#ffffff', border: '1px solid #e2e8f0', color: '#0f172a' }}
                 itemStyle={{ color: '#0f172a' }}
               />
-              <Legend verticalAlign="bottom" height={36} wrapperStyle={{ color: '#64748b' }}/>
             </PieChart>
           </ResponsiveContainer>
         </div>

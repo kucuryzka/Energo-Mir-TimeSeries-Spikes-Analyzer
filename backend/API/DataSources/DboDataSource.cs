@@ -13,22 +13,42 @@ namespace API.DataSources;
 
 public class DboDataSource : IDataSourceStrategy
 {
-    private readonly AppDbContext _context;
+    private readonly API.Services.IConnectionManagerService _connectionManager;
+    private readonly Microsoft.AspNetCore.Http.IHttpContextAccessor _httpContextAccessor;
 
-    public DboDataSource(AppDbContext context)
+    public DboDataSource(API.Services.IConnectionManagerService connectionManager, Microsoft.AspNetCore.Http.IHttpContextAccessor httpContextAccessor)
     {
-        _context = context;
+        _connectionManager = connectionManager;
+        _httpContextAccessor = httpContextAccessor;
     }
 
     public string Id => "Dbo";
     public string Name => "dbo";
     public string[] SupportedDistributions => new string[] { };
 
+    private AppDbContext GetContext(string database)
+    {
+        var token = _httpContextAccessor.HttpContext?.Request.Headers["X-Session-Token"].ToString();
+        var info = _connectionManager.GetConnectionInfo(token ?? "");
+        if (info == null) throw new Exception("Invalid or missing session token");
+
+        var connStrBuilder = new System.Data.Common.DbConnectionStringBuilder { ConnectionString = info.ConnectionString };
+        if (!string.IsNullOrEmpty(database)) connStrBuilder["Database"] = database;
+        var targetConnStr = connStrBuilder.ConnectionString;
+
+        var optionsBuilder = new DbContextOptionsBuilder<AppDbContext>();
+        if (info.Provider == "pgsql")
+            optionsBuilder.UseNpgsql(targetConnStr);
+        else
+            optionsBuilder.UseSqlServer(targetConnStr);
+
+        return new AppDbContext(optionsBuilder.Options);
+    }
+
     public async Task<SpikeResponse> ExecuteAnalysisAsync(DetectSpikesRequest request, ISpikeDetectionService spikeDetectionService)
     {
         var dateAddExpr = request.Granularity switch
         {
-            TimeGranularity.Second => "DATEADD(second, DATEDIFF(second, '2000-01-01', TIME_INSERT), '2000-01-01')",
             TimeGranularity.Minute => "DATEADD(minute, DATEDIFF(minute, 0, TIME_INSERT), 0)",
             TimeGranularity.Hour => "DATEADD(hour, DATEDIFF(hour, 0, TIME_INSERT), 0)",
             TimeGranularity.Day => "DATEADD(day, DATEDIFF(day, 0, TIME_INSERT), 0)",
@@ -49,12 +69,15 @@ public class DboDataSource : IDataSourceStrategy
             GROUP BY {dateAddExpr}, m.IDOBJECT
             ORDER BY Timestamp";
 
-        var rawAggregates = new List<AggregatedResult>();
+        var groupedSeriesDict = new Dictionary<DateTime, DataPoint>();
         var currentStart = request.StartDate;
+
+        using var _context = GetContext(request.Database);
+        _context.Database.SetCommandTimeout(300);
 
         while (currentStart < request.EndDate)
         {
-            var currentEnd = currentStart.AddDays(1);
+            var currentEnd = currentStart.AddMonths(1);
             if (currentEnd > request.EndDate) currentEnd = request.EndDate;
 
             var parameters = new List<object> { currentStart, currentEnd };
@@ -64,21 +87,38 @@ public class DboDataSource : IDataSourceStrategy
                 .SqlQueryRaw<AggregatedResult>(sqlAggregate, parameters.ToArray())
                 .ToListAsync();
 
-            rawAggregates.AddRange(batchAggregates);
+            var batchGrouped = batchAggregates
+                .GroupBy(a => a.Timestamp)
+                .Select(g => new DataPoint
+                {
+                    Timestamp = g.Key,
+                    Value = g.Sum(x => x.Value),
+                    ChannelBreakdown = g.Where(x => x.ChannelId.HasValue && x.ChannelId.Value != 0).GroupBy(x => x.ChannelId!.Value).ToDictionary(x => x.Key, x => x.Sum(y => y.Value))
+                });
+
+            foreach (var dp in batchGrouped)
+            {
+                if (groupedSeriesDict.TryGetValue(dp.Timestamp, out var existing))
+                {
+                    existing.Value += dp.Value;
+                    foreach (var kvp in dp.ChannelBreakdown)
+                    {
+                        if (existing.ChannelBreakdown.ContainsKey(kvp.Key))
+                            existing.ChannelBreakdown[kvp.Key] += kvp.Value;
+                        else
+                            existing.ChannelBreakdown[kvp.Key] = kvp.Value;
+                    }
+                }
+                else
+                {
+                    groupedSeriesDict[dp.Timestamp] = dp;
+                }
+            }
 
             currentStart = currentEnd;
         }
 
-        var groupedSeries = rawAggregates
-            .GroupBy(a => a.Timestamp)
-            .Select(g => new DataPoint
-            {
-                Timestamp = g.Key,
-                Value = g.Sum(x => x.Value),
-                ChannelBreakdown = g.Where(x => x.ChannelId != 0).GroupBy(x => x.ChannelId).ToDictionary(x => x.Key, x => x.Sum(y => y.Value))
-            })
-            .OrderBy(p => p.Timestamp)
-            .ToList();
+        var groupedSeries = groupedSeriesDict.Values.OrderBy(p => p.Timestamp).ToList();
 
         var anomalyResults = spikeDetectionService.DetectSpikes(
             groupedSeries,
@@ -129,8 +169,9 @@ public class DboDataSource : IDataSourceStrategy
         };
     }
 
-    public async Task<List<ObjectDto>> GetObjectsAsync(string? search, int page = 1, int pageSize = 50)
+    public async Task<List<ObjectDto>> GetObjectsAsync(string database, string? search, int page = 1, int pageSize = 50)
     {
+        using var _context = GetContext(database);
         var query = _context.Database.SqlQueryRaw<ObjectDto>(
             "SELECT IDOBJECT as Id, OBJECT_NAME as Name FROM dbo.OBJECTS"
         );
@@ -146,7 +187,7 @@ public class DboDataSource : IDataSourceStrategy
         return list.Skip((page - 1) * pageSize).Take(pageSize).ToList();
     }
 
-    public async Task<List<MeteringInfoDto>> GetPointDetailsAsync(DateTime timestamp, TimeGranularity granularity, int? customMinutes, int? channelId)
+    public async Task<List<MeteringInfoDto>> GetPointDetailsAsync(string database, DateTime timestamp, TimeGranularity granularity, int? customMinutes, int? channelId)
     {
         var endDate = granularity switch
         {
@@ -178,6 +219,7 @@ public class DboDataSource : IDataSourceStrategy
         var parameters = new List<object> { timestamp, endDate };
         if (channelId.HasValue) parameters.Add(channelId.Value);
 
+        using var _context = GetContext(database);
         return await _context.Database
             .SqlQueryRaw<MeteringInfoDto>(sql, parameters.ToArray())
             .ToListAsync();

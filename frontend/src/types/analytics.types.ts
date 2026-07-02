@@ -1,4 +1,4 @@
-export type TimeGranularity = 'Second' | 'Minute' | 'Hour' | 'Day' | 'Week' | 'Custom';
+export type TimeGranularity = 'Minute' | 'Hour' | 'Day' | 'Week' | 'Custom';
 
 export interface DataSourceDto {
   id: string;
@@ -12,6 +12,7 @@ export interface DistributionItemDto {
 }
 
 export interface DetectSpikesRequest {
+  database: string;
   sourceId: string;
   channelId?: number | null;
   granularity: TimeGranularity;

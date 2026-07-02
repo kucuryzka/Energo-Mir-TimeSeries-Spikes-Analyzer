@@ -5,6 +5,7 @@ namespace API.DTOs;
 
 public class DetectSpikesRequest
 {
+    public string Database { get; set; } = string.Empty;
     public string SourceId { get; set; } = string.Empty;
     public int? ChannelId { get; set; }
     public TimeGranularity Granularity { get; set; } = TimeGranularity.Hour;

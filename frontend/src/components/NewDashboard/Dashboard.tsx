@@ -54,10 +54,10 @@ export const Dashboard: React.FC = () => {
     if (!sourceId) return;
     try {
       if (sourceId.toLowerCase() === 'dbo') {
-        const data = await analyticsApi.dbo.getObjects(search);
+        const data = await analyticsApi.dbo.getObjects('', search);
         setChannels(data);
       } else {
-        const data = await analyticsApi.emProtocol.getChannels(search);
+        const data = await analyticsApi.emProtocol.getChannels('', search);
         setChannels(data);
       }
     } catch (err) {
@@ -86,6 +86,7 @@ export const Dashboard: React.FC = () => {
         if (chunkEnd.isAfter(end)) chunkEnd = end;
 
         const requestPayload = {
+          database: '',
           sourceId,
           channelId,
           granularity,
@@ -115,7 +116,7 @@ export const Dashboard: React.FC = () => {
         const newDists: Record<string, DistributionItemDto[]> = {};
         for (const category of currentSource.supportedDistributions) {
           try {
-            const distData = await analyticsApi.emProtocol.getDistribution(dateRange[0], dateRange[1], category);
+            const distData = await analyticsApi.emProtocol.getDistribution('', dateRange[0], dateRange[1], category);
             newDists[category] = distData;
           } catch (e) {
             console.error('Ошибка загрузки распределения', e);

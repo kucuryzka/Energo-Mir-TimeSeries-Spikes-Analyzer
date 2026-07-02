@@ -26,7 +26,7 @@ public class EmProtocolController : ControllerBase
     }
 
     [HttpGet("channels")]
-    public async Task<IActionResult> GetChannels([FromQuery] string? search, [FromQuery] int page = 1, [FromQuery] int pageSize = 50)
+    public async Task<IActionResult> GetChannels([FromQuery] string database, [FromQuery] string? search, [FromQuery] int page = 1, [FromQuery] int pageSize = 50)
     {
         try
         {
@@ -34,7 +34,7 @@ public class EmProtocolController : ControllerBase
             if (pageSize < 1) pageSize = 1;
             if (pageSize > 1000) pageSize = 1000;
 
-            var channels = await _dataSource.GetChannelsAsync(search, page, pageSize);
+            var channels = await _dataSource.GetChannelsAsync(database, search, page, pageSize);
             return Ok(channels);
         }
         catch (Exception ex)
@@ -44,13 +44,13 @@ public class EmProtocolController : ControllerBase
     }
 
     [HttpGet("distribution")]
-    public async Task<IActionResult> GetDistribution([FromQuery] DateTime startDate, [FromQuery] DateTime endDate, [FromQuery] string categoryName)
+    public async Task<IActionResult> GetDistribution([FromQuery] string database, [FromQuery] DateTime startDate, [FromQuery] DateTime endDate, [FromQuery] string categoryName)
     {
         try
         {
             if (_dataSource.SupportedDistributions.Contains(categoryName))
             {
-                var distribution = await _dataSource.GetDistributionAsync(startDate, endDate, categoryName);
+                var distribution = await _dataSource.GetDistributionAsync(database, startDate, endDate, categoryName);
                 return Ok(distribution);
             }
             

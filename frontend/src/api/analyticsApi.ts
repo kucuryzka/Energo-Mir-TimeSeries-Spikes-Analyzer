@@ -1,8 +1,5 @@
-import axios from 'axios';
+import { apiClient } from './index';
 import type { DetectSpikesRequest, SpikeResponse, ChannelDto, DataSourceDto, DistributionItemDto } from '../types/analytics.types';
-
-// Используем HTTP, порт 5090 (из launchSettings.json)
-const API_BASE_URL = 'http://localhost:5090';
 
 // 👇 Переключатель: true = используем мок-данные, false = реальный бэкенд
 const USE_MOCK = false;
@@ -10,25 +7,25 @@ const USE_MOCK = false;
 export const analyticsApi = {
   getSources: async (): Promise<DataSourceDto[]> => {
     if (USE_MOCK) return [{ id: 'mock', name: 'Мок источник', supportedDistributions: ['MockCategory'] }];
-    const response = await axios.get<DataSourceDto[]>(`${API_BASE_URL}/api/sources`);
+    const response = await apiClient.get<DataSourceDto[]>('/sources');
     return response.data;
   },
 
   emProtocol: {
-    getDistribution: async (startDate: string, endDate: string, categoryName: string): Promise<DistributionItemDto[]> => {
-      const response = await axios.get<DistributionItemDto[]>(`${API_BASE_URL}/api/em-protocol/distribution`, {
-        params: { startDate, endDate, categoryName }
+    getDistribution: async (database: string, startDate: string, endDate: string, categoryName: string): Promise<DistributionItemDto[]> => {
+      const response = await apiClient.get<DistributionItemDto[]>('/em-protocol/distribution', {
+        params: { database, startDate, endDate, categoryName }
       });
       return response.data;
     },
-    getChannels: async (search?: string, page: number = 1, pageSize: number = 50): Promise<ChannelDto[]> => {
-      const response = await axios.get<ChannelDto[]>(`${API_BASE_URL}/api/em-protocol/channels`, {
-        params: { search, page, pageSize }
+    getChannels: async (database: string, search?: string, page: number = 1, pageSize: number = 50): Promise<ChannelDto[]> => {
+      const response = await apiClient.get<ChannelDto[]>('/em-protocol/channels', {
+        params: { database, search, page, pageSize }
       });
       return response.data;
     },
     detectSpikes: async (request: DetectSpikesRequest): Promise<SpikeResponse> => {
-      const response = await axios.post<SpikeResponse>(`${API_BASE_URL}/api/em-protocol/detect-spikes`, request, {
+      const response = await apiClient.post<SpikeResponse>('/em-protocol/detect-spikes', request, {
         headers: { 'Content-Type': 'application/json' }
       });
       return response.data;
@@ -37,20 +34,20 @@ export const analyticsApi = {
 
   dbo: {
     detectSpikes: async (request: DetectSpikesRequest): Promise<SpikeResponse> => {
-      const response = await axios.post<SpikeResponse>(`${API_BASE_URL}/api/dbo/detect-spikes`, request, {
+      const response = await apiClient.post<SpikeResponse>('/dbo/detect-spikes', request, {
         headers: { 'Content-Type': 'application/json' }
       });
       return response.data;
     },
-    getObjects: async (search?: string, page: number = 1, pageSize: number = 50): Promise<ChannelDto[]> => {
-      const response = await axios.get<ChannelDto[]>(`${API_BASE_URL}/api/dbo/objects`, {
-        params: { search, page, pageSize }
+    getObjects: async (database: string, search?: string, page: number = 1, pageSize: number = 50): Promise<ChannelDto[]> => {
+      const response = await apiClient.get<ChannelDto[]>('/dbo/objects', {
+        params: { database, search, page, pageSize }
       });
       return response.data;
     },
-    getPointDetails: async (timestamp: string, granularity: string, customMinutes?: number, channelId?: number): Promise<any[]> => {
-      const response = await axios.get<any[]>(`${API_BASE_URL}/api/dbo/point-details`, {
-        params: { timestamp, granularity, customMinutes, channelId }
+    getPointDetails: async (database: string, timestamp: string, granularity: string, customMinutes?: number, channelId?: number): Promise<any[]> => {
+      const response = await apiClient.get<any[]>('/dbo/point-details', {
+        params: { database, timestamp, granularity, customMinutes, channelId }
       });
       return response.data;
     }

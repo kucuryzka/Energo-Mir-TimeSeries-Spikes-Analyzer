@@ -26,7 +26,7 @@ public class DboController : ControllerBase
     }
 
     [HttpGet("objects")]
-    public async Task<IActionResult> GetObjects([FromQuery] string? search, [FromQuery] int page = 1, [FromQuery] int pageSize = 50)
+    public async Task<IActionResult> GetObjects([FromQuery] string database, [FromQuery] string? search, [FromQuery] int page = 1, [FromQuery] int pageSize = 50)
     {
         try
         {
@@ -34,7 +34,7 @@ public class DboController : ControllerBase
             if (pageSize < 1) pageSize = 1;
             if (pageSize > 1000) pageSize = 1000;
 
-            var objects = await _dataSource.GetObjectsAsync(search, page, pageSize);
+            var objects = await _dataSource.GetObjectsAsync(database, search, page, pageSize);
             return Ok(objects);
         }
         catch (Exception ex)
@@ -67,16 +67,18 @@ public class DboController : ControllerBase
         }
         catch (Exception ex)
         {
+            Console.WriteLine("=== ERROR IN DETECT SPIKES ===");
+            Console.WriteLine(ex.ToString());
             return StatusCode(500, new { message = "An error occurred during spike detection.", details = ex.Message });
         }
     }
 
     [HttpGet("point-details")]
-    public async Task<IActionResult> GetPointDetails([FromQuery] DateTime timestamp, [FromQuery] Core.Enums.TimeGranularity granularity, [FromQuery] int? customMinutes, [FromQuery] int? channelId)
+    public async Task<IActionResult> GetPointDetails([FromQuery] string database, [FromQuery] DateTime timestamp, [FromQuery] Core.Enums.TimeGranularity granularity, [FromQuery] int? customMinutes, [FromQuery] int? channelId)
     {
         try
         {
-            var details = await _dataSource.GetPointDetailsAsync(timestamp, granularity, customMinutes, channelId);
+            var details = await _dataSource.GetPointDetailsAsync(database, timestamp, granularity, customMinutes, channelId);
             return Ok(details);
         }
         catch (Exception ex)
