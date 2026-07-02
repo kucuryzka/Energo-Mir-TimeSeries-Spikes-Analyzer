@@ -6,6 +6,10 @@ using Microsoft.AspNetCore.Mvc;
 using Core.Interfaces;
 using API.DTOs;
 using API.DataSources;
+using API.Data;
+using API.Models;
+using Hangfire;
+using Microsoft.EntityFrameworkCore;
 
 namespace API.Controllers;
 
@@ -15,14 +19,26 @@ public class DboController : ControllerBase
 {
     private readonly DboDataSource _dataSource;
     private readonly ISpikeDetectionService _spikeDetectionService;
+    private readonly InternalDbContext _internalDb;
+    private readonly IBackgroundJobClient _backgroundJobClient;
+    private readonly API.Services.IConnectionManagerService _connectionManager;
+    private readonly Microsoft.AspNetCore.Http.IHttpContextAccessor _httpContextAccessor;
 
     public DboController(
         IEnumerable<IDataSourceStrategy> dataSourceStrategies,
-        ISpikeDetectionService spikeDetectionService)
+        ISpikeDetectionService spikeDetectionService,
+        InternalDbContext internalDb,
+        IBackgroundJobClient backgroundJobClient,
+        API.Services.IConnectionManagerService connectionManager,
+        Microsoft.AspNetCore.Http.IHttpContextAccessor httpContextAccessor)
     {
         _dataSource = dataSourceStrategies.OfType<DboDataSource>().FirstOrDefault() 
             ?? throw new Exception("DboDataSource not registered.");
         _spikeDetectionService = spikeDetectionService;
+        _internalDb = internalDb;
+        _backgroundJobClient = backgroundJobClient;
+        _connectionManager = connectionManager;
+        _httpContextAccessor = httpContextAccessor;
     }
 
     [HttpGet("objects")]
@@ -55,9 +71,13 @@ public class DboController : ControllerBase
             if (request.WindowSize < 2)
                 return BadRequest("WindowSize must be at least 2 for sliding window analysis.");
 
+            var token = _httpContextAccessor.HttpContext?.Request.Headers["X-Session-Token"].ToString();
+            var info = _connectionManager.GetConnectionInfo(token ?? "");
+            if (info == null) return Unauthorized("Invalid or missing session token");
+
             // The strategy encapsulates all logic including DB querying, aggregation, 
             // spike detection calling.
-            var response = await _dataSource.ExecuteAnalysisAsync(request, _spikeDetectionService);
+            var response = await _dataSource.ExecuteAnalysisAsync(request, _spikeDetectionService, info.ConnectionString, info.Provider);
 
             return Ok(response);
         }
@@ -85,5 +105,110 @@ public class DboController : ControllerBase
         {
             return StatusCode(500, new { message = "An error occurred while fetching point details.", details = ex.Message });
         }
+    }
+
+    [HttpPost("enqueue")]
+    public async Task<IActionResult> EnqueueAnalysis([FromBody] DetectSpikesRequest request)
+    {
+        try
+        {
+            var job = new AnalysisJob
+            {
+                Database = request.Database,
+                Schema = "dbo", // hardcoded for history filtering
+                Table = request.ChannelId?.ToString() ?? "All", // store channelId in Table
+                TimeColumn = "", // Not used
+                StartDate = request.StartDate,
+                EndDate = request.EndDate,
+                Granularity = request.Granularity,
+                CustomMinutes = request.CustomMinutes,
+                Confidence = request.Confidence,
+                WindowSize = request.WindowSize
+            };
+
+            _internalDb.AnalysisJobs.Add(job);
+            await _internalDb.SaveChangesAsync();
+
+            var token = _httpContextAccessor.HttpContext?.Request.Headers["X-Session-Token"].ToString();
+            var info = _connectionManager.GetConnectionInfo(token ?? "");
+            if (info == null) return Unauthorized("Invalid or missing session token");
+
+            var jobId = _backgroundJobClient.Enqueue<API.Services.AnalysisJobProcessor>(
+                p => p.ProcessLegacyJobAsync(job.Id, "Dbo", info.Provider, info.ConnectionString)
+            );
+            
+            job.BackgroundJobId = jobId;
+            await _internalDb.SaveChangesAsync();
+
+            return Ok(new { JobId = job.Id });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { message = "Error enqueueing analysis", details = ex.Message });
+        }
+    }
+
+    [HttpGet("status/{id}")]
+    public async Task<IActionResult> GetJobStatus(string id)
+    {
+        var job = await _internalDb.AnalysisJobs.FindAsync(id);
+        if (job == null) return NotFound();
+
+        return Ok(new { 
+            job.Id, 
+            job.Status, 
+            job.Progress, 
+            job.ErrorMessage,
+            HasResult = job.ResultJson != null 
+        });
+    }
+
+    [HttpGet("result/{id}")]
+    public async Task<IActionResult> GetJobResult(string id)
+    {
+        var job = await _internalDb.AnalysisJobs.FindAsync(id);
+        if (job == null) return NotFound();
+        if (string.IsNullOrEmpty(job.ResultJson)) return BadRequest("Result is not ready or failed");
+
+        return Content(job.ResultJson, "application/json");
+    }
+
+    [HttpGet("history")]
+    public async Task<IActionResult> GetHistory([FromQuery] string database)
+    {
+        var history = await _internalDb.AnalysisJobs
+            .Where(j => j.Database == database && j.Schema == "dbo")
+            .OrderByDescending(j => j.CreatedAt)
+            .Select(j => new {
+                j.Id,
+                j.StartDate,
+                j.EndDate,
+                j.Granularity,
+                j.Status,
+                j.Progress,
+                j.CreatedAt,
+                ChannelId = j.Table == "All" ? null : j.Table
+            })
+            .ToListAsync();
+
+        return Ok(history);
+    }
+
+    [HttpDelete("history/{id}")]
+    public async Task<IActionResult> DeleteHistoryItem(string id)
+    {
+        var job = await _internalDb.AnalysisJobs.FindAsync(id);
+        if (job == null) return NotFound();
+
+        // Optionally delete the background job from Hangfire if it's still running
+        if (!string.IsNullOrEmpty(job.BackgroundJobId))
+        {
+            _backgroundJobClient.Delete(job.BackgroundJobId);
+        }
+
+        _internalDb.AnalysisJobs.Remove(job);
+        await _internalDb.SaveChangesAsync();
+
+        return NoContent();
     }
 }

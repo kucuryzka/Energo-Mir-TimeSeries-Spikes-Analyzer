@@ -14,6 +14,9 @@ using Microsoft.Data.SqlClient;
 using Npgsql;
 using Microsoft.EntityFrameworkCore;
 using API.Data;
+using Hangfire;
+using API.Models;
+using System.Text.Json;
 
 namespace API.Controllers;
 
@@ -42,10 +45,152 @@ public class GenericDataPoint
 public class GenericAnalysisController : ControllerBase
 {
     private readonly IConnectionManagerService _connectionManager;
+    private readonly InternalDbContext _internalDb;
+    private readonly IBackgroundJobClient _backgroundJobClient;
 
-    public GenericAnalysisController(IConnectionManagerService connectionManager)
+    public GenericAnalysisController(
+        IConnectionManagerService connectionManager,
+        InternalDbContext internalDb,
+        IBackgroundJobClient backgroundJobClient)
     {
         _connectionManager = connectionManager;
+        _internalDb = internalDb;
+        _backgroundJobClient = backgroundJobClient;
+    }
+
+    [HttpGet("time-range")]
+    public async Task<IActionResult> GetTimeRange([FromQuery] string database, [FromQuery] string schema, [FromQuery] string table, [FromQuery] string timeColumn)
+    {
+        try
+        {
+            var token = Request.Headers["X-Session-Token"].ToString();
+            var info = _connectionManager.GetConnectionInfo(token ?? "");
+            if (info == null) return Unauthorized("Invalid or missing session token");
+
+            var connStrBuilder = new DbConnectionStringBuilder { ConnectionString = info.ConnectionString };
+            connStrBuilder["Database"] = database;
+            var targetConnStr = connStrBuilder.ConnectionString;
+
+            using var connection = info.Provider == "pgsql" 
+                ? (DbConnection)new NpgsqlConnection(targetConnStr) 
+                : new SqlConnection(targetConnStr);
+            
+            await connection.OpenAsync();
+
+            var schemaSafe = info.Provider == "pgsql" ? $"\"{schema}\"" : $"[{schema}]";
+            var tableSafe = info.Provider == "pgsql" ? $"\"{table}\"" : $"[{table}]";
+            var timeColSafe = info.Provider == "pgsql" ? $"\"{timeColumn}\"" : $"[{timeColumn}]";
+
+            var sql = $"SELECT MIN({timeColSafe}) as MinDate, MAX({timeColSafe}) as MaxDate FROM {schemaSafe}.{tableSafe}";
+            var result = await connection.QueryFirstOrDefaultAsync(sql);
+            
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { message = "Error fetching time range", details = ex.Message });
+        }
+    }
+
+    [HttpPost("enqueue")]
+    public async Task<IActionResult> EnqueueAnalysis([FromBody] GenericAnalysisRequest request)
+    {
+        try
+        {
+            var token = Request.Headers["X-Session-Token"].ToString();
+            var info = _connectionManager.GetConnectionInfo(token ?? "");
+            if (info == null) return Unauthorized("Invalid or missing session token");
+
+            var job = new AnalysisJob
+            {
+                Database = request.Database,
+                Schema = request.Schema,
+                Table = request.Table,
+                TimeColumn = request.TimeColumn,
+                StartDate = request.StartDate,
+                EndDate = request.EndDate,
+                Granularity = request.Granularity,
+                CustomMinutes = request.CustomMinutes,
+                Confidence = request.Confidence,
+                WindowSize = request.WindowSize
+            };
+
+            _internalDb.AnalysisJobs.Add(job);
+            await _internalDb.SaveChangesAsync();
+
+            var jobId = _backgroundJobClient.Enqueue<API.Services.AnalysisJobProcessor>(p => p.ProcessJobAsync(job.Id, info.Provider, info.ConnectionString));
+            
+            job.BackgroundJobId = jobId;
+            await _internalDb.SaveChangesAsync();
+
+            return Ok(new { JobId = job.Id });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { message = "Error enqueueing analysis", details = ex.Message });
+        }
+    }
+
+    [HttpGet("status/{id}")]
+    public async Task<IActionResult> GetJobStatus(string id)
+    {
+        var job = await _internalDb.AnalysisJobs.FindAsync(id);
+        if (job == null) return NotFound();
+
+        return Ok(new { 
+            job.Id, 
+            job.Status, 
+            job.Progress, 
+            job.ErrorMessage,
+            HasResult = job.ResultJson != null 
+        });
+    }
+
+    [HttpGet("result/{id}")]
+    public async Task<IActionResult> GetJobResult(string id)
+    {
+        var job = await _internalDb.AnalysisJobs.FindAsync(id);
+        if (job == null) return NotFound();
+        if (string.IsNullOrEmpty(job.ResultJson)) return BadRequest("Result is not ready or failed");
+
+        return Content(job.ResultJson, "application/json");
+    }
+
+    [HttpGet("history")]
+    public async Task<IActionResult> GetHistory([FromQuery] string database, [FromQuery] string schema, [FromQuery] string table)
+    {
+        var history = await _internalDb.AnalysisJobs
+            .Where(j => j.Database == database && j.Schema == schema && j.Table == table)
+            .OrderByDescending(j => j.CreatedAt)
+            .Select(j => new {
+                j.Id,
+                j.StartDate,
+                j.EndDate,
+                j.Granularity,
+                j.Status,
+                j.Progress,
+                j.CreatedAt
+            })
+            .ToListAsync();
+
+        return Ok(history);
+    }
+
+    [HttpDelete("history/{id}")]
+    public async Task<IActionResult> DeleteHistoryItem(string id)
+    {
+        var job = await _internalDb.AnalysisJobs.FindAsync(id);
+        if (job == null) return NotFound();
+
+        if (!string.IsNullOrEmpty(job.BackgroundJobId))
+        {
+            _backgroundJobClient.Delete(job.BackgroundJobId);
+        }
+
+        _internalDb.AnalysisJobs.Remove(job);
+        await _internalDb.SaveChangesAsync();
+
+        return NoContent();
     }
 
     [HttpPost("analyze")]

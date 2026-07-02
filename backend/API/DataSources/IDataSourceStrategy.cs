@@ -12,6 +12,5 @@ public interface IDataSourceStrategy
     string Id { get; }
     string Name { get; }
     string[] SupportedDistributions { get; }
-    
-    Task<SpikeResponse> ExecuteAnalysisAsync(DetectSpikesRequest request, Core.Interfaces.ISpikeDetectionService spikeDetectionService);
+    Task<SpikeResponse> ExecuteAnalysisAsync(DetectSpikesRequest request, Core.Interfaces.ISpikeDetectionService spikeDetectionService, string connectionString, string provider, IProgress<int>? progress = null);
 }

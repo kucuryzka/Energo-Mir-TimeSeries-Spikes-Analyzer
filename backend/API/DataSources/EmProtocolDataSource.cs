@@ -26,18 +26,23 @@ public class EmProtocolDataSource : IDataSourceStrategy, ISupportsChannels, ISup
     public string Name => "em_protocol";
     public string[] SupportedDistributions => new[] { "EventCode" };
 
-    private AppDbContext GetContext(string database)
+    private AppDbContext GetContext(string database, string? connectionString = null, string? provider = null)
     {
-        var token = _httpContextAccessor.HttpContext?.Request.Headers["X-Session-Token"].ToString();
-        var info = _connectionManager.GetConnectionInfo(token ?? "");
-        if (info == null) throw new Exception("Invalid or missing session token");
+        if (connectionString == null || provider == null)
+        {
+            var token = _httpContextAccessor.HttpContext?.Request.Headers["X-Session-Token"].ToString();
+            var info = _connectionManager.GetConnectionInfo(token ?? "");
+            if (info == null) throw new Exception("Invalid or missing session token");
+            connectionString = info.ConnectionString;
+            provider = info.Provider;
+        }
 
-        var connStrBuilder = new System.Data.Common.DbConnectionStringBuilder { ConnectionString = info.ConnectionString };
+        var connStrBuilder = new System.Data.Common.DbConnectionStringBuilder { ConnectionString = connectionString };
         if (!string.IsNullOrEmpty(database)) connStrBuilder["Database"] = database;
         var targetConnStr = connStrBuilder.ConnectionString;
 
         var optionsBuilder = new DbContextOptionsBuilder<AppDbContext>();
-        if (info.Provider == "pgsql")
+        if (provider == "pgsql")
             optionsBuilder.UseNpgsql(targetConnStr, opts => opts.CommandTimeout(3600));
         else
             optionsBuilder.UseSqlServer(targetConnStr, opts => opts.CommandTimeout(3600));
@@ -73,7 +78,7 @@ public class EmProtocolDataSource : IDataSourceStrategy, ISupportsChannels, ISup
         }
     }
 
-    public async Task<SpikeResponse> ExecuteAnalysisAsync(DetectSpikesRequest request, ISpikeDetectionService spikeDetectionService)
+    public async Task<SpikeResponse> ExecuteAnalysisAsync(DetectSpikesRequest request, ISpikeDetectionService spikeDetectionService, string connectionString, string provider, IProgress<int>? progress = null)
     {
         try
         {
@@ -105,7 +110,7 @@ public class EmProtocolDataSource : IDataSourceStrategy, ISupportsChannels, ISup
             var groupedSeriesDict = new Dictionary<DateTime, DataPoint>();
             var currentStart = request.StartDate;
 
-            using var _context = GetContext(request.Database);
+            using var _context = GetContext(request.Database, connectionString, provider);
             _context.Database.SetCommandTimeout(3600);
 
             while (currentStart < request.EndDate)
@@ -146,6 +151,15 @@ public class EmProtocolDataSource : IDataSourceStrategy, ISupportsChannels, ISup
                 }
 
                 currentStart = currentEnd;
+
+                if (progress != null)
+                {
+                    var totalDays = (request.EndDate - request.StartDate).TotalDays;
+                    var processedDays = (currentStart - request.StartDate).TotalDays;
+                    var percent = (int)(processedDays / totalDays * 100);
+                    if (percent > 99) percent = 99;
+                    progress.Report(percent);
+                }
             }
 
             var groupedSeries = groupedSeriesDict.Values.OrderBy(p => p.Timestamp).ToList();
