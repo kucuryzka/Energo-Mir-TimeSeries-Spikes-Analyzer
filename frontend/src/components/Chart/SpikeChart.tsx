@@ -12,6 +12,10 @@ interface Props {
 export const SpikeChart: React.FC<Props> = ({ data, showMarkers = true, onPointClick }) => {
   const chartRef = useRef<ReactECharts>(null);
 
+  const sortedData = useMemo(() => {
+    return [...data].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+  }, [data]);
+
   useEffect(() => {
     if (!chartRef.current) return;
     const echartsInstance = chartRef.current.getEchartsInstance();
@@ -24,8 +28,8 @@ export const SpikeChart: React.FC<Props> = ({ data, showMarkers = true, onPointC
         if (pointInGrid && pointInGrid.length > 0) {
           // xAxis is category axis, so pointInGrid[0] is the index
           const xIndex = Math.round(pointInGrid[0]);
-          if (xIndex >= 0 && xIndex < data.length) {
-            const dataPoint = data[xIndex];
+          if (xIndex >= 0 && xIndex < sortedData.length) {
+            const dataPoint = sortedData[xIndex];
             if (dataPoint && onPointClick) {
               onPointClick(dataPoint);
             }
@@ -38,13 +42,13 @@ export const SpikeChart: React.FC<Props> = ({ data, showMarkers = true, onPointC
     return () => {
       zr.off('click', handleClick);
     };
-  }, [data, onPointClick]);
+  }, [sortedData, onPointClick]);
 
   const option = useMemo(() => {
-    const timestamps = data.map(d => d.timestamp);
-    const values = data.map(d => d.value);
+    const timestamps = sortedData.map(d => d.timestamp);
+    const values = sortedData.map(d => d.value);
 
-    const spikeMarkers = showMarkers ? data
+    const spikeMarkers = showMarkers ? sortedData
       .filter(d => d.isSpike)
       .map(d => ({
         name: 'Аварийное событие',
@@ -76,7 +80,7 @@ export const SpikeChart: React.FC<Props> = ({ data, showMarkers = true, onPointC
         textStyle: { color: '#1a2332', fontSize: 13 },
         formatter: (params: any) => {
           const point = params[0];
-          const dataPoint = data.find(d => d.timestamp === point.axisValue);
+          const dataPoint = sortedData.find(d => d.timestamp === point.axisValue);
           if (!dataPoint) return '';
 
           let html = `<b>${dayjs(dataPoint.timestamp).format('DD.MM.YYYY HH:mm')}</b><br/>`;
@@ -85,13 +89,8 @@ export const SpikeChart: React.FC<Props> = ({ data, showMarkers = true, onPointC
           html += `Доверие: ${dataPoint.confidencePercent.toFixed(1)}%<br/>`;
 
           if (dataPoint.isSpike) {
-            const severityText =
-              dataPoint.pValue < 0.01 ? '🔴 КРИТИЧЕСКАЯ АВАРИЯ' :
-              dataPoint.pValue < 0.05 ? '🟠 ВЫСОКАЯ ВЕРОЯТНОСТЬ АВАРИИ' :
-              '🟡 ПОДОЗРИТЕЛЬНОЕ СОБЫТИЕ';
+            const severityText = dataPoint.pValue < 0.01 ? '🔴 АНОМАЛЬНОЕ ЗНАЧЕНИЕ' : '🟠 ВОЗМОЖНО АНОМАЛЬНОЕ ЗНАЧЕНИЕ';
             html += `<span style="color:#d94a4a;font-weight:700;">${severityText}</span>`;
-          } else {
-            html += `<span style="color:#22a67e;"> Штатный режим</span>`;
           }
 
           return html;
@@ -147,17 +146,24 @@ export const SpikeChart: React.FC<Props> = ({ data, showMarkers = true, onPointC
           markLine: {
             silent: true,
             symbol: 'none',
-            lineStyle: { color: '#6b7a8f', type: 'dashed', width: 1.5 },
-            label: {
-              formatter: 'Средний уровень: {c}',
-              color: '#6b7a8f',
-              fontSize: 11,
-              position: 'insideEndTop',
-            },
             data: [
               {
                 type: 'average',
-                name: 'Средний уровень',
+                name: 'Средняя',
+                label: { formatter: 'Ср.: {c}', color: '#6b7a8f', position: 'insideEndTop' },
+                lineStyle: { color: '#6b7a8f' }
+              },
+              {
+                type: 'max',
+                name: 'Максимум',
+                label: { formatter: 'Макс.: {c}', color: '#d94a4a', position: 'insideEndTop' },
+                lineStyle: { color: '#d94a4a', type: 'dotted' }
+              },
+              {
+                type: 'min',
+                name: 'Минимум',
+                label: { formatter: 'Мин.: {c}', color: '#22a67e', position: 'insideEndBottom' },
+                lineStyle: { color: '#22a67e', type: 'dotted' }
               },
             ],
           },
@@ -185,7 +191,7 @@ export const SpikeChart: React.FC<Props> = ({ data, showMarkers = true, onPointC
       },
       color: ['#4a90d9'],
     };
-  }, [data]);
+  }, [sortedData, showMarkers]);
 
   const onEvents = {
     click: (params: any) => {
@@ -196,14 +202,14 @@ export const SpikeChart: React.FC<Props> = ({ data, showMarkers = true, onPointC
         if (params.name) {
           timestamp = params.name;
         } else if (params.dataIndex !== undefined) {
-          timestamp = data[params.dataIndex]?.timestamp;
+          timestamp = sortedData[params.dataIndex]?.timestamp;
         }
       } else if (params.componentType === 'markPoint') {
         timestamp = params.data.coord[0];
       }
 
       if (timestamp && onPointClick) {
-        const point = data.find(d => d.timestamp === timestamp);
+        const point = sortedData.find(d => d.timestamp === timestamp);
         if (point) {
           onPointClick(point);
         }
