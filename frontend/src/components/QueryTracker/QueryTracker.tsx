@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Badge, Button, Drawer, List, Tag, Typography } from 'antd';
 import { ApiOutlined, CheckCircleOutlined, CloseCircleOutlined, LoadingOutlined } from '@ant-design/icons';
-import { requestTracker, RequestRecord } from '../../store/requestTracker';
+import { requestTracker, type RequestRecord } from '../../store/requestTracker';
 import dayjs from 'dayjs';
 
 const { Text } = Typography;

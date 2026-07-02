@@ -18,8 +18,6 @@ interface Props {
   onWindowSizeChange: (value: number | null) => void;
   dateRange: [string, string];
   onDateRangeChange: (dates: [string, string]) => void;
-  startFromZero: boolean;
-  onStartFromZeroChange: (value: boolean) => void;
   channelId: number | null;
   onChannelChange: (value: number | null) => void;
   channels: ChannelDto[];
@@ -40,8 +38,6 @@ export const ControlsPanel: React.FC<Props> = ({
   onWindowSizeChange,
   dateRange,
   onDateRangeChange,
-  startFromZero,
-  onStartFromZeroChange,
   channelId,
   onChannelChange,
   channels,
@@ -179,18 +175,7 @@ export const ControlsPanel: React.FC<Props> = ({
                     style={{ width: '100%' }}
                   />
                 </div>
-                <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <label style={{ fontSize: 13, fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                      Начинать ось Y с нуля
-                    </label>
-                    <Switch
-                      checked={startFromZero}
-                      onChange={onStartFromZeroChange}
-                    />
-                  </div>
                 </div>
-              </div>
             }
           >
             <Button size="large" icon={<SettingOutlined />} style={{ width: 48, height: 40 }} />
