@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using API.Data;
+using Hangfire;
+using Hangfire.Storage.SQLite;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -21,12 +23,35 @@ builder.Services.AddDbContext<AppDbContext>(options =>
         }
     ));
 
+// Configure Internal DB Context for Hangfire and Jobs
+builder.Services.AddDbContext<InternalDbContext>(options =>
+    options.UseSqlite(builder.Configuration.GetConnectionString("InternalConnection")));
+
+// Configure Hangfire
+builder.Services.AddHangfire(configuration => configuration
+    .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
+    .UseSimpleAssemblyNameTypeSerializer()
+    .UseRecommendedSerializerSettings()
+    .UseSQLiteStorage(builder.Configuration.GetConnectionString("InternalConnection"), new SQLiteStorageOptions
+    {
+        QueuePollInterval = TimeSpan.FromSeconds(1)
+    }));
+
+builder.Services.AddHangfireServer(options =>
+{
+    options.SchedulePollingInterval = TimeSpan.FromSeconds(1);
+    options.ServerCheckInterval = TimeSpan.FromSeconds(2);
+});
+
 // Register implementations of Core interfaces
 builder.Services.AddScoped<Core.Interfaces.ITimeSeriesService, Core.Services.TimeService>();
 builder.Services.AddScoped<Core.Interfaces.ISpikeDetectionService, Core.Services.SpikeDetectionService>();
 
 // Register Connection Manager
 builder.Services.AddSingleton<API.Services.IConnectionManagerService, API.Services.ConnectionManagerService>();
+
+// Register background job processor
+builder.Services.AddScoped<API.Services.AnalysisJobProcessor>();
 
 // Register data sources
 builder.Services.AddScoped<API.DataSources.IDataSourceStrategy, API.DataSources.EmProtocolDataSource>();
@@ -57,6 +82,15 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseCors("ReactCorsPolicy");
+
+// Ensure Internal DB is created
+using (var scope = app.Services.CreateScope())
+{
+    var internalDb = scope.ServiceProvider.GetRequiredService<InternalDbContext>();
+    internalDb.Database.EnsureCreated();
+}
+
+app.UseHangfireDashboard(); // Available at /hangfire
 
 app.UseHttpsRedirection();
 
