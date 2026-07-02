@@ -1,5 +1,5 @@
 import React from 'react';
-import { Select, Slider, DatePicker, Button, InputNumber, Popover, Switch } from 'antd';
+import { Select, Slider, DatePicker, Button, InputNumber, Popover } from 'antd';
 import { SearchOutlined, SettingOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import type { TimeGranularity, ChannelDto, DataSourceDto } from '../../types/analytics.types';

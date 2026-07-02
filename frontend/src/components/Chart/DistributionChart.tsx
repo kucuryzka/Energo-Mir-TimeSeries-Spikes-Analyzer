@@ -1,6 +1,6 @@
 import React from 'react';
 import { Card, Table, Typography } from 'antd';
-import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 import type { DistributionItemDto } from '../../types/analytics.types';
 
 const { Title } = Typography;

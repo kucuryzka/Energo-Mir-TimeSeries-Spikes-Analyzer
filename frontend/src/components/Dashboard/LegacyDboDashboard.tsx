@@ -6,7 +6,7 @@ import { DistributionChart } from '../Chart/DistributionChart';
 import { ControlsPanel } from '../Controls/ControlsPanel';
 import { SpikeTable } from '../Stats/SpikeTable';
 import { analyticsApi } from '../../api/analyticsApi';
-import { genericAnalysisApi } from '../../api/explorerApi';
+
 import { enrichSpikeData, getSpikesOnly, getStatistics } from '../../utils/spikeUtils';
 import type { TimeGranularity, ChannelDto, DataSourceDto, DistributionItemDto, SpikePoint } from '../../types/analytics.types';
 import dayjs from 'dayjs';

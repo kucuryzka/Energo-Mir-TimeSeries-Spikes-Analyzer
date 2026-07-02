@@ -22,7 +22,7 @@ export const QueryTracker: React.FC = () => {
       setActiveCount(requestTracker.getActiveCount());
     });
 
-    return unsubscribe;
+    return () => { unsubscribe(); };
   }, []);
 
   const getStatusTag = (req: RequestRecord) => {
