@@ -9,6 +9,7 @@ builder.Services.AddControllers()
     {
         options.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
     });
+builder.Services.AddHttpContextAccessor();
 
 // Configure EF Core DbContext with SQL Server
 builder.Services.AddDbContext<AppDbContext>(options =>
@@ -23,6 +24,9 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 // Register implementations of Core interfaces
 builder.Services.AddScoped<Core.Interfaces.ITimeSeriesService, Core.Services.TimeService>();
 builder.Services.AddScoped<Core.Interfaces.ISpikeDetectionService, Core.Services.SpikeDetectionService>();
+
+// Register Connection Manager
+builder.Services.AddSingleton<API.Services.IConnectionManagerService, API.Services.ConnectionManagerService>();
 
 // Register data sources
 builder.Services.AddScoped<API.DataSources.IDataSourceStrategy, API.DataSources.EmProtocolDataSource>();
