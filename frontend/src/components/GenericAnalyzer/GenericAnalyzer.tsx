@@ -60,7 +60,27 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({ db, schema, ta
   };
 
   useEffect(() => {
-    fetchData();
+    // Check if we already have cached data for these parameters
+    import('../../store/apiCache').then(({ apiCache }) => {
+      const dataPayload = {
+        database: db,
+        schema,
+        table,
+        timeColumn,
+        startDate: dateRange[0],
+        endDate: dateRange[1],
+        granularity,
+        customMinutes,
+        confidence,
+        windowSize
+      };
+      const cached = apiCache.get('/GenericAnalysis/analyze', undefined, dataPayload);
+      if (cached) {
+        setData(cached);
+      } else {
+        setData([]); // clear data if no cache, waiting for manual trigger
+      }
+    });
   }, [db, schema, table, timeColumn]);
 
   const handlePointClick = async (point: SpikePoint) => {

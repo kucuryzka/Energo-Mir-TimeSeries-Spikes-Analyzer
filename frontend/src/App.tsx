@@ -6,6 +6,7 @@ import { LegacyEmProtocolDashboard } from './components/Dashboard/LegacyEmProtoc
 import { ConnectionSetup } from './components/ConnectionSetup/ConnectionSetup';
 import { DatabaseTreeSidebar } from './components/Explorer/DatabaseTreeSidebar';
 import { GenericAnalyzer } from './components/GenericAnalyzer/GenericAnalyzer';
+import { QueryTracker } from './components/QueryTracker/QueryTracker';
 import { MenuUnfoldOutlined } from '@ant-design/icons';
 import { Button } from 'antd';
 import './App.css';
@@ -90,6 +91,7 @@ function App() {
                 onBack={() => setView('empty')}
               />
             )}
+            <QueryTracker />
           </Content>
         </Layout>
       </Layout>

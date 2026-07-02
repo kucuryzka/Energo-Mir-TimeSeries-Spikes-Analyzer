@@ -1,4 +1,5 @@
 import { apiClient } from './index';
+import { apiCache } from '../store/apiCache';
 
 export const authApi = {
   connect: async (data: any) => {
@@ -28,13 +29,18 @@ export const explorerApi = {
 
 export const genericAnalysisApi = {
   analyze: async (data: any) => {
+    const cached = apiCache.get('/GenericAnalysis/analyze', undefined, data);
+    if (cached) return cached;
     const res = await apiClient.post('/GenericAnalysis/analyze', data);
+    apiCache.set('/GenericAnalysis/analyze', undefined, data, res.data);
     return res.data;
   },
   getPointDetails: async (database: string, schema: string, table: string, timeColumn: string, timestamp: string, granularity: string, customMinutes?: number | null) => {
-    const res = await apiClient.get('/GenericAnalysis/point-details', {
-      params: { database, schema, table, timeColumn, timestamp, granularity, customMinutes }
-    });
+    const params = { database, schema, table, timeColumn, timestamp, granularity, customMinutes };
+    const cached = apiCache.get('/GenericAnalysis/point-details', params, undefined);
+    if (cached) return cached;
+    const res = await apiClient.get('/GenericAnalysis/point-details', { params });
+    apiCache.set('/GenericAnalysis/point-details', params, undefined, res.data);
     return res.data;
   }
 };
