@@ -12,7 +12,7 @@ import dayjs from 'dayjs';
 
 const { Title, Text } = Typography;
 
-export const LegacyEmProtocolDashboard: React.FC = () => {
+export const LegacyEmProtocolDashboard: React.FC<{ database: string }> = ({ database }) => {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -35,6 +35,7 @@ export const LegacyEmProtocolDashboard: React.FC = () => {
 
   const [distributions, setDistributions] = useState<Record<string, DistributionItemDto[]>>({});
   const [showMarkers, setShowMarkers] = useState(true);
+  const [eventCodeMap, setEventCodeMap] = useState<Record<string, string>>({});
 
   const [selectedPoint, setSelectedPoint] = useState<SpikePoint | null>(null);
 
@@ -46,6 +47,7 @@ export const LegacyEmProtocolDashboard: React.FC = () => {
 
     try {
       const response = await analyticsApi.emProtocol.detectSpikes({
+        database,
         sourceId: 'EmProtocol',
         channelId,
         granularity,
@@ -83,7 +85,7 @@ export const LegacyEmProtocolDashboard: React.FC = () => {
   const fetchChannels = async (search: string = '') => {
     if (!sourceId) return;
     try {
-      const data = await analyticsApi.emProtocol.getChannels(search);
+      const data = await analyticsApi.emProtocol.getChannels(database, search);
       setChannels(data);
     } catch (err) {
       console.error('Ошибка при загрузке каналов', err);
@@ -99,6 +101,7 @@ export const LegacyEmProtocolDashboard: React.FC = () => {
       const newDists: Record<string, DistributionItemDto[]> = {};
       for (const category of supportedCats) {
         const distData = await analyticsApi.emProtocol.getDistribution(
+          database,
           dateRange[0],
           dateRange[1],
           category
@@ -126,6 +129,30 @@ export const LegacyEmProtocolDashboard: React.FC = () => {
 
   useEffect(() => {
     initSources();
+    fetch('/event_codes.csv')
+      .then(res => {
+        if (!res.ok) throw new Error('event_codes.csv not found');
+        return res.text();
+      })
+      .then(text => {
+        const map: Record<string, string> = {};
+        const lines = text.split('\n');
+        for (let i = 1; i < lines.length; i++) { // skip header
+          const line = lines[i];
+          if (!line.trim()) continue;
+          const parts = line.split(';');
+          if (parts.length >= 3) {
+            // First column is ID, third column is Имя
+            map[parts[0].trim()] = parts[2].trim() || parts[1].trim();
+          } else if (parts.length >= 2) {
+            map[parts[0].trim()] = parts[1].trim();
+          }
+        }
+        setEventCodeMap(map);
+      })
+      .catch(() => {
+        console.warn('event_codes.csv not found or failed to parse. Make sure to put it in the public folder.');
+      });
   }, []);
 
   useEffect(() => {
@@ -285,14 +312,21 @@ export const LegacyEmProtocolDashboard: React.FC = () => {
                 </div>
               )}
 
-              {Object.keys(distributions).map(category => (
-                <div key={category} style={{ marginBottom: 24 }}>
-                  <DistributionChart 
-                    data={distributions[category]} 
-                    title={`Распределение по: ${category === 'EventCode' ? 'Код события (EventCode)' : category}`}
-                  />
-                </div>
-              ))}
+              {Object.keys(distributions).map(category => {
+                const isEventCode = category === 'EventCode';
+                const distData = isEventCode 
+                  ? distributions[category].map(d => ({ ...d, category: eventCodeMap[d.category] || d.category }))
+                  : distributions[category];
+
+                return (
+                  <div key={category} style={{ marginBottom: 24 }}>
+                    <DistributionChart 
+                      data={distData} 
+                      title={`Распределение по: ${isEventCode ? 'Код события' : category}`}
+                    />
+                  </div>
+                );
+              })}
             </>
           )}
 
@@ -377,7 +411,8 @@ export const LegacyEmProtocolDashboard: React.FC = () => {
                       dataSource={
                         Object.entries(
                           (selectedPoint.channelBreakdown || []).reduce((acc, curr) => {
-                            const code = curr.eventCode || 'Неизвестный код';
+                            const rawCode = curr.eventCode ? String(curr.eventCode) : 'Неизвестный код';
+                            const code = eventCodeMap[rawCode] || rawCode;
                             acc[code] = (acc[code] || 0) + curr.count;
                             return acc;
                           }, {} as Record<string, number>)
