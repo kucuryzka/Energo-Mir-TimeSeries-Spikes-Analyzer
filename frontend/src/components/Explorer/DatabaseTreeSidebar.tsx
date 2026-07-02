@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Tree, message, Spin, Typography, Button } from 'antd';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Tree, message, Spin, Typography, Button, Input } from 'antd';
 import { DatabaseOutlined, FolderOutlined, TableOutlined, FieldTimeOutlined, LogoutOutlined, MenuFoldOutlined, BarsOutlined } from '@ant-design/icons';
 import { explorerApi } from '../../api/explorerApi';
 
@@ -29,8 +29,9 @@ export const DatabaseTreeSidebar: React.FC<DatabaseTreeSidebarProps> = ({
   onSelectGenericTable,
   onLogout,
 }) => {
-  const [treeData, setTreeData] = useState<DataNode[]>([]);
+  const [allTreeData, setAllTreeData] = useState<DataNode[]>([]);
   const [loading, setLoading] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
     loadInitialData();
@@ -40,7 +41,7 @@ export const DatabaseTreeSidebar: React.FC<DatabaseTreeSidebarProps> = ({
     setLoading(true);
     try {
       const dbs = await explorerApi.getDatabases();
-      setTreeData(dbs.map((db: string) => ({
+      setAllTreeData(dbs.map((db: string) => ({
         title: db,
         key: `db|${db}`,
         icon: <DatabaseOutlined />,
@@ -74,7 +75,7 @@ export const DatabaseTreeSidebar: React.FC<DatabaseTreeSidebarProps> = ({
             icon: <FolderOutlined style={{ color: isStandard ? '#1890ff' : 'inherit' }} />,
           };
         });
-        updateTreeData(treeData, key, newChildren);
+        updateTreeData(allTreeData, key, newChildren);
       } 
       else if (level === 'schema') {
         const db = parts[1];
@@ -85,7 +86,7 @@ export const DatabaseTreeSidebar: React.FC<DatabaseTreeSidebarProps> = ({
           key: `table|${db}|${schema}|${table}`,
           icon: <TableOutlined />,
         }));
-        updateTreeData(treeData, key, newChildren);
+        updateTreeData(allTreeData, key, newChildren);
       } 
       else if (level === 'table') {
         const db = parts[1];
@@ -107,7 +108,7 @@ export const DatabaseTreeSidebar: React.FC<DatabaseTreeSidebarProps> = ({
              isLeaf: true
            });
         }
-        updateTreeData(treeData, key, newChildren);
+        updateTreeData(allTreeData, key, newChildren);
       }
     } catch (e) {
       message.error('Ошибка загрузки данных узла');
@@ -124,9 +125,20 @@ export const DatabaseTreeSidebar: React.FC<DatabaseTreeSidebarProps> = ({
       }
       return node;
     });
-    setTreeData(newList);
+    setAllTreeData(newList);
     return newList;
   };
+
+  const filteredTreeData = useMemo(() => {
+    if (!searchTerm) return allTreeData;
+    return allTreeData.filter(node => {
+       if (typeof node.key === 'string' && node.key.startsWith('db|')) {
+           const titleStr = typeof node.title === 'string' ? node.title : (node.title as any)?.props?.children || node.key;
+           return String(titleStr).toLowerCase().includes(searchTerm.toLowerCase());
+       }
+       return true;
+    });
+  }, [allTreeData, searchTerm]);
 
   const onSelect = (selectedKeys: React.Key[], _info: any) => {
     if (selectedKeys.length === 0) return;
@@ -160,11 +172,19 @@ export const DatabaseTreeSidebar: React.FC<DatabaseTreeSidebarProps> = ({
           <Button type="text" icon={<LogoutOutlined />} onClick={onLogout} title="Отключиться" />
         </div>
       </div>
+      <div style={{ padding: '8px 16px', borderBottom: '1px solid #f0f0f0' }}>
+        <Input.Search 
+          placeholder="Поиск БД..." 
+          allowClear
+          onChange={(e) => setSearchTerm(e.target.value)}
+          size="small"
+        />
+      </div>
       <div style={{ flex: 1, overflow: 'auto', padding: '8px' }}>
         <Spin spinning={loading}>
           <Tree
             loadData={onLoadData}
-            treeData={treeData}
+            treeData={filteredTreeData}
             onSelect={onSelect}
             showIcon
             titleRender={(nodeData: any) => (

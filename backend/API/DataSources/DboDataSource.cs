@@ -38,9 +38,9 @@ public class DboDataSource : IDataSourceStrategy
 
         var optionsBuilder = new DbContextOptionsBuilder<AppDbContext>();
         if (info.Provider == "pgsql")
-            optionsBuilder.UseNpgsql(targetConnStr);
+            optionsBuilder.UseNpgsql(targetConnStr, opts => opts.CommandTimeout(3600));
         else
-            optionsBuilder.UseSqlServer(targetConnStr);
+            optionsBuilder.UseSqlServer(targetConnStr, opts => opts.CommandTimeout(3600));
 
         return new AppDbContext(optionsBuilder.Options);
     }
@@ -73,7 +73,7 @@ public class DboDataSource : IDataSourceStrategy
         var currentStart = request.StartDate;
 
         using var _context = GetContext(request.Database);
-        _context.Database.SetCommandTimeout(300);
+        _context.Database.SetCommandTimeout(3600);
 
         while (currentStart < request.EndDate)
         {

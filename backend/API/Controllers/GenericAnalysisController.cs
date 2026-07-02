@@ -62,11 +62,11 @@ public class GenericAnalysisController : ControllerBase
             var targetConnStr = connStrBuilder.ConnectionString;
 
             var optionsBuilder = new DbContextOptionsBuilder<AppDbContext>();
-            if (info.Provider == "pgsql") optionsBuilder.UseNpgsql(targetConnStr);
-            else optionsBuilder.UseSqlServer(targetConnStr);
+            if (info.Provider == "pgsql") optionsBuilder.UseNpgsql(targetConnStr, opts => opts.CommandTimeout(3600));
+            else optionsBuilder.UseSqlServer(targetConnStr, opts => opts.CommandTimeout(3600));
 
             using var _context = new AppDbContext(optionsBuilder.Options);
-            _context.Database.SetCommandTimeout(300);
+            _context.Database.SetCommandTimeout(3600);
 
             string dateAddExpr;
             if (info.Provider == "pgsql")

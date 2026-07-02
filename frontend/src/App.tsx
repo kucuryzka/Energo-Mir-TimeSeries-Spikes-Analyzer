@@ -46,7 +46,7 @@ function App() {
 
   return (
     <ConfigProvider locale={ruRU} theme={themeConfig}>
-      <Layout style={{ minHeight: '100vh' }}>
+      <Layout style={{ height: '100vh', overflow: 'hidden' }}>
         <Sider width={300} theme="light" collapsed={collapsed} collapsedWidth={0} trigger={null}>
           <DatabaseTreeSidebar 
             collapsed={collapsed}
@@ -64,7 +64,7 @@ function App() {
           />
         </Sider>
         <Layout>
-          <Content style={{ position: 'relative' }}>
+          <Content style={{ position: 'relative', overflow: 'auto' }}>
             {collapsed && (
               <Button 
                 type="primary" 
