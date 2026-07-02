@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { Typography, Card, Space, Button, DatePicker, Select, InputNumber, Spin, message, Drawer, Table, Switch } from 'antd';
-import { SearchOutlined } from '@ant-design/icons';
+import { Typography, Card, Space, Button, DatePicker, Select, InputNumber, Spin, message, Drawer, Table, Switch, Popconfirm } from 'antd';
+import { SearchOutlined, DashboardOutlined, HistoryOutlined, DeleteOutlined } from '@ant-design/icons';
+import { API_BASE_URL } from '../../api/index';
 import dayjs from 'dayjs';
 import { SpikeChart } from '../Chart/SpikeChart';
 import { enrichSpikeData } from '../../utils/spikeUtils';
 import { genericAnalysisApi } from '../../api/explorerApi';
 import type { TimeGranularity, SpikePoint } from '../../types/analytics.types';
+import { apiCache } from '../../store/apiCache';
 
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
@@ -35,34 +37,38 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({ db, schema, ta
   const [confidence, setConfidence] = useState<number>(95);
   const [windowSize, setWindowSize] = useState<number>(30);
 
+  const [minMaxDates, setMinMaxDates] = useState<[string, string] | null>(null);
+  
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyList, setHistoryList] = useState<any[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+
+  // Interval Forecasting on mount
+  useEffect(() => {
+    let mounted = true;
+    const fetchTimeRange = async () => {
+      try {
+        const range = await genericAnalysisApi.getTimeRange(db, schema, table, timeColumn);
+        if (mounted && range && range.minDate && range.maxDate) {
+          setMinMaxDates([range.minDate, range.maxDate]);
+          // Default range to last 7 days of available data if valid
+          const end = dayjs(range.maxDate);
+          const start = end.subtract(7, 'day').startOf('day');
+          setDateRange([start.toISOString(), end.toISOString()]);
+        }
+      } catch (e) {
+        console.error('Failed to fetch time range', e);
+      }
+    };
+    fetchTimeRange();
+    return () => { mounted = false; };
+  }, [db, schema, table, timeColumn]);
+
   const fetchData = async () => {
     setLoading(true);
+    setData([]); // clear previous data
     try {
-      const res = await genericAnalysisApi.analyze({
-        database: db,
-        schema,
-        table,
-        timeColumn,
-        startDate: dateRange[0],
-        endDate: dateRange[1],
-        granularity,
-        customMinutes,
-        confidence,
-        windowSize
-      });
-      // the api now returns SpikeResponse format (list of AnomalyResultDto)
-      setData(res);
-    } catch (e) {
-      message.error('Ошибка анализа данных');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    // Check if we already have cached data for these parameters
-    import('../../store/apiCache').then(({ apiCache }) => {
-      const dataPayload = {
+      const requestData = {
         database: db,
         schema,
         table,
@@ -74,13 +80,57 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({ db, schema, ta
         confidence,
         windowSize
       };
-      const cached = apiCache.get('/GenericAnalysis/analyze', undefined, dataPayload);
-      if (cached) {
-        setData(cached);
-      } else {
-        setData([]); // clear data if no cache, waiting for manual trigger
+
+      const { jobId } = await genericAnalysisApi.enqueueAnalysis(requestData);
+      message.loading({ content: 'Задача поставлена в очередь (Hangfire)...', key: 'jobProgress' });
+
+      while (true) {
+        await new Promise(r => setTimeout(r, 1000));
+        const status = await genericAnalysisApi.getJobStatus(jobId);
+
+        if (status.status === 'Completed') {
+          message.success({ content: 'Анализ завершен!', key: 'jobProgress' });
+          const result = await genericAnalysisApi.getJobResult(jobId);
+          setData(result);
+          break;
+        } else if (status.status === 'Failed') {
+          message.error({ content: `Ошибка выполнения: ${status.errorMessage}`, key: 'jobProgress' });
+          break;
+        } else {
+          message.loading({ content: `Анализ выполняется... (${status.progress}%)`, key: 'jobProgress' });
+        }
       }
-    });
+    } catch (e: any) {
+      const errorText = e.response?.data?.message || e.response?.data || e.message || String(e);
+      message.error({ content: `Ошибка при запуске задачи: ${errorText}`, key: 'jobProgress' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    // Check if we already have cached data for these parameters
+    const dataPayload = {
+      database: db,
+      schema,
+      table,
+      timeColumn,
+      startDate: dateRange[0],
+      endDate: dateRange[1],
+      granularity,
+      customMinutes,
+      confidence,
+      windowSize
+    };
+    const cached = apiCache.get('/GenericAnalysis/analyze', undefined, dataPayload);
+    if (cached) {
+      // NOTE: With chunking, whole-range cache might not hit as often,
+      // but individual chunks will be cached inside the genericAnalysisApi.analyze call.
+      // This is left here if they somehow request the exact same chunk/range.
+      // setData(cached); 
+    } else {
+      setData([]); // clear data if no cache, waiting for manual trigger
+    }
   }, [db, schema, table, timeColumn]);
 
   const handlePointClick = async (point: SpikePoint) => {
@@ -115,8 +165,16 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({ db, schema, ta
 
   return (
     <div style={{ padding: 24, height: '100%', overflow: 'auto' }}>
-      <Title level={4}>Анализ: {schema}.{table} ({timeColumn})</Title>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <Title level={4}>Анализ: {schema}.{table} ({timeColumn})</Title>
+      </div>
       
+      {minMaxDates && (
+        <Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
+          Доступные данные: с {dayjs(minMaxDates[0]).format('DD.MM.YYYY HH:mm')} по {dayjs(minMaxDates[1]).format('DD.MM.YYYY HH:mm')}
+        </Text>
+      )}
+
       <Card style={{ marginBottom: 24, borderRadius: 12 }}>
         <Space wrap size="large">
           <div>
@@ -136,6 +194,10 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({ db, schema, ta
                 { label: 'Последние 3 года', value: [dayjs().subtract(3, 'year').startOf('day'), dayjs().endOf('day')] },
               ]}
               value={[dayjs(dateRange[0]), dayjs(dateRange[1])]}
+              disabledDate={(current) => {
+                if (!minMaxDates) return false;
+                return current && (current < dayjs(minMaxDates[0]).startOf('day') || current > dayjs(minMaxDates[1]).endOf('day'));
+              }}
               onChange={(dates) => {
                 if (dates && dates[0] && dates[1]) {
                   setDateRange([dates[0].toISOString(), dates[1].toISOString()]);
@@ -271,6 +333,116 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({ db, schema, ta
           />
         )}
       </Drawer>
+
+      <Drawer
+        title="История анализов"
+        placement="right"
+        size="default"
+        onClose={() => setHistoryOpen(false)}
+        open={historyOpen}
+      >
+        {loadingHistory ? (
+          <Spin />
+        ) : (
+          historyList.length === 0 ? <Text type="secondary">Нет сохраненной истории для этой таблицы</Text> : (
+            <Space direction="vertical" style={{ width: '100%' }}>
+              {historyList.map((job: any) => (
+                <Card 
+                  key={job.id} 
+                  size="small" 
+                  style={{ cursor: 'pointer', borderColor: job.status === 'Completed' ? '#b7eb8f' : '#f0f0f0' }}
+                  onClick={async () => {
+                    if (job.status !== 'Completed') {
+                      message.warning('Анализ еще не завершен или завершился с ошибкой');
+                      return;
+                    }
+                    try {
+                      setHistoryOpen(false);
+                      setLoading(true);
+                      const res = await genericAnalysisApi.getJobResult(job.id);
+                      setData(res);
+                      setDateRange([job.startDate, job.endDate]);
+                    } catch (e) {
+                      message.error('Не удалось загрузить результат');
+                    } finally {
+                      setLoading(false);
+                    }
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div>
+                      <Text strong>{dayjs(job.startDate).format('DD.MM.YY')} - {dayjs(job.endDate).format('DD.MM.YY')}</Text>
+                      <br/>
+                      <Text type="secondary">Гранулярность: {job.granularity}</Text>
+                      <br/>
+                      <Text type={job.status === 'Completed' ? 'success' : job.status === 'Failed' ? 'danger' : 'warning'}>
+                        {job.status} {job.status === 'Running' ? `(${job.progress}%)` : ''}
+                      </Text>
+                      <br/>
+                      <Text type="secondary" style={{ fontSize: 12 }}>Создано: {dayjs(job.createdAt).format('DD.MM HH:mm')}</Text>
+                    </div>
+                    <Popconfirm
+                      title="Удалить этот результат?"
+                      onConfirm={async (e) => {
+                        e?.stopPropagation();
+                        try {
+                          await genericAnalysisApi.deleteHistoryItem(job.id);
+                          setHistoryList(prev => prev.filter(item => item.id !== job.id));
+                          message.success('Удалено');
+                        } catch(err) {
+                          message.error('Ошибка удаления');
+                        }
+                      }}
+                      onCancel={(e) => e?.stopPropagation()}
+                      okText="Да"
+                      cancelText="Нет"
+                    >
+                      <Button 
+                        type="text" 
+                        danger 
+                        icon={<DeleteOutlined />} 
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    </Popconfirm>
+                  </div>
+                </Card>
+              ))}
+            </Space>
+          )
+        )}
+      </Drawer>
+      <div style={{ position: 'fixed', bottom: 80, right: 24, zIndex: 1000, display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <Button 
+          type="primary" 
+          shape="circle" 
+          size="large" 
+          icon={<DashboardOutlined />} 
+          onClick={() => window.open(`${API_BASE_URL}/hangfire`, '_blank')} 
+          title="Панель Hangfire" 
+          style={{ boxShadow: '0 4px 12px rgba(0,0,0,0.15)', background: '#52c41a', borderColor: '#52c41a' }}
+        />
+        <Button 
+          type="primary" 
+          shape="circle" 
+          size="large" 
+          icon={<HistoryOutlined />} 
+          onClick={async () => {
+            setHistoryOpen(true);
+            setLoadingHistory(true);
+            try {
+              const hist = await genericAnalysisApi.getHistory(db, schema, table);
+              setHistoryList(hist);
+            } catch(e) {
+              message.error('Ошибка загрузки истории');
+            } finally {
+              setLoadingHistory(false);
+            }
+          }}
+          title="История запросов" 
+          style={{ boxShadow: '0 4px 12px rgba(0,0,0,0.15)', background: '#faad14', borderColor: '#faad14' }}
+        />
+      </div>
+
     </div>
   );
 };

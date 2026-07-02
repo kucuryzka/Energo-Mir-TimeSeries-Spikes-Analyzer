@@ -26,25 +26,62 @@ export const analyticsApi = {
       return response.data;
     },
     detectSpikes: async (request: DetectSpikesRequest): Promise<SpikeResponse> => {
-      const cached = apiCache.get('/em-protocol/detect-spikes', undefined, request);
-      if (cached) return cached;
+      // Legacy synchronous call fallback if needed, but we now use enqueue.
       const response = await apiClient.post<SpikeResponse>('/em-protocol/detect-spikes', request, {
         headers: { 'Content-Type': 'application/json' }
       });
-      apiCache.set('/em-protocol/detect-spikes', undefined, request, response.data);
       return response.data;
+    },
+    enqueueAnalysis: async (request: DetectSpikesRequest): Promise<{ jobId: string }> => {
+      const response = await apiClient.post<{ jobId: string }>('/em-protocol/enqueue', request, {
+        headers: { 'Content-Type': 'application/json' }
+      });
+      return response.data;
+    },
+    getJobStatus: async (jobId: string): Promise<any> => {
+      const response = await apiClient.get<any>(`/em-protocol/status/${jobId}`);
+      return response.data;
+    },
+    getJobResult: async (jobId: string): Promise<SpikeResponse> => {
+      const response = await apiClient.get<SpikeResponse>(`/em-protocol/result/${jobId}`);
+      return response.data;
+    },
+    getHistory: async (database: string): Promise<any[]> => {
+      const response = await apiClient.get<any[]>('/em-protocol/history', { params: { database } });
+      return response.data;
+    },
+    deleteHistoryItem: async (jobId: string): Promise<void> => {
+      await apiClient.delete(`/em-protocol/history/${jobId}`);
     }
   },
 
   dbo: {
     detectSpikes: async (request: DetectSpikesRequest): Promise<SpikeResponse> => {
-      const cached = apiCache.get('/dbo/detect-spikes', undefined, request);
-      if (cached) return cached;
       const response = await apiClient.post<SpikeResponse>('/dbo/detect-spikes', request, {
         headers: { 'Content-Type': 'application/json' }
       });
-      apiCache.set('/dbo/detect-spikes', undefined, request, response.data);
       return response.data;
+    },
+    enqueueAnalysis: async (request: DetectSpikesRequest): Promise<{ jobId: string }> => {
+      const response = await apiClient.post<{ jobId: string }>('/dbo/enqueue', request, {
+        headers: { 'Content-Type': 'application/json' }
+      });
+      return response.data;
+    },
+    getJobStatus: async (jobId: string): Promise<any> => {
+      const response = await apiClient.get<any>(`/dbo/status/${jobId}`);
+      return response.data;
+    },
+    getJobResult: async (jobId: string): Promise<SpikeResponse> => {
+      const response = await apiClient.get<SpikeResponse>(`/dbo/result/${jobId}`);
+      return response.data;
+    },
+    getHistory: async (database: string): Promise<any[]> => {
+      const response = await apiClient.get<any[]>('/dbo/history', { params: { database } });
+      return response.data;
+    },
+    deleteHistoryItem: async (jobId: string): Promise<void> => {
+      await apiClient.delete(`/dbo/history/${jobId}`);
     },
     getObjects: async (database: string, search?: string, page: number = 1, pageSize: number = 50): Promise<ChannelDto[]> => {
       const response = await apiClient.get<ChannelDto[]>('/dbo/objects', {

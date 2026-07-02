@@ -42,5 +42,30 @@ export const genericAnalysisApi = {
     const res = await apiClient.get('/GenericAnalysis/point-details', { params });
     apiCache.set('/GenericAnalysis/point-details', params, undefined, res.data);
     return res.data;
+  },
+  getTimeRange: async (database: string, schema: string, table: string, timeColumn: string) => {
+    const params = { database, schema, table, timeColumn };
+    const res = await apiClient.get('/GenericAnalysis/time-range', { params });
+    return res.data;
+  },
+  enqueueAnalysis: async (data: any) => {
+    const res = await apiClient.post('/GenericAnalysis/enqueue', data);
+    return res.data;
+  },
+  getJobStatus: async (id: string) => {
+    const res = await apiClient.get(`/GenericAnalysis/status/${id}`);
+    return res.data;
+  },
+  getJobResult: async (id: string) => {
+    const res = await apiClient.get(`/GenericAnalysis/result/${id}`);
+    return res.data;
+  },
+  getHistory: async (database: string, schema: string, table: string) => {
+    const params = { database, schema, table };
+    const res = await apiClient.get('/GenericAnalysis/history', { params });
+    return res.data;
+  },
+  deleteHistoryItem: async (jobId: string) => {
+    await apiClient.delete(`/GenericAnalysis/history/${jobId}`);
   }
 };
