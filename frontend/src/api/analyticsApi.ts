@@ -9,21 +9,21 @@ const USE_MOCK = false;
 
 export const analyticsApi = {
   getSources: async (): Promise<DataSourceDto[]> => {
-    if (USE_MOCK) return [{ id: 'mock', name: 'Мок источник', supportedDistributions: ['MockCategory'] }];
+    if (USE_MOCK) return [{ id: 'mock', name: 'Мок источник', kind: 'EmProtocol', provider: 'SqlServer', supportedDistributions: ['MockCategory'] }];
     const response = await axios.get<DataSourceDto[]>(`${API_BASE_URL}/api/sources`);
     return response.data;
   },
 
   emProtocol: {
-    getDistribution: async (startDate: string, endDate: string, categoryName: string): Promise<DistributionItemDto[]> => {
+    getDistribution: async (sourceId: string, startDate: string, endDate: string, categoryName: string): Promise<DistributionItemDto[]> => {
       const response = await axios.get<DistributionItemDto[]>(`${API_BASE_URL}/api/em-protocol/distribution`, {
-        params: { startDate, endDate, categoryName }
+        params: { sourceId, startDate, endDate, categoryName }
       });
       return response.data;
     },
-    getChannels: async (search?: string, page: number = 1, pageSize: number = 50): Promise<ChannelDto[]> => {
+    getChannels: async (sourceId: string, search?: string, page: number = 1, pageSize: number = 50): Promise<ChannelDto[]> => {
       const response = await axios.get<ChannelDto[]>(`${API_BASE_URL}/api/em-protocol/channels`, {
-        params: { search, page, pageSize }
+        params: { sourceId, search, page, pageSize }
       });
       return response.data;
     },
@@ -42,15 +42,15 @@ export const analyticsApi = {
       });
       return response.data;
     },
-    getObjects: async (search?: string, page: number = 1, pageSize: number = 50): Promise<ChannelDto[]> => {
+    getObjects: async (sourceId: string, search?: string, page: number = 1, pageSize: number = 50): Promise<ChannelDto[]> => {
       const response = await axios.get<ChannelDto[]>(`${API_BASE_URL}/api/dbo/objects`, {
-        params: { search, page, pageSize }
+        params: { sourceId, search, page, pageSize }
       });
       return response.data;
     },
-    getPointDetails: async (timestamp: string, granularity: string, customMinutes?: number, channelId?: number): Promise<any[]> => {
+    getPointDetails: async (sourceId: string, timestamp: string, granularity: string, customMinutes?: number, channelId?: number): Promise<any[]> => {
       const response = await axios.get<any[]>(`${API_BASE_URL}/api/dbo/point-details`, {
-        params: { timestamp, granularity, customMinutes, channelId }
+        params: { sourceId, timestamp, granularity, customMinutes, channelId }
       });
       return response.data;
     }

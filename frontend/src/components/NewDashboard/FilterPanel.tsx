@@ -26,6 +26,8 @@ interface FilterPanelProps {
   dateRange: [string, string];
   setDateRange: (val: [string, string]) => void;
   onSearch: () => void;
+  onExport: () => void;
+  isDboSource: boolean;
 }
 
 export const FilterPanel: React.FC<FilterPanelProps> = ({
@@ -46,7 +48,9 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
   setWindowSize,
   dateRange,
   setDateRange,
-  onSearch
+  onSearch,
+  onExport,
+  isDboSource
 }) => {
   return (
     <div className="filter-panel-container">
@@ -89,11 +93,11 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
         </div>
         
         <div className="filter-item">
-          <label>{sourceId?.toLowerCase() === 'dbo' ? 'Объект:' : 'Канал:'}</label>
+          <label>{isDboSource ? 'Объект:' : 'Канал:'}</label>
           <Select
             showSearch
             allowClear
-            placeholder={sourceId?.toLowerCase() === 'dbo' ? 'Все объекты' : 'Все каналы'}
+            placeholder={isDboSource ? 'Все объекты' : 'Все каналы'}
             value={channelId}
             onChange={(val) => setChannelId(val)}
             onSearch={onSearchChannels}
@@ -159,7 +163,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
             <button className="btn-start-analysis" onClick={onSearch}>
               <PieChartOutlined /> Запустить анализ
             </button>
-            <button className="btn-export" title="Экспорт в Excel" style={{ padding: '8px 10px' }}>
+            <button className="btn-export" title="Экспорт в Excel" onClick={onExport} style={{ padding: '8px 10px' }}>
               <FileExcelOutlined />
             </button>
           </div>

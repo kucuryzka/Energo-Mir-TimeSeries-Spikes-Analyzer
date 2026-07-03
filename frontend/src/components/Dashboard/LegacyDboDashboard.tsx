@@ -45,6 +45,7 @@ export const LegacyDboDashboard: React.FC = () => {
     if (selectedPoint) {
       setLoadingDetails(true);
       analyticsApi.dbo.getPointDetails(
+        'Dbo',
         selectedPoint.timestamp,
         granularity,
         granularity === 'Custom' ? customMinutes ?? undefined : undefined,
@@ -128,7 +129,7 @@ export const LegacyDboDashboard: React.FC = () => {
 
   const fetchChannels = async (search: string = '') => {
     try {
-      const data = await analyticsApi.dbo.getObjects(search);
+      const data = await analyticsApi.dbo.getObjects('Dbo', search);
       setChannels(data);
     } catch (err) {
       console.error('Ошибка при загрузке каналов', err);

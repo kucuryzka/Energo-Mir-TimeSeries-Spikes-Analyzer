@@ -13,20 +13,30 @@ namespace API.Controllers;
 [Route("api/dbo")]
 public class DboController : ControllerBase
 {
-    private readonly DboDataSource _dataSource;
+    private readonly IEnumerable<IDataSourceStrategy> _dataSourceStrategies;
     private readonly ISpikeDetectionService _spikeDetectionService;
 
     public DboController(
         IEnumerable<IDataSourceStrategy> dataSourceStrategies,
         ISpikeDetectionService spikeDetectionService)
     {
-        _dataSource = dataSourceStrategies.OfType<DboDataSource>().FirstOrDefault() 
-            ?? throw new Exception("DboDataSource not registered.");
+        _dataSourceStrategies = dataSourceStrategies;
         _spikeDetectionService = spikeDetectionService;
     }
 
+    private DboDataSource ResolveDataSource(string? sourceId)
+    {
+        var strategy = _dataSourceStrategies
+            .Where(s => s.Kind == DataSourceKind.Dbo)
+            .FirstOrDefault(s => string.Equals(s.Id, sourceId, StringComparison.OrdinalIgnoreCase))
+            ?? _dataSourceStrategies.First(s => s.Kind == DataSourceKind.Dbo);
+
+        return strategy as DboDataSource
+            ?? throw new InvalidOperationException($"Data source '{sourceId}' is not a dbo source.");
+    }
+
     [HttpGet("objects")]
-    public async Task<IActionResult> GetObjects([FromQuery] string? search, [FromQuery] int page = 1, [FromQuery] int pageSize = 50)
+    public async Task<IActionResult> GetObjects([FromQuery] string? sourceId, [FromQuery] string? search, [FromQuery] int page = 1, [FromQuery] int pageSize = 50)
     {
         try
         {
@@ -34,7 +44,8 @@ public class DboController : ControllerBase
             if (pageSize < 1) pageSize = 1;
             if (pageSize > 1000) pageSize = 1000;
 
-            var objects = await _dataSource.GetObjectsAsync(search, page, pageSize);
+            var dataSource = ResolveDataSource(sourceId);
+            var objects = await dataSource.GetObjectsAsync(search, page, pageSize);
             return Ok(objects);
         }
         catch (Exception ex)
@@ -55,9 +66,8 @@ public class DboController : ControllerBase
             if (request.WindowSize < 2)
                 return BadRequest("WindowSize must be at least 2 for sliding window analysis.");
 
-            // The strategy encapsulates all logic including DB querying, aggregation, 
-            // spike detection calling.
-            var response = await _dataSource.ExecuteAnalysisAsync(request, _spikeDetectionService);
+            var dataSource = ResolveDataSource(request.SourceId);
+            var response = await dataSource.ExecuteAnalysisAsync(request, _spikeDetectionService);
 
             return Ok(response);
         }
@@ -72,11 +82,12 @@ public class DboController : ControllerBase
     }
 
     [HttpGet("point-details")]
-    public async Task<IActionResult> GetPointDetails([FromQuery] DateTime timestamp, [FromQuery] Core.Enums.TimeGranularity granularity, [FromQuery] int? customMinutes, [FromQuery] int? channelId)
+    public async Task<IActionResult> GetPointDetails([FromQuery] string? sourceId, [FromQuery] DateTime timestamp, [FromQuery] Core.Enums.TimeGranularity granularity, [FromQuery] int? customMinutes, [FromQuery] int? channelId)
     {
         try
         {
-            var details = await _dataSource.GetPointDetailsAsync(timestamp, granularity, customMinutes, channelId);
+            var dataSource = ResolveDataSource(sourceId);
+            var details = await dataSource.GetPointDetailsAsync(timestamp, granularity, customMinutes, channelId);
             return Ok(details);
         }
         catch (Exception ex)

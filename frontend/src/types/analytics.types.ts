@@ -1,8 +1,13 @@
 export type TimeGranularity = 'Second' | 'Minute' | 'Hour' | 'Day' | 'Week' | 'Custom';
 
+export type DataSourceKind = 'Dbo' | 'EmProtocol';
+export type DatabaseProvider = 'SqlServer' | 'PostgreSQL';
+
 export interface DataSourceDto {
   id: string;
   name: string;
+  kind: DataSourceKind;
+  provider: DatabaseProvider;
   supportedDistributions?: string[];
 }
 

@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
-using API.Data;
 using API.DTOs;
 using Core.Enums;
 using Core.Models;
@@ -13,37 +12,36 @@ namespace API.DataSources;
 
 public class DboDataSource : IDataSourceStrategy
 {
-    private readonly AppDbContext _context;
+    private readonly DbContext _context;
+    private readonly ISqlDialect _sql;
+    private readonly string _id;
+    private readonly string _name;
 
-    public DboDataSource(AppDbContext context)
+    public DboDataSource(DbContext context, ISqlDialect sql, string id, string name)
     {
         _context = context;
+        _sql = sql;
+        _id = id;
+        _name = name;
     }
 
-    public string Id => "Dbo";
-    public string Name => "dbo";
-    public string[] SupportedDistributions => new string[] { };
+    public string Id => _id;
+    public string Name => _name;
+    public DataSourceKind Kind => DataSourceKind.Dbo;
+    public DatabaseProvider Provider => _sql.Provider;
+    public string[] SupportedDistributions => Array.Empty<string>();
 
     public async Task<SpikeResponse> ExecuteAnalysisAsync(DetectSpikesRequest request, ISpikeDetectionService spikeDetectionService)
     {
-        var dateAddExpr = request.Granularity switch
-        {
-            TimeGranularity.Second => "DATEADD(second, DATEDIFF(second, '2000-01-01', TIME_INSERT), '2000-01-01')",
-            TimeGranularity.Minute => "DATEADD(minute, DATEDIFF(minute, 0, TIME_INSERT), 0)",
-            TimeGranularity.Hour => "DATEADD(hour, DATEDIFF(hour, 0, TIME_INSERT), 0)",
-            TimeGranularity.Day => "DATEADD(day, DATEDIFF(day, 0, TIME_INSERT), 0)",
-            TimeGranularity.Week => "DATEADD(week, DATEDIFF(week, 0, TIME_INSERT), 0)",
-            TimeGranularity.Month => "DATEADD(month, DATEDIFF(month, 0, TIME_INSERT), 0)",
-            TimeGranularity.Custom => $"DATEADD(minute, (DATEDIFF(minute, 0, TIME_INSERT) / {(request.CustomMinutes ?? 60)}) * {(request.CustomMinutes ?? 60)}, 0)",
-            _ => "DATEADD(hour, DATEDIFF(hour, 0, TIME_INSERT), 0)"
-        };
+        var meterings = _sql.QualifyTable("dbo", "METERINGS");
+        var dateAddExpr = _sql.GetTimeBucketExpression("m.TIME_INSERT", request.Granularity, request.CustomMinutes);
 
         var sqlAggregate = $@"
             SELECT 
                 {dateAddExpr} as Timestamp,
                 COUNT(*) as Value,
                 m.IDOBJECT as ChannelId
-            FROM dbo.METERINGS m
+            FROM {meterings} m
             WHERE m.TIME_INSERT >= @p0 AND m.TIME_INSERT < @p1
             {(request.ChannelId.HasValue ? "AND m.IDOBJECT = @p2" : "")}
             GROUP BY {dateAddExpr}, m.IDOBJECT
@@ -93,6 +91,7 @@ public class DboDataSource : IDataSourceStrategy
         var channelNames = new Dictionary<int, string>();
         if (channelIds.Any())
         {
+            var objects = _sql.QualifyTable("dbo", "OBJECTS");
             var chunkSize = 1000;
             for (int i = 0; i < channelIds.Count; i += chunkSize)
             {
@@ -100,7 +99,7 @@ public class DboDataSource : IDataSourceStrategy
                 var idsString = string.Join(",", chunk);
                 var sql = $@"
                     SELECT IDOBJECT as Id, OBJECT_NAME as Name, NULL as EventCode 
-                    FROM dbo.OBJECTS 
+                    FROM {objects} 
                     WHERE IDOBJECT IN ({idsString})";
                 
                 var dbChannels = await _context.Database.SqlQueryRaw<ChannelDto>(sql).ToListAsync();
@@ -131,8 +130,9 @@ public class DboDataSource : IDataSourceStrategy
 
     public async Task<List<ObjectDto>> GetObjectsAsync(string? search, int page = 1, int pageSize = 50)
     {
+        var objects = _sql.QualifyTable("dbo", "OBJECTS");
         var query = _context.Database.SqlQueryRaw<ObjectDto>(
-            "SELECT IDOBJECT as Id, OBJECT_NAME as Name FROM dbo.OBJECTS"
+            $"SELECT IDOBJECT as Id, OBJECT_NAME as Name FROM {objects}"
         );
         
         var list = await query.ToListAsync();
@@ -159,21 +159,25 @@ public class DboDataSource : IDataSourceStrategy
             _ => timestamp.AddHours(1)
         };
 
+        var meterings = _sql.QualifyTable("dbo", "METERINGS");
+        var objects = _sql.QualifyTable("dbo", "OBJECTS");
+        var sourceColumn = _sql.QuoteIdentifier("SOURCE");
+
         var sql = $@"
-            SELECT TOP 1000
+            SELECT {_sql.SelectLimit(1000)}
                 m.IDOBJECT_AGGREGATE as IdObjectAggregate, 
                 m.IDOBJECT_AVERAGE as IdObjectAverage, 
                 m.QUALITY as Quality, 
                 m.QUALITY_SOURCE as QualitySource, 
-                m.[SOURCE] as Source, 
+                m.{sourceColumn} as Source, 
                 m.VALUE_METERING as ValueMetering,
                 m.IDOBJECT as IdObject,
                 o.OBJECT_NAME as ObjectName
-            FROM dbo.METERINGS m
-            LEFT JOIN dbo.OBJECTS o ON m.IDOBJECT = o.IDOBJECT
+            FROM {meterings} m
+            LEFT JOIN {objects} o ON m.IDOBJECT = o.IDOBJECT
             WHERE m.TIME_INSERT >= @p0 AND m.TIME_INSERT < @p1
             {(channelId.HasValue ? "AND m.IDOBJECT = @p2" : "")}
-        ";
+            {_sql.EndLimit(1000)}";
 
         var parameters = new List<object> { timestamp, endDate };
         if (channelId.HasValue) parameters.Add(channelId.Value);

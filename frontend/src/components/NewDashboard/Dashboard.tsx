@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { message, Spin, Drawer, Table, Typography, Tabs, Switch } from 'antd';
 import { DashboardLayout } from './DashboardLayout';
 import { TopHeader } from './TopHeader';
@@ -9,8 +9,9 @@ import { SpikeTable } from '../Stats/SpikeTable';
 import { DistributionChart } from '../Chart/DistributionChart';
 import { analyticsApi } from '../../api/analyticsApi';
 import { enrichSpikeData, getSpikesOnly, getStatistics } from '../../utils/spikeUtils';
+import { exportSpikesToExcel } from '../../utils/exportUtils';
 import dayjs from 'dayjs';
-import type { TimeGranularity, SpikePoint, DistributionItemDto, ChannelDto } from '../../types/analytics.types';
+import type { TimeGranularity, SpikePoint, DistributionItemDto, ChannelDto, DataSourceDto, DataSourceKind } from '../../types/analytics.types';
 import './Dashboard.css';
 
 const { Title, Text } = Typography;
@@ -31,18 +32,21 @@ export const Dashboard: React.FC = () => {
   const [showMarkers, setShowMarkers] = useState(true);
   const [windowSize, setWindowSize] = useState<number | null>(30);
   const [dateRange, setDateRange] = useState<[string, string]>([
-    dayjs().subtract(7, 'day').startOf('day').toISOString(),
-    dayjs().endOf('day').toISOString(),
+    dayjs('2025-10-01').startOf('day').toISOString(),
+    dayjs('2025-11-12').endOf('day').toISOString(),
   ]);
 
-  const [sources, setSources] = useState<{label: string, value: string, supportedDistributions?: string[]}[]>([]);
+  const [sources, setSources] = useState<{label: string, value: string, kind: DataSourceKind, supportedDistributions?: string[]}[]>([]);
   const [sourceId, setSourceId] = useState<string>('');
+
+  const currentSource = sources.find(s => s.value === sourceId);
+  const isDboSource = currentSource?.kind === 'Dbo';
 
   const initSources = async () => {
     try {
       const data = await analyticsApi.getSources();
       if (data.length > 0) {
-        setSources(data.map(s => ({ label: s.name, value: s.id, supportedDistributions: s.supportedDistributions })));
+        setSources(data.map(s => ({ label: s.name, value: s.id, kind: s.kind, supportedDistributions: s.supportedDistributions })));
         setSourceId(data[0].id);
       }
     } catch (err) {
@@ -53,11 +57,11 @@ export const Dashboard: React.FC = () => {
   const fetchChannels = async (search: string = '') => {
     if (!sourceId) return;
     try {
-      if (sourceId.toLowerCase() === 'dbo') {
-        const data = await analyticsApi.dbo.getObjects(search);
+      if (isDboSource) {
+        const data = await analyticsApi.dbo.getObjects(sourceId, search);
         setChannels(data);
       } else {
-        const data = await analyticsApi.emProtocol.getChannels(search);
+        const data = await analyticsApi.emProtocol.getChannels(sourceId, search);
         setChannels(data);
       }
     } catch (err) {
@@ -97,7 +101,7 @@ export const Dashboard: React.FC = () => {
         };
         
         let response;
-        if (sourceId.toLowerCase() === 'dbo') {
+        if (isDboSource) {
           response = await analyticsApi.dbo.detectSpikes(requestPayload);
         } else {
           response = await analyticsApi.emProtocol.detectSpikes(requestPayload);
@@ -110,12 +114,12 @@ export const Dashboard: React.FC = () => {
         currentStart = chunkEnd;
       }
 
-      const currentSource = sources.find(s => s.value === sourceId);
-      if (currentSource && currentSource.supportedDistributions) {
+      const activeSource = sources.find(s => s.value === sourceId);
+      if (activeSource && activeSource.supportedDistributions) {
         const newDists: Record<string, DistributionItemDto[]> = {};
-        for (const category of currentSource.supportedDistributions) {
+        for (const category of activeSource.supportedDistributions) {
           try {
-            const distData = await analyticsApi.emProtocol.getDistribution(dateRange[0], dateRange[1], category);
+            const distData = await analyticsApi.emProtocol.getDistribution(sourceId, dateRange[0], dateRange[1], category);
             newDists[category] = distData;
           } catch (e) {
             console.error('Ошибка загрузки распределения', e);
@@ -153,6 +157,15 @@ export const Dashboard: React.FC = () => {
     }, 500);
     return () => clearTimeout(timer);
   }, [channelSearch, sourceId]);
+
+  const handleExport = useCallback(() => {
+    if (!data) {
+      message.warning('Нет данных для экспорта. Сначала выполните анализ.');
+      return;
+    }
+    exportSpikesToExcel(data);
+    message.success('Данные экспортированы в Excel');
+  }, [data]);
 
   const enrichedData = data ? enrichSpikeData(data.series) : [];
   const spikesOnly = data ? getSpikesOnly(data.series) : [];
@@ -192,6 +205,8 @@ export const Dashboard: React.FC = () => {
         windowSize={windowSize} setWindowSize={setWindowSize}
         dateRange={dateRange} setDateRange={setDateRange}
         onSearch={fetchData}
+        onExport={handleExport}
+        isDboSource={isDboSource}
       />
       
       {!data || enrichedData.length === 0 ? (

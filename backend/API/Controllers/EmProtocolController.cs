@@ -13,20 +13,30 @@ namespace API.Controllers;
 [Route("api/em-protocol")]
 public class EmProtocolController : ControllerBase
 {
-    private readonly EmProtocolDataSource _dataSource;
+    private readonly IEnumerable<IDataSourceStrategy> _dataSourceStrategies;
     private readonly ISpikeDetectionService _spikeDetectionService;
 
     public EmProtocolController(
         IEnumerable<IDataSourceStrategy> dataSourceStrategies,
         ISpikeDetectionService spikeDetectionService)
     {
-        _dataSource = dataSourceStrategies.OfType<EmProtocolDataSource>().FirstOrDefault() 
-            ?? throw new Exception("EmProtocolDataSource not registered.");
+        _dataSourceStrategies = dataSourceStrategies;
         _spikeDetectionService = spikeDetectionService;
     }
 
+    private EmProtocolDataSource ResolveDataSource(string? sourceId)
+    {
+        var strategy = _dataSourceStrategies
+            .Where(s => s.Kind == DataSourceKind.EmProtocol)
+            .FirstOrDefault(s => string.Equals(s.Id, sourceId, StringComparison.OrdinalIgnoreCase))
+            ?? _dataSourceStrategies.First(s => s.Kind == DataSourceKind.EmProtocol);
+
+        return strategy as EmProtocolDataSource
+            ?? throw new InvalidOperationException($"Data source '{sourceId}' is not an em_protocol source.");
+    }
+
     [HttpGet("channels")]
-    public async Task<IActionResult> GetChannels([FromQuery] string? search, [FromQuery] int page = 1, [FromQuery] int pageSize = 50)
+    public async Task<IActionResult> GetChannels([FromQuery] string? sourceId, [FromQuery] string? search, [FromQuery] int page = 1, [FromQuery] int pageSize = 50)
     {
         try
         {
@@ -34,7 +44,8 @@ public class EmProtocolController : ControllerBase
             if (pageSize < 1) pageSize = 1;
             if (pageSize > 1000) pageSize = 1000;
 
-            var channels = await _dataSource.GetChannelsAsync(search, page, pageSize);
+            var dataSource = ResolveDataSource(sourceId);
+            var channels = await dataSource.GetChannelsAsync(search, page, pageSize);
             return Ok(channels);
         }
         catch (Exception ex)
@@ -44,13 +55,14 @@ public class EmProtocolController : ControllerBase
     }
 
     [HttpGet("distribution")]
-    public async Task<IActionResult> GetDistribution([FromQuery] DateTime startDate, [FromQuery] DateTime endDate, [FromQuery] string categoryName)
+    public async Task<IActionResult> GetDistribution([FromQuery] string? sourceId, [FromQuery] DateTime startDate, [FromQuery] DateTime endDate, [FromQuery] string categoryName)
     {
         try
         {
-            if (_dataSource.SupportedDistributions.Contains(categoryName))
+            var dataSource = ResolveDataSource(sourceId);
+            if (dataSource.SupportedDistributions.Contains(categoryName))
             {
-                var distribution = await _dataSource.GetDistributionAsync(startDate, endDate, categoryName);
+                var distribution = await dataSource.GetDistributionAsync(startDate, endDate, categoryName);
                 return Ok(distribution);
             }
             
@@ -74,9 +86,8 @@ public class EmProtocolController : ControllerBase
             if (request.WindowSize < 2)
                 return BadRequest("WindowSize must be at least 2 for sliding window analysis.");
 
-            // The strategy encapsulates all logic including DB querying, aggregation, 
-            // spike detection calling, and channel naming.
-            var response = await _dataSource.ExecuteAnalysisAsync(request, _spikeDetectionService);
+            var dataSource = ResolveDataSource(request.SourceId);
+            var response = await dataSource.ExecuteAnalysisAsync(request, _spikeDetectionService);
 
             return Ok(response);
         }

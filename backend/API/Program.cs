@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using API.Data;
+using API.Configuration;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -24,9 +25,8 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 builder.Services.AddScoped<Core.Interfaces.ITimeSeriesService, Core.Services.TimeService>();
 builder.Services.AddScoped<Core.Interfaces.ISpikeDetectionService, Core.Services.SpikeDetectionService>();
 
-// Register data sources
-builder.Services.AddScoped<API.DataSources.IDataSourceStrategy, API.DataSources.EmProtocolDataSource>();
-builder.Services.AddScoped<API.DataSources.IDataSourceStrategy, API.DataSources.DboDataSource>();
+// Register data sources (SQL Server + optional PostgreSQL)
+builder.Services.RegisterDataSources(builder.Configuration);
 
 // Configure CORS for React client integration
 builder.Services.AddCors(options =>

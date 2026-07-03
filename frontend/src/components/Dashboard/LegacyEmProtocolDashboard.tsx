@@ -83,7 +83,7 @@ export const LegacyEmProtocolDashboard: React.FC = () => {
   const fetchChannels = async (search: string = '') => {
     if (!sourceId) return;
     try {
-      const data = await analyticsApi.emProtocol.getChannels(search);
+      const data = await analyticsApi.emProtocol.getChannels(sourceId, search);
       setChannels(data);
     } catch (err) {
       console.error('Ошибка при загрузке каналов', err);
@@ -99,6 +99,7 @@ export const LegacyEmProtocolDashboard: React.FC = () => {
       const newDists: Record<string, DistributionItemDto[]> = {};
       for (const category of supportedCats) {
         const distData = await analyticsApi.emProtocol.getDistribution(
+          sourceId,
           dateRange[0],
           dateRange[1],
           category

@@ -23,6 +23,8 @@ public class SourcesController : ControllerBase
         var sources = _dataSourceStrategies.Select(s => new { 
             Id = s.Id, 
             Name = s.Name,
+            Kind = s.Kind.ToString(),
+            Provider = s.Provider.ToString(),
             SupportedDistributions = s.SupportedDistributions 
         }).ToList();
         return Ok(sources);
