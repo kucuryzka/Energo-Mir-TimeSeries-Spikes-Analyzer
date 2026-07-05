@@ -8,7 +8,7 @@
 .filter-controls {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 20px;
   flex-wrap: wrap;
 }
 
@@ -16,13 +16,17 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 4px;
+  gap: 6px;
+}
+
+.filter-item-grow {
+  min-width: 0;
 }
 
 .filter-item label {
   font-family: 'Inter', sans-serif;
   font-weight: 500;
-  font-size: 12px;
+  font-size: 16px;
   color: var(--text-secondary);
 }
 
@@ -34,10 +38,10 @@
 .filter-select, .filter-input {
   background: var(--bg-surface);
   border: 1px solid var(--border-color);
-  border-radius: 6px;
-  padding: 6px 10px;
+  border-radius: 8px;
+  padding: 12px 16px;
   font-family: 'Inter', sans-serif;
-  font-size: 14px;
+  font-size: 18px;
   color: var(--text-main);
   outline: none;
   transition: border-color 0.2s;
@@ -56,7 +60,7 @@
 }
 
 .short-input {
-  width: 100px;
+  width: 140px;
 }
 
 .period-input {
@@ -72,62 +76,114 @@
 .sensitivity-header {
   display: flex;
   justify-content: space-between;
-  width: 200px;
+  width: 240px;
 }
 
 .sensitivity-value {
   color: var(--primary-accent);
-  font-weight: 500;
-  font-size: 14px;
+  font-weight: 600;
+  font-size: 18px;
 }
 
 .sensitivity-slider {
-  width: 200px;
+  width: 240px;
+  height: 10px;
   accent-color: var(--primary-accent);
-  margin-top: 4px;
+  margin-top: 6px;
 }
 
-.action-buttons {
+.filter-actions-row {
   display: flex;
   gap: 16px;
+}
+
+.btn-icon-img {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
 }
 
 .btn-start-analysis {
   display: flex;
   align-items: center;
-  gap: 8px;
-  background: var(--gradient-btn);
+  justify-content: center;
+  gap: 10px;
+  flex: 3;
+  background: linear-gradient(90deg, #BFB9A4 0%, #4D6395 100%);
   border: none;
-  border-radius: 8px;
-  padding: 8px 16px;
+  border-radius: 12px;
+  padding: 16px 30px;
   color: var(--bg-surface);
   font-family: 'Inter', sans-serif;
-  font-weight: 600;
-  font-size: 14px;
+  font-weight: 700;
+  font-size: 18px;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
   cursor: pointer;
-  transition: opacity 0.2s;
+  transition: opacity 0.2s, transform 0.15s;
 }
 
 .btn-start-analysis:hover {
-  opacity: 0.9;
+  opacity: 0.92;
+}
+
+.btn-start-analysis:active {
+  transform: scale(0.99);
 }
 
 .btn-export {
   display: flex;
   align-items: center;
-  gap: 8px;
-  background: var(--primary-accent);
+  justify-content: center;
+  gap: 10px;
+  flex: 1;
+  background: #4D6395;
   border: none;
-  border-radius: 8px;
-  padding: 8px 16px;
-  color: var(--bg-surface);
+  border-radius: 12px;
+  padding: 16px 20px;
+  color: #ffffff;
   font-family: 'Inter', sans-serif;
-  font-weight: 600;
-  font-size: 14px;
+  font-weight: 700;
+  font-size: 18px;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
   cursor: pointer;
-  transition: opacity 0.2s;
+  transition: opacity 0.2s, transform 0.15s;
+  white-space: nowrap;
 }
 
 .btn-export:hover {
+  opacity: 0.92;
+}
+
+.btn-export:active {
+  transform: scale(0.99);
+}
+
+.btn-advanced-settings {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  background: #4D6395;
+  border: none;
+  border-radius: 10px;
+  color: #ffffff;
+  font-size: 20px;
+  cursor: pointer;
+  transition: opacity 0.2s;
+  align-self: flex-end;
+}
+
+.btn-advanced-settings:hover {
   opacity: 0.9;
+}
+
+.advanced-settings-popover {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 8px 4px;
+  min-width: 260px;
 }

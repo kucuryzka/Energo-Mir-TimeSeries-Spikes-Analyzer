@@ -1,5 +1,10 @@
 import { apiClient } from './index';
 import { apiCache } from '../store/apiCache';
+import { mockDatabases, mockSchemas, mockTables, mockColumns } from '../mocks/mockData';
+
+// 👇 Переключатель: true = используем мок-данные дерева БД, false = реальный бэкенд
+const USE_MOCK_EXPLORER = true;
+const delay = (ms: number = 300) => new Promise(resolve => setTimeout(resolve, ms));
 
 export const authApi = {
   connect: async (data: any) => {
@@ -10,18 +15,22 @@ export const authApi = {
 
 export const explorerApi = {
   getDatabases: async () => {
+    if (USE_MOCK_EXPLORER) { await delay(); return mockDatabases; }
     const res = await apiClient.get('/explorer/databases');
     return res.data;
   },
   getSchemas: async (db: string) => {
+    if (USE_MOCK_EXPLORER) { await delay(); return mockSchemas[db] ?? ['dbo']; }
     const res = await apiClient.get('/explorer/schemas', { params: { database: db } });
     return res.data;
   },
   getTables: async (db: string, schema: string) => {
+    if (USE_MOCK_EXPLORER) { await delay(); return mockTables; }
     const res = await apiClient.get('/explorer/tables', { params: { database: db, schema } });
     return res.data;
   },
   getColumns: async (db: string, schema: string, table: string) => {
+    if (USE_MOCK_EXPLORER) { await delay(); return mockColumns; }
     const res = await apiClient.get('/explorer/columns', { params: { database: db, schema, table } });
     return res.data;
   }

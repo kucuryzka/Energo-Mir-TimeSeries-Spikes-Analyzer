@@ -1,8 +1,11 @@
 import React from 'react';
-import { DatePicker, Segmented, Select, InputNumber } from 'antd';
-import { PieChartOutlined, FileExcelOutlined } from '@ant-design/icons';
+import { DatePicker, Select, InputNumber, Popover } from 'antd';
+import { PieChartOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import type { TimeGranularity, ChannelDto } from '../../types/analytics.types';
+import { SourceToggle } from './SourceToggle';
+import filterIcon from '../../assets/filters.svg';
+import exportIcon from '../../assets/export.svg';
 import './FilterPanel.css';
 
 const { RangePicker } = DatePicker;
@@ -48,26 +51,56 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
   setDateRange,
   onSearch
 }) => {
+  const advancedSettings = (
+    <div className="advanced-settings-popover">
+      <div className="filter-item filter-sensitivity">
+        <div className="sensitivity-header">
+          <label>Чувствительность</label>
+          <span className="sensitivity-value">{confidence}%</span>
+        </div>
+        <input
+          type="range"
+          min="1" max="100"
+          value={confidence}
+          onChange={(e) => setConfidence(Number(e.target.value))}
+          className="sensitivity-slider"
+        />
+      </div>
+
+      <div className="filter-item">
+        <label>Глубина анализа:</label>
+        <input
+          className="filter-input short-input"
+          placeholder="N точек"
+          value={windowSize || ''}
+          onChange={(e) => setWindowSize(e.target.value ? Number(e.target.value) : null)}
+        />
+      </div>
+    </div>
+  );
+
   return (
     <div className="filter-panel-container">
-      {sources.length > 0 && (
-        <div style={{ marginBottom: 16 }}>
-          <Segmented
-            options={sources}
-            value={sourceId}
-            onChange={(val) => setSourceId(val as string)}
-            style={{ padding: 4, background: 'var(--segmented-bg)' }}
-          />
-        </div>
-      )}
       <div className="filter-controls">
+        {sources.length > 0 && (
+          <div className="filter-item">
+            <label style={{ visibility: 'hidden' }}>Источник</label>
+            <SourceToggle
+              options={sources}
+              value={sourceId}
+              onChange={setSourceId}
+            />
+          </div>
+        )}
+
         <div className="filter-item">
           <label>Детализация:</label>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <Select 
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            <Select
+              size="large"
               value={granularity}
               onChange={(val) => setGranularity(val as TimeGranularity)}
-              style={{ width: 140, height: 32 }}
+              style={{ width: 190 }}
               options={[
                 { value: 'Minute', label: 'Поминутно' },
                 { value: 'Hour', label: 'Почасово' },
@@ -78,19 +111,21 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
             />
             {granularity === 'Custom' && (
               <InputNumber
+                size="large"
                 min={1} max={60}
                 value={customMinutes}
                 onChange={(val) => setCustomMinutes(val)}
                 placeholder="мин"
-                style={{ width: 70, height: 32 }}
+                style={{ width: 95 }}
               />
             )}
           </div>
         </div>
-        
+
         <div className="filter-item">
           <label>{sourceId?.toLowerCase() === 'dbo' ? 'Объект:' : 'Канал:'}</label>
           <Select
+            size="large"
             showSearch
             allowClear
             placeholder={sourceId?.toLowerCase() === 'dbo' ? 'Все объекты' : 'Все каналы'}
@@ -98,14 +133,15 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
             onChange={(val) => setChannelId(val)}
             onSearch={onSearchChannels}
             filterOption={false}
-            style={{ width: 180, height: 32 }}
+            style={{ width: 240 }}
             options={channels.map(c => ({ value: c.id, label: c.name }))}
           />
         </div>
-        
-        <div className="filter-item">
+
+        <div className="filter-item filter-item-grow">
           <label>Период:</label>
           <RangePicker
+            size="large"
             showTime={{ format: 'HH:mm' }}
             format="YYYY-MM-DD HH:mm"
             presets={[
@@ -125,45 +161,29 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                 setDateRange([dates[0].toISOString(), dates[1].toISOString()]);
               }
             }}
-            style={{ width: 320, height: 32, borderRadius: 6, border: '1px solid var(--border-color)' }}
-          />
-        </div>
-        
-        <div className="filter-item filter-sensitivity">
-          <div className="sensitivity-header">
-            <label>Чувствительность</label>
-            <span className="sensitivity-value">{confidence}%</span>
-          </div>
-          <input 
-            type="range" 
-            min="1" max="100" 
-            value={confidence} 
-            onChange={(e) => setConfidence(Number(e.target.value))}
-            className="sensitivity-slider" 
-          />
-        </div>
-        
-        <div className="filter-item">
-          <label>Глубина анализа:</label>
-          <input 
-            className="filter-input short-input" 
-            placeholder="N точек"
-            value={windowSize || ''}
-            onChange={(e) => setWindowSize(e.target.value ? Number(e.target.value) : null)}
+            style={{ width: 465, borderRadius: 8, border: '1px solid var(--border-color)' }}
           />
         </div>
 
-        <div className="filter-item" style={{ marginLeft: 'auto' }}>
-          <label style={{ visibility: 'hidden' }}>Действия</label>
-          <div className="action-buttons">
-            <button className="btn-start-analysis" onClick={onSearch}>
-              <PieChartOutlined /> Запустить анализ
-            </button>
-            <button className="btn-export" title="Экспорт в Excel" style={{ padding: '8px 10px' }}>
-              <FileExcelOutlined />
-            </button>
-          </div>
-        </div>
+        <Popover
+          content={advancedSettings}
+          title="Дополнительные настройки"
+          trigger="click"
+          placement="bottomRight"
+        >
+          <button className="btn-advanced-settings" title="Дополнительные настройки">
+            <img src={filterIcon} alt="" className="btn-icon-img" />
+          </button>
+        </Popover>
+      </div>
+
+      <div className="filter-actions-row">
+        <button className="btn-start-analysis" onClick={onSearch}>
+          <PieChartOutlined style={{ fontSize: 24 }} /> Запустить анализ
+        </button>
+        <button className="btn-export" title="Экспорт в Excel">
+          <img src={exportIcon} alt="" className="btn-icon-img" /> Экспорт в Excel
+        </button>
       </div>
     </div>
   );

@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { message, Spin, Drawer, Table, Typography, Tabs, Switch } from 'antd';
 import { DashboardLayout } from './DashboardLayout';
-import { TopHeader } from './TopHeader';
 import { FilterPanel } from './FilterPanel';
 import { StatsGrid } from './StatsGrid';
 import { SpikeChart } from '../Chart/SpikeChart';
@@ -181,9 +180,7 @@ export const Dashboard: React.FC = () => {
 
   return (
     <DashboardLayout>
-      <TopHeader />
-      <div className="new-dashboard-divider" />
-      <FilterPanel 
+      <FilterPanel
         sources={sources} sourceId={sourceId} setSourceId={setSourceId}
         granularity={granularity} setGranularity={setGranularity}
         customMinutes={customMinutes} setCustomMinutes={setCustomMinutes}

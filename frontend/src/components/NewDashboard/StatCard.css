@@ -5,10 +5,34 @@
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  min-width: 140px;
-  min-height: 90px;
-  flex: 1;
+  min-width: 130px;
+  flex: 0 1 165px;
+  aspect-ratio: 1.4 / 1;
   box-shadow: var(--shadow-light);
+}
+
+.stats-grid .stat-card:nth-child(1) {
+  box-shadow: 4px 5px 14px rgba(77, 99, 149, 0.4), 0 1px 3px rgba(0, 0, 0, 0.03);
+}
+
+.stats-grid .stat-card:nth-child(2) {
+  box-shadow: 4px 5px 14px rgba(186, 186, 53, 0.4), 0 1px 3px rgba(0, 0, 0, 0.03);
+}
+
+.stats-grid .stat-card:nth-child(3) {
+  box-shadow: 4px 5px 14px rgba(165, 38, 38, 0.4), 0 1px 3px rgba(0, 0, 0, 0.03);
+}
+
+.stats-grid .stat-card:nth-child(4) {
+  box-shadow: 4px 5px 14px rgba(77, 99, 149, 0.4), 0 1px 3px rgba(0, 0, 0, 0.03);
+}
+
+.stats-grid .stat-card:nth-child(5) {
+  box-shadow: 4px 5px 14px rgba(77, 99, 149, 0.4), 0 1px 3px rgba(0, 0, 0, 0.03);
+}
+
+.stats-grid .stat-card:nth-child(6) {
+  box-shadow: 4px 5px 14px rgba(77, 99, 149, 0.4), 0 1px 3px rgba(0, 0, 0, 0.03);
 }
 
 .stat-title {

@@ -2,7 +2,7 @@ import axios from 'axios';
 import { requestTracker } from '../store/requestTracker';
 
 // Используем HTTP, порт 5090 (из launchSettings.json)
-export const API_BASE_URL = 'http://localhost:5090';
+export const API_BASE_URL = 'http://127.0.0.1:5090';
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL + '/api',

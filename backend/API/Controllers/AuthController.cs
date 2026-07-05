@@ -62,7 +62,7 @@ public class AuthController : ControllerBase
             var port = request.Port > 0 ? request.Port : 1433;
             // Handle host:port or host,port for SQL Server
             var server = $"{request.Host},{port}";
-            return $"Server={server};Database={db};User Id={request.Username};Password={request.Password};TrustServerCertificate=True;MultipleActiveResultSets=true;Connection Timeout=15";
+            return $"Server={server};Database={db};User Id={request.Username};Password={request.Password};Encrypt=False;TrustServerCertificate=True;MultipleActiveResultSets=true;Connection Timeout=15";
         }
     }
 }

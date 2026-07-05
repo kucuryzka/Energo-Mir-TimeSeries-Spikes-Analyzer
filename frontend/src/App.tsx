@@ -7,14 +7,26 @@ import { ConnectionSetup } from './components/ConnectionSetup/ConnectionSetup';
 import { DatabaseTreeSidebar } from './components/Explorer/DatabaseTreeSidebar';
 import { GenericAnalyzer } from './components/GenericAnalyzer/GenericAnalyzer';
 import { QueryTracker } from './components/QueryTracker/QueryTracker';
+import { Dashboard as NewDashboard } from './components/NewDashboard/Dashboard';
 import { MenuUnfoldOutlined } from '@ant-design/icons';
 import { Button } from 'antd';
 import './App.css';
 
 const { Sider, Content } = Layout;
 
+// 👇 Режим дизайна: рисуем новый дашборд на мок-данных, минуя подключение к БД и бэкенд
+const MOCK_DESIGN_MODE = true;
+
 function App() {
   const [token, setToken] = useState<string | null>(localStorage.getItem('dbToken'));
+
+  if (MOCK_DESIGN_MODE) {
+    return (
+      <ConfigProvider locale={ruRU} theme={themeConfig}>
+        <NewDashboard />
+      </ConfigProvider>
+    );
+  }
   
   // State for navigation
   // 'empty', 'legacy_dbo', 'legacy_em', 'generic'
