@@ -53,6 +53,16 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
 }) => {
   const advancedSettings = (
     <div className="advanced-settings-popover">
+      <div className="advanced-settings-row">
+        <label>Глубина анализа:</label>
+        <input
+          className="filter-input short-input"
+          placeholder="N точек"
+          value={windowSize || ''}
+          onChange={(e) => setWindowSize(e.target.value ? Number(e.target.value) : null)}
+        />
+      </div>
+
       <div className="filter-item filter-sensitivity">
         <div className="sensitivity-header">
           <label>Чувствительность</label>
@@ -64,16 +74,6 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
           value={confidence}
           onChange={(e) => setConfidence(Number(e.target.value))}
           className="sensitivity-slider"
-        />
-      </div>
-
-      <div className="filter-item">
-        <label>Глубина анализа:</label>
-        <input
-          className="filter-input short-input"
-          placeholder="N точек"
-          value={windowSize || ''}
-          onChange={(e) => setWindowSize(e.target.value ? Number(e.target.value) : null)}
         />
       </div>
     </div>
@@ -167,9 +167,10 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
 
         <Popover
           content={advancedSettings}
-          title="Дополнительные настройки"
           trigger="click"
           placement="bottomRight"
+          arrow={false}
+          classNames={{ root: 'advanced-settings-overlay' }}
         >
           <button className="btn-advanced-settings" title="Дополнительные настройки">
             <img src={filterIcon} alt="" className="btn-icon-img" />
