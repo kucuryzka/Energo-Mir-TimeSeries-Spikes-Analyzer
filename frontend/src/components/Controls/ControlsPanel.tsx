@@ -28,6 +28,8 @@ interface Props {
   previewOpen?: boolean;
   onPreviewToggle?: () => void;
   previewContent?: React.ReactNode;
+  onExport?: () => void;
+  exportDisabled?: boolean;
 }
 
 export const ControlsPanel: React.FC<Props> = ({
@@ -51,6 +53,8 @@ export const ControlsPanel: React.FC<Props> = ({
   previewOpen = false,
   onPreviewToggle,
   previewContent,
+  onExport,
+  exportDisabled = false,
 }) => {
   return (
     <div style={{ width: '100%' }}>
@@ -197,6 +201,8 @@ export const ControlsPanel: React.FC<Props> = ({
               previewOpen={previewOpen}
               onPreviewToggle={onPreviewToggle}
               previewContent={previewContent}
+              onExport={onExport}
+              exportDisabled={exportDisabled}
             />
           ) : (
             <Button

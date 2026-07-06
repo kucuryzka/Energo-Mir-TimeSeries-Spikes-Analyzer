@@ -1,6 +1,6 @@
 import React from 'react';
 import { Button } from 'antd';
-import { SearchOutlined, TableOutlined } from '@ant-design/icons';
+import { SearchOutlined, TableOutlined, FileExcelOutlined } from '@ant-design/icons';
 
 const analyzeButtonStyle: React.CSSProperties = {
   background: 'linear-gradient(135deg, #2a5298 0%, #1a3a6b 100%)',
@@ -18,6 +18,8 @@ interface AnalysisActionBarProps {
   previewOpen: boolean;
   onPreviewToggle: () => void;
   previewContent: React.ReactNode;
+  onExport?: () => void;
+  exportDisabled?: boolean;
   className?: string;
   style?: React.CSSProperties;
 }
@@ -28,6 +30,8 @@ export const AnalysisActionBar: React.FC<AnalysisActionBarProps> = ({
   previewOpen,
   onPreviewToggle,
   previewContent,
+  onExport,
+  exportDisabled = false,
   className,
   style,
 }) => (
@@ -39,10 +43,20 @@ export const AnalysisActionBar: React.FC<AnalysisActionBarProps> = ({
         loading={loading}
         size="large"
         icon={<SearchOutlined />}
-        style={{ ...analyzeButtonStyle, flex: '1 1 80%', minWidth: 0 }}
+        style={{ ...analyzeButtonStyle, flex: '1 1 auto', minWidth: 0 }}
       >
         {loading ? 'Анализируем...' : 'Анализировать'}
       </Button>
+      {onExport && (
+        <Button
+          size="large"
+          icon={<FileExcelOutlined />}
+          onClick={onExport}
+          disabled={exportDisabled}
+          title="Экспорт в Excel"
+          style={{ flex: '0 0 48px', minWidth: 48, height: 48, borderRadius: 8 }}
+        />
+      )}
       <Button
         size="large"
         icon={<TableOutlined />}
@@ -50,7 +64,7 @@ export const AnalysisActionBar: React.FC<AnalysisActionBarProps> = ({
         title="Образец данных в таблице"
         aria-expanded={previewOpen}
         style={{
-          flex: '0 0 20%',
+          flex: '0 0 48px',
           minWidth: 48,
           height: 48,
           borderRadius: 8,
