@@ -1,5 +1,7 @@
 import { apiClient } from './index';
 import { apiCache } from '../store/apiCache';
+import { pollAnalysisJob } from '../utils/jobPolling';
+import type { SpikeResponse } from '../types/analytics.types';
 
 export const authApi = {
   connect: async (data: any) => {
@@ -63,12 +65,32 @@ export const genericAnalysisApi = {
     const res = await apiClient.post('/GenericAnalysis/enqueue', data);
     return res.data;
   },
+  runAnalysis: async (
+    data: any,
+    onProgress?: (progress: number) => void,
+    onPartialResult?: (result: SpikeResponse) => void,
+  ): Promise<SpikeResponse> => {
+    const { jobId } = await genericAnalysisApi.enqueueAnalysis(data);
+    return pollAnalysisJob(
+      jobId,
+      {
+        getJobStatus: genericAnalysisApi.getJobStatus,
+        getJobResult: genericAnalysisApi.getJobResult,
+        getJobPartialResult: genericAnalysisApi.getJobPartialResult,
+      },
+      { onProgress, onPartialResult },
+    );
+  },
   getJobStatus: async (id: string) => {
     const res = await apiClient.get(`/GenericAnalysis/status/${id}`);
     return res.data;
   },
   getJobResult: async (id: string) => {
     const res = await apiClient.get(`/GenericAnalysis/result/${id}`);
+    return res.data;
+  },
+  getJobPartialResult: async (id: string) => {
+    const res = await apiClient.get(`/GenericAnalysis/partial-result/${id}`);
     return res.data;
   },
   getHistory: async (database: string, schema: string, table: string) => {

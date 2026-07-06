@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { message, Spin, Drawer, Table, Typography, Tabs, Switch } from 'antd';
 import { DashboardLayout } from './DashboardLayout';
 import { TopHeader } from './TopHeader';
@@ -9,15 +9,16 @@ import { SpikeTable } from '../Stats/SpikeTable';
 import { DistributionChart } from '../Chart/DistributionChart';
 import { analyticsApi } from '../../api/analyticsApi';
 import { enrichSpikeData, getSpikesOnly, getStatistics } from '../../utils/spikeUtils';
+import { exportSpikesToExcel } from '../../utils/exportUtils';
 import dayjs from 'dayjs';
 import { confirmHeavyAnalysis } from '../../utils/granularityWarning';
-import type { TimeGranularity, SpikePoint, DistributionItemDto, ChannelDto, ChannelContributionDto } from '../../types/analytics.types';
+import type { TimeGranularity, SpikePoint, DistributionItemDto, ChannelDto, ChannelContributionDto, SpikeResponse } from '../../types/analytics.types';
 import './Dashboard.css';
 
 const { Title, Text } = Typography;
 
 export const Dashboard: React.FC = () => {
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<SpikeResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [selectedPoint, setSelectedPoint] = useState<SpikePoint | null>(null);
   const [pointChannels, setPointChannels] = useState<ChannelContributionDto[]>([]);
@@ -41,6 +42,8 @@ export const Dashboard: React.FC = () => {
   const [sources, setSources] = useState<{label: string, value: string, supportedDistributions?: string[]}[]>([]);
   const [sourceId, setSourceId] = useState<string>('');
 
+  const isDboSource = sourceId.toLowerCase().includes('dbo');
+
   const initSources = async () => {
     try {
       const data = await analyticsApi.getSources();
@@ -56,7 +59,7 @@ export const Dashboard: React.FC = () => {
   const fetchChannels = async (search: string = '') => {
     if (!sourceId) return;
     try {
-      if (sourceId.toLowerCase() === 'dbo') {
+      if (isDboSource) {
         const data = await analyticsApi.dbo.getObjects('', search);
         setChannels(data);
       } else {
@@ -93,13 +96,19 @@ export const Dashboard: React.FC = () => {
       };
 
       message.loading({ content: 'Анализ поставлен в очередь...', key: 'jobProgress' });
-      const run = sourceId.toLowerCase() === 'dbo'
+      const run = isDboSource
         ? analyticsApi.dbo.runAnalysis
         : analyticsApi.emProtocol.runAnalysis;
 
-      const result = await run(requestPayload, (progress) => {
-        message.loading({ content: `Анализ выполняется... (${progress}%)`, key: 'jobProgress' });
-      });
+      const result = await run(
+        requestPayload,
+        (progress) => {
+          message.loading({ content: `Анализ выполняется... (${progress}%)`, key: 'jobProgress' });
+        },
+        (partial) => {
+          setData(partial);
+        },
+      );
       message.success({ content: 'Анализ завершен', key: 'jobProgress' });
       setData(result);
 
@@ -131,7 +140,7 @@ export const Dashboard: React.FC = () => {
       return;
     }
     setLoadingPointChannels(true);
-    const api = sourceId.toLowerCase() === 'dbo' ? analyticsApi.dbo : analyticsApi.emProtocol;
+    const api = isDboSource ? analyticsApi.dbo : analyticsApi.emProtocol;
     api.getPointChannels(
       '',
       selectedPoint.timestamp,
@@ -169,6 +178,15 @@ export const Dashboard: React.FC = () => {
     return () => clearTimeout(timer);
   }, [channelSearch, sourceId]);
 
+  const handleExport = useCallback(() => {
+    if (!data) {
+      message.warning('Нет данных для экспорта. Сначала выполните анализ.');
+      return;
+    }
+    exportSpikesToExcel(data);
+    message.success('Данные экспортированы в Excel');
+  }, [data]);
+
   const enrichedData = data ? enrichSpikeData(data.series) : [];
   const spikesOnly = data ? getSpikesOnly(data.series) : [];
   const stats = data ? getStatistics(data.series) : null;
@@ -196,6 +214,8 @@ export const Dashboard: React.FC = () => {
         windowSize={windowSize} setWindowSize={setWindowSize}
         dateRange={dateRange} setDateRange={setDateRange}
         onSearch={fetchData}
+        onExport={handleExport}
+        isDboSource={isDboSource}
       />
       
       {!data || enrichedData.length === 0 ? (

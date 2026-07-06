@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Spin, Alert, message, Switch, Drawer, Table, Typography, Tabs, Popconfirm } from 'antd';
+import { Spin, Alert, message, Switch, Drawer, Table, Typography, Tabs, Popconfirm, Progress } from 'antd';
 import { LoadingOutlined, DeleteOutlined } from '@ant-design/icons';
 import { SpikeChart } from '../Chart/SpikeChart';
 import { DistributionChart } from '../Chart/DistributionChart';
@@ -8,7 +8,8 @@ import { SpikeTable } from '../Stats/SpikeTable';
 import { analyticsApi } from '../../api/analyticsApi';
 
 import { enrichSpikeData, getSpikesOnly, getStatistics } from '../../utils/spikeUtils';
-import type { TimeGranularity, ChannelDto, DataSourceDto, DistributionItemDto, SpikePoint, ChannelContributionDto } from '../../types/analytics.types';
+import { exportSpikesToExcel } from '../../utils/exportUtils';
+import type { TimeGranularity, ChannelDto, DataSourceDto, DistributionItemDto, SpikePoint, ChannelContributionDto, SpikeResponse } from '../../types/analytics.types';
 import dayjs from 'dayjs';
 import { formatUtcDateTime } from '../../utils/dateTimeUtils';
 import { confirmHeavyAnalysis } from '../../utils/granularityWarning';
@@ -20,8 +21,10 @@ import { API_BASE_URL } from '../../api/index';
 const { Title, Text } = Typography;
 
 export const LegacyDboDashboard: React.FC<{ database: string }> = ({ database }) => {
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<SpikeResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  const [analysisProgress, setAnalysisProgress] = useState(0);
+  const [isPartialResult, setIsPartialResult] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [channels, setChannels] = useState<ChannelDto[]>([]);
@@ -129,6 +132,8 @@ export const LegacyDboDashboard: React.FC<{ database: string }> = ({ database })
     setLoading(true);
     setError(null);
     setData(null);
+    setIsPartialResult(false);
+    setAnalysisProgress(0);
 
     try {
       const requestPayload = {
@@ -143,32 +148,30 @@ export const LegacyDboDashboard: React.FC<{ database: string }> = ({ database })
         endDate: dateRange[1],
       };
 
-      const { jobId } = await analyticsApi.dbo.enqueueAnalysis(requestPayload);
-      message.loading({ content: 'Задача поставлена в очередь (Hangfire)...', key: 'jobProgress' });
+      message.loading({ content: 'Задача поставлена в очередь...', key: 'jobProgress' });
 
-      while (true) {
-        await new Promise(r => setTimeout(r, 2000));
-        const status = await analyticsApi.dbo.getJobStatus(jobId);
+      const result = await analyticsApi.dbo.runAnalysis(
+        requestPayload,
+        (progress) => {
+          setAnalysisProgress(progress);
+          message.loading({ content: `Анализ выполняется... (${progress}%)`, key: 'jobProgress' });
+        },
+        (partial) => {
+          setIsPartialResult(true);
+          setData(partial);
+        },
+      );
 
-        if (status.status === 'Completed') {
-          message.success({ content: 'Анализ завершен!', key: 'jobProgress' });
-          const result = await analyticsApi.dbo.getJobResult(jobId);
-          setData(result);
-          
-          const spikes = result.series.filter((s: any) => s.isSpike);
-          if (spikes.length > 0) {
-            message.warning(`Обнаружено ${spikes.length} аномалий`);
-          } else {
-            message.success('Аномалий не обнаружено');
-          }
-          break;
-        } else if (status.status === 'Failed') {
-          message.error({ content: `Ошибка выполнения: ${status.errorMessage}`, key: 'jobProgress' });
-          setError(`Ошибка выполнения: ${status.errorMessage}`);
-          break;
-        } else {
-          message.loading({ content: `Анализ выполняется... (${status.progress}%)`, key: 'jobProgress' });
-        }
+      setIsPartialResult(false);
+      setAnalysisProgress(100);
+      setData(result);
+      message.success({ content: 'Анализ завершен!', key: 'jobProgress' });
+
+      const spikes = result.series.filter(s => s.isSpike);
+      if (spikes.length > 0) {
+        message.warning(`Обнаружено ${spikes.length} аномалий`);
+      } else {
+        message.success('Аномалий не обнаружено');
       }
 
       setDistributions({});
@@ -217,6 +220,15 @@ export const LegacyDboDashboard: React.FC<{ database: string }> = ({ database })
     }
   }, [sourceId]);
 
+  const handleExport = () => {
+    if (!data?.series?.length) {
+      message.warning('Нет данных для экспорта. Сначала выполните анализ.');
+      return;
+    }
+    exportSpikesToExcel(data);
+    message.success('Данные экспортированы в Excel');
+  };
+
   const enrichedData = data ? enrichSpikeData(data.series) : [];
   const spikesOnly = data ? getSpikesOnly(data.series) : [];
   const stats = data ? getStatistics(data.series) : null;
@@ -259,6 +271,8 @@ export const LegacyDboDashboard: React.FC<{ database: string }> = ({ database })
             onSearchChannels={setChannelSearch}
             onAnalyze={fetchData}
             loading={loading}
+            onExport={handleExport}
+            exportDisabled={!data?.series?.length}
             previewOpen={previewOpen}
             onPreviewToggle={() => setPreviewOpen(v => !v)}
             previewContent={
@@ -289,8 +303,24 @@ export const LegacyDboDashboard: React.FC<{ database: string }> = ({ database })
           </div>
         )}
 
-        {enrichedData.length > 0 && stats && (
+        {data && enrichedData.length > 0 && (
             <>
+              {loading && (
+                <div style={{ marginBottom: 16 }}>
+                  <Progress percent={analysisProgress} status="active" />
+                  {isPartialResult && (
+                    <Alert
+                      type="info"
+                      showIcon
+                      message="Загрузка данных по батчам"
+                      description="График обновляется по мере обработки периода. Аномалии будут рассчитаны после завершения анализа."
+                      style={{ marginTop: 12, borderRadius: 12 }}
+                    />
+                  )}
+                </div>
+              )}
+
+              {stats && (
               <div className="stat-grid">
                 <div className="stat-item">
                   <div className="stat-header">
@@ -338,6 +368,7 @@ export const LegacyDboDashboard: React.FC<{ database: string }> = ({ database })
                   <div className="value primary">{stats.totalPoints}</div>
                 </div>
               </div>
+              )}
 
               <div className="dashboard-card" style={{ marginBottom: 24 }}>
                 <div style={{ 

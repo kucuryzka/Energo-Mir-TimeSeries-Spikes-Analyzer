@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Typography, Card, Space, Button, DatePicker, Select, InputNumber, Spin, message, Drawer, Table, Switch, Popconfirm } from 'antd';
+import { Typography, Card, Space, Button, DatePicker, Select, InputNumber, Spin, message, Drawer, Table, Switch, Popconfirm, Progress, Alert } from 'antd';
 import { DashboardOutlined, HistoryOutlined, DeleteOutlined } from '@ant-design/icons';
 import { API_BASE_URL } from '../../api/index';
 import dayjs from 'dayjs';
@@ -7,10 +7,11 @@ import { formatUtcDateTime } from '../../utils/dateTimeUtils';
 import { confirmHeavyAnalysis } from '../../utils/granularityWarning';
 import { SpikeChart } from '../Chart/SpikeChart';
 import { enrichSpikeData } from '../../utils/spikeUtils';
+import { exportSpikesToExcel } from '../../utils/exportUtils';
 import { genericAnalysisApi } from '../../api/explorerApi';
 import { TablePreviewContent, type TablePreviewData } from './TablePreviewCard';
 import { AnalysisActionBar } from './AnalysisActionBar';
-import type { TimeGranularity, SpikePoint } from '../../types/analytics.types';
+import type { TimeGranularity, SpikePoint, SpikeResponse } from '../../types/analytics.types';
 import { apiCache } from '../../store/apiCache';
 
 const { Title, Text } = Typography;
@@ -25,8 +26,10 @@ interface GenericAnalyzerProps {
 }
 
 export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({ db, schema, table, timeColumn, onBack: _onBack }) => {
-  const [data, setData] = useState<any[]>([]);
+  const [data, setData] = useState<SpikeResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  const [analysisProgress, setAnalysisProgress] = useState(0);
+  const [isPartialResult, setIsPartialResult] = useState(false);
   const [selectedPoint, setSelectedPoint] = useState<SpikePoint | null>(null);
   const [pointDetails, setPointDetails] = useState<any[]>([]);
   const [loadingDetails, setLoadingDetails] = useState(false);
@@ -80,7 +83,9 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({ db, schema, ta
     if (!confirmed) return;
 
     setLoading(true);
-    setData([]); // clear previous data
+    setData(null);
+    setIsPartialResult(false);
+    setAnalysisProgress(0);
     try {
       const requestData = {
         database: db,
@@ -95,25 +100,24 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({ db, schema, ta
         windowSize
       };
 
-      const { jobId } = await genericAnalysisApi.enqueueAnalysis(requestData);
-      message.loading({ content: 'Задача поставлена в очередь (Hangfire)...', key: 'jobProgress' });
+      message.loading({ content: 'Задача поставлена в очередь...', key: 'jobProgress' });
 
-      while (true) {
-        await new Promise(r => setTimeout(r, 1000));
-        const status = await genericAnalysisApi.getJobStatus(jobId);
+      const result = await genericAnalysisApi.runAnalysis(
+        requestData,
+        (progress) => {
+          setAnalysisProgress(progress);
+          message.loading({ content: `Анализ выполняется... (${progress}%)`, key: 'jobProgress' });
+        },
+        (partial) => {
+          setIsPartialResult(true);
+          setData(partial);
+        },
+      );
 
-        if (status.status === 'Completed') {
-          message.success({ content: 'Анализ завершен!', key: 'jobProgress' });
-          const result = await genericAnalysisApi.getJobResult(jobId);
-          setData(result);
-          break;
-        } else if (status.status === 'Failed') {
-          message.error({ content: `Ошибка выполнения: ${status.errorMessage}`, key: 'jobProgress' });
-          break;
-        } else {
-          message.loading({ content: `Анализ выполняется... (${status.progress}%)`, key: 'jobProgress' });
-        }
-      }
+      setIsPartialResult(false);
+      setAnalysisProgress(100);
+      setData(result);
+      message.success({ content: 'Анализ завершен!', key: 'jobProgress' });
     } catch (e: any) {
       const errorText = e.response?.data?.message || e.response?.data || e.message || String(e);
       message.error({ content: `Ошибка при запуске задачи: ${errorText}`, key: 'jobProgress' });
@@ -143,9 +147,20 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({ db, schema, ta
       // This is left here if they somehow request the exact same chunk/range.
       // setData(cached); 
     } else {
-      setData([]); // clear data if no cache, waiting for manual trigger
+      setData(null);
     }
   }, [db, schema, table, timeColumn]);
+
+  const handleExport = () => {
+    if (!data?.series?.length) {
+      message.warning('Нет данных для экспорта. Сначала выполните анализ.');
+      return;
+    }
+    exportSpikesToExcel(data);
+    message.success('Данные экспортированы в Excel');
+  };
+
+  const enrichedData = data?.series?.length ? enrichSpikeData(data.series) : [];
 
   const handlePointClick = async (point: SpikePoint) => {
     setSelectedPoint(point);
@@ -251,6 +266,8 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({ db, schema, ta
           loading={loading}
           previewOpen={previewOpen}
           onPreviewToggle={() => setPreviewOpen(v => !v)}
+          onExport={handleExport}
+          exportDisabled={!data?.series?.length}
           style={{ marginTop: 16 }}
           previewContent={
             <TablePreviewContent
@@ -265,12 +282,26 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({ db, schema, ta
         />
       </Card>
 
-      {loading ? (
+      {!data && loading ? (
         <div style={{ display: 'flex', justifyContent: 'center', padding: 50 }}>
           <Spin size="large" />
         </div>
-      ) : (
+      ) : enrichedData.length > 0 ? (
         <Card style={{ borderRadius: 12 }}>
+          {loading && (
+            <div style={{ marginBottom: 16 }}>
+              <Progress percent={analysisProgress} status="active" />
+              {isPartialResult && (
+                <Alert
+                  type="info"
+                  showIcon
+                  message="Загрузка данных по батчам"
+                  description="График обновляется по мере обработки периода. Аномалии будут рассчитаны после завершения анализа."
+                  style={{ marginTop: 12, borderRadius: 12 }}
+                />
+              )}
+            </div>
+          )}
           <div style={{ 
             display: 'flex', 
             justifyContent: 'space-between', 
@@ -307,12 +338,12 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({ db, schema, ta
             </div>
           </div>
           <SpikeChart 
-            data={enrichSpikeData(data)} 
+            data={enrichedData} 
             showMarkers={showMarkers} 
             onPointClick={handlePointClick}
           />
         </Card>
-      )}
+      ) : null}
 
       <Drawer
         title={<Title level={5} style={{ margin: 0 }}>Детали среза ({selectedPoint?.timestamp ? dayjs(selectedPoint.timestamp).format('DD.MM.YYYY HH:mm:ss') : ''})</Title>}

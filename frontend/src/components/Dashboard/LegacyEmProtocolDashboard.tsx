@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Spin, Alert, message, Switch, Drawer, Table, Typography, Tabs, Popconfirm } from 'antd';
+import { Spin, Alert, message, Switch, Drawer, Table, Typography, Tabs, Popconfirm, Progress } from 'antd';
 import { LoadingOutlined, DeleteOutlined } from '@ant-design/icons';
 import { SpikeChart } from '../Chart/SpikeChart';
 import { DistributionChart } from '../Chart/DistributionChart';
@@ -8,7 +8,8 @@ import { SpikeTable } from '../Stats/SpikeTable';
 import { analyticsApi } from '../../api/analyticsApi';
 
 import { enrichSpikeData, getSpikesOnly, getStatistics } from '../../utils/spikeUtils';
-import type { TimeGranularity, ChannelDto, DataSourceDto, DistributionItemDto, SpikePoint, ChannelContributionDto } from '../../types/analytics.types';
+import { exportSpikesToExcel } from '../../utils/exportUtils';
+import type { TimeGranularity, ChannelDto, DataSourceDto, DistributionItemDto, SpikePoint, ChannelContributionDto, SpikeResponse } from '../../types/analytics.types';
 import dayjs from 'dayjs';
 import { formatUtcDateTime } from '../../utils/dateTimeUtils';
 import { confirmHeavyAnalysis } from '../../utils/granularityWarning';
@@ -20,8 +21,10 @@ import { API_BASE_URL } from '../../api/index';
 const { Title, Text } = Typography;
 
 export const LegacyEmProtocolDashboard: React.FC<{ database: string }> = ({ database }) => {
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<SpikeResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  const [analysisProgress, setAnalysisProgress] = useState(0);
+  const [isPartialResult, setIsPartialResult] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [channels, setChannels] = useState<ChannelDto[]>([]);
@@ -115,11 +118,13 @@ export const LegacyEmProtocolDashboard: React.FC<{ database: string }> = ({ data
     setLoading(true);
     setError(null);
     setData(null);
+    setIsPartialResult(false);
+    setAnalysisProgress(0);
 
     try {
       const requestPayload = {
         database,
-        sourceId: 'EmProtocol',
+        sourceId: 'em_protocol',
         channelId,
         granularity,
         customMinutes: granularity === 'Custom' ? customMinutes : null,
@@ -129,39 +134,37 @@ export const LegacyEmProtocolDashboard: React.FC<{ database: string }> = ({ data
         endDate: dateRange[1],
       };
 
-      const { jobId } = await analyticsApi.emProtocol.enqueueAnalysis(requestPayload);
-      message.loading({ content: 'Задача поставлена в очередь (Hangfire)...', key: 'jobProgress' });
+      message.loading({ content: 'Задача поставлена в очередь...', key: 'jobProgress' });
 
-      while (true) {
-        await new Promise(r => setTimeout(r, 2000));
-        const status = await analyticsApi.emProtocol.getJobStatus(jobId);
+      const result = await analyticsApi.emProtocol.runAnalysis(
+        requestPayload,
+        (progress) => {
+          setAnalysisProgress(progress);
+          message.loading({ content: `Анализ выполняется... (${progress}%)`, key: 'jobProgress' });
+        },
+        (partial) => {
+          setIsPartialResult(true);
+          setData(partial);
+        },
+      );
 
-        if (status.status === 'Completed') {
-          message.success({ content: 'Анализ завершен!', key: 'jobProgress' });
-          const result = await analyticsApi.emProtocol.getJobResult(jobId);
-          setData(result);
-          
-          const currentSource = sources.find(s => s.id === sourceId);
-          if (currentSource && currentSource.supportedDistributions) {
-            await fetchDistributions(currentSource.supportedDistributions);
-          } else {
-            setDistributions({});
-          }
+      setIsPartialResult(false);
+      setAnalysisProgress(100);
+      setData(result);
 
-          const spikes = result.series.filter((s: any) => s.isSpike);
-          if (spikes.length > 0) {
-            message.warning(`Обнаружено ${spikes.length} аномалий`);
-          } else {
-            message.success('Аномалий не обнаружено');
-          }
-          break;
-        } else if (status.status === 'Failed') {
-          message.error({ content: `Ошибка выполнения: ${status.errorMessage}`, key: 'jobProgress' });
-          setError(`Ошибка выполнения: ${status.errorMessage}`);
-          break;
-        } else {
-          message.loading({ content: `Анализ выполняется... (${status.progress}%)`, key: 'jobProgress' });
-        }
+      const currentSource = sources.find(s => s.id === sourceId);
+      if (currentSource?.supportedDistributions) {
+        await fetchDistributions(currentSource.supportedDistributions);
+      } else {
+        setDistributions({});
+      }
+
+      message.success({ content: 'Анализ завершен!', key: 'jobProgress' });
+      const spikes = result.series.filter(s => s.isSpike);
+      if (spikes.length > 0) {
+        message.warning(`Обнаружено ${spikes.length} аномалий`);
+      } else {
+        message.success('Аномалий не обнаружено');
       }
     } catch (err: any) {
       const errorText = err.response?.data?.message || err.response?.data || err.message || String(err);
@@ -265,6 +268,15 @@ export const LegacyEmProtocolDashboard: React.FC<{ database: string }> = ({ data
     return () => clearTimeout(timer);
   }, [channelSearch]);
 
+  const handleExport = () => {
+    if (!data?.series?.length) {
+      message.warning('Нет данных для экспорта. Сначала выполните анализ.');
+      return;
+    }
+    exportSpikesToExcel(data);
+    message.success('Данные экспортированы в Excel');
+  };
+
   const enrichedData = data ? enrichSpikeData(data.series) : [];
   const spikesOnly = data ? getSpikesOnly(data.series) : [];
   const stats = data ? getStatistics(data.series) : null;
@@ -298,6 +310,8 @@ export const LegacyEmProtocolDashboard: React.FC<{ database: string }> = ({ data
             onSearchChannels={setChannelSearch}
             onAnalyze={fetchData}
             loading={loading}
+            onExport={handleExport}
+            exportDisabled={!data?.series?.length}
             previewOpen={previewOpen}
             onPreviewToggle={() => setPreviewOpen(v => !v)}
             previewContent={
@@ -322,8 +336,30 @@ export const LegacyEmProtocolDashboard: React.FC<{ database: string }> = ({ data
           />
         )}
 
-        <Spin spinning={loading} indicator={antIcon}>
-          {enrichedData.length > 0 && stats && (
+        {!data && loading && !error && (
+          <div style={{ display: 'flex', justifyContent: 'center', padding: '60px 20px' }}>
+            <Spin indicator={antIcon} />
+          </div>
+        )}
+
+        {data && enrichedData.length > 0 && (
+            <>
+              {loading && (
+                <div style={{ marginBottom: 16 }}>
+                  <Progress percent={analysisProgress} status="active" />
+                  {isPartialResult && (
+                    <Alert
+                      type="info"
+                      showIcon
+                      message="Загрузка данных по батчам"
+                      description="График обновляется по мере обработки периода. Аномалии будут рассчитаны после завершения анализа."
+                      style={{ marginTop: 12, borderRadius: 12 }}
+                    />
+                  )}
+                </div>
+              )}
+
+              {stats && (
             <>
               <div className="stat-grid">
                 <div className="stat-item">
@@ -434,16 +470,17 @@ export const LegacyEmProtocolDashboard: React.FC<{ database: string }> = ({ data
                 );
               })}
             </>
+              )}
+            </>
           )}
 
-          {!loading && !data && !error && (
+        {!data && !loading && !error && (
             <div className="dashboard-card" style={{ textAlign: 'center', padding: '60px 20px' }}>
               <div style={{ fontSize: 48, marginBottom: 16 }}></div>
               <h3 style={{ color: '#1a2332', marginBottom: 8 }}>Нет данных для отображения</h3>
               <p style={{ color: '#6b7a8f' }}>Настройте параметры и нажмите «Анализировать»</p>
             </div>
           )}
-        </Spin>
       </main>
 
       <Drawer

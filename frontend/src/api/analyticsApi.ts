@@ -1,27 +1,17 @@
 import { apiClient } from './index';
 import type { DetectSpikesRequest, SpikeResponse, ChannelDto, DataSourceDto, DistributionItemDto, ChannelContributionDto } from '../types/analytics.types';
 import { apiCache } from '../store/apiCache';
+import { pollAnalysisJob, type AnalysisJobApi } from '../utils/jobPolling';
 
 const USE_MOCK = false;
 
 async function pollJobResult(
-  getStatus: (jobId: string) => Promise<any>,
-  getResult: (jobId: string) => Promise<SpikeResponse>,
+  api: AnalysisJobApi,
   jobId: string,
-  onProgress?: (progress: number) => void
+  onProgress?: (progress: number) => void,
+  onPartialResult?: (result: SpikeResponse) => void,
 ): Promise<SpikeResponse> {
-  while (true) {
-    await new Promise(r => setTimeout(r, 2000));
-    const status = await getStatus(jobId);
-    if (onProgress) onProgress(status.progress ?? 0);
-
-    if (status.status === 'Completed') {
-      return getResult(jobId);
-    }
-    if (status.status === 'Failed') {
-      throw new Error(status.errorMessage || 'Analysis job failed');
-    }
-  }
+  return pollAnalysisJob(jobId, api, { onProgress, onPartialResult });
 }
 
 export const analyticsApi = {
@@ -50,13 +40,21 @@ export const analyticsApi = {
       });
       return response.data;
     },
-    runAnalysis: async (request: DetectSpikesRequest, onProgress?: (progress: number) => void): Promise<SpikeResponse> => {
+    runAnalysis: async (
+      request: DetectSpikesRequest,
+      onProgress?: (progress: number) => void,
+      onPartialResult?: (result: SpikeResponse) => void,
+    ): Promise<SpikeResponse> => {
       const { jobId } = await analyticsApi.emProtocol.enqueueAnalysis(request);
       return pollJobResult(
-        analyticsApi.emProtocol.getJobStatus,
-        analyticsApi.emProtocol.getJobResult,
+        {
+          getJobStatus: analyticsApi.emProtocol.getJobStatus,
+          getJobResult: analyticsApi.emProtocol.getJobResult,
+          getJobPartialResult: analyticsApi.emProtocol.getJobPartialResult,
+        },
         jobId,
-        onProgress
+        onProgress,
+        onPartialResult,
       );
     },
     getJobStatus: async (jobId: string): Promise<any> => {
@@ -65,6 +63,10 @@ export const analyticsApi = {
     },
     getJobResult: async (jobId: string): Promise<SpikeResponse> => {
       const response = await apiClient.get<SpikeResponse>(`/em-protocol/result/${jobId}`);
+      return response.data;
+    },
+    getJobPartialResult: async (jobId: string): Promise<SpikeResponse> => {
+      const response = await apiClient.get<SpikeResponse>(`/em-protocol/partial-result/${jobId}`);
       return response.data;
     },
     getHistory: async (database: string): Promise<any[]> => {
@@ -98,13 +100,21 @@ export const analyticsApi = {
       });
       return response.data;
     },
-    runAnalysis: async (request: DetectSpikesRequest, onProgress?: (progress: number) => void): Promise<SpikeResponse> => {
+    runAnalysis: async (
+      request: DetectSpikesRequest,
+      onProgress?: (progress: number) => void,
+      onPartialResult?: (result: SpikeResponse) => void,
+    ): Promise<SpikeResponse> => {
       const { jobId } = await analyticsApi.dbo.enqueueAnalysis(request);
       return pollJobResult(
-        analyticsApi.dbo.getJobStatus,
-        analyticsApi.dbo.getJobResult,
+        {
+          getJobStatus: analyticsApi.dbo.getJobStatus,
+          getJobResult: analyticsApi.dbo.getJobResult,
+          getJobPartialResult: analyticsApi.dbo.getJobPartialResult,
+        },
         jobId,
-        onProgress
+        onProgress,
+        onPartialResult,
       );
     },
     getJobStatus: async (jobId: string): Promise<any> => {
@@ -113,6 +123,10 @@ export const analyticsApi = {
     },
     getJobResult: async (jobId: string): Promise<SpikeResponse> => {
       const response = await apiClient.get<SpikeResponse>(`/dbo/result/${jobId}`);
+      return response.data;
+    },
+    getJobPartialResult: async (jobId: string): Promise<SpikeResponse> => {
+      const response = await apiClient.get<SpikeResponse>(`/dbo/partial-result/${jobId}`);
       return response.data;
     },
     getHistory: async (database: string): Promise<any[]> => {
