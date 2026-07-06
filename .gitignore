@@ -157,3 +157,6 @@ $RECYCLE.BIN/
 *.db-shm
 *.db-wal
 Data Source=*
+
+# Analysis result series (JSONL on disk)
+**/results/*.jsonl
