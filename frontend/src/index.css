@@ -1,27 +1,10 @@
 :root {
-  --bg-main: #FCFAF7;
-  --bg-surface: #FEFEFF;
-  --text-main: #1F1F1F;
-  --text-secondary: #777777;
-  --border-color: #D8D1BE;
-  --border-light: #DDDDDD;
-  --primary-accent: #AEAC55;
-  --gradient-btn: linear-gradient(90deg, #5B88B2 0%, #AEAC55 100%);
-  --success-color: #9BB882;
-  --shadow-light: 0 4px 15px rgba(0,0,0,0.05);
-  --segmented-bg: #EAE6D9;
-}
-
-body.theme-legacy {
-  --bg-main: #f0f2f5;
-  --bg-surface: #ffffff;
-  --text-main: #1F1F1F;
-  --text-secondary: #777777;
-  --primary-accent: #2a5298;
-  --gradient-btn: linear-gradient(135deg, #2a5298 0%, #1a3a6b 100%);
-  --success-color: #52c41a;
-  --border-color: #d9d9d9;
-  --segmented-bg: #e2e8f0;
+  --bg-main: #E9EEFA;
+  --bg-surface: #FFFFFF;
+  --text-main: #1A2332;
+  --text-secondary: #7A8B9E;
+  --primary-accent: #3B65D9;
+  --border-split: #E9EEFA;
 }
 
 * {
@@ -30,36 +13,69 @@ body.theme-legacy {
   box-sizing: border-box;
 }
 
-html, body, #root {
+body, html, #root {
   width: 100%;
   height: 100%;
-  margin: 0;
-  padding: 0;
+  background-color: var(--bg-main);
+  font-family: 'Inter', -apple-system, sans-serif;
+  overflow: hidden;
 }
 
-body {
-  font-family: 'Inter', 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
-  background: #f1f5f9;
-  color: #1e293b;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+/* Сетка KPI с градиентами */
+.kpi-grid {
+  display: grid;
+  /* Делает карточки широкими: минимум 180px, максимум — делят поровну всё доступное место */
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); 
+  gap: 16px; /* Отступ между карточками */
+  margin-bottom: 24px;
+  width: 100%;
 }
 
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+.kpi-gradient-blue {
+  background: linear-gradient(135deg, #EFF3FF 0%, #DFE5FB 100%);
+  border-radius: 16px;
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  box-shadow: 0px 4px 12px rgba(59, 101, 217, 0.04);
 }
 
-::-webkit-scrollbar-track {
-  background: #e2e8f0;
-  border-radius: 4px;
+.kpi-gradient-red {
+  background: linear-gradient(135deg, #FBECE9 0%, #F8D9D4 100%);
+  border-radius: 16px;
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0px 4px 12px rgba(217, 74, 74, 0.04);
 }
 
-::-webkit-scrollbar-thumb {
-  background: #94a3b8;
-  border-radius: 4px;
+.kpi-gradient-white {
+  background: linear-gradient(135deg, #FFFFFF 0%, #F5F6F8 100%);
+  border-radius: 16px;
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #E9EEFA;
 }
 
-::-webkit-scrollbar-thumb:hover {
-  background: #64748b;
+/* Блоки с белой подложкой и четким разделением */
+.dashboard-block {
+  background: var(--bg-surface);
+  border-radius: 20px;
+  padding: 24px;
+  margin-bottom: 20px;
+  border: 1px solid var(--border-split);
+  box-shadow: 0px 8px 24px rgba(112, 144, 176, 0.03);
+}
+
+/* Кастомные кнопки под стиль макета */
+.custom-btn {
+  border-radius: 14px !important;
+  height: 40px !important;
+  font-weight: 500 !important;
+  border: 1px solid #E9EEFA !important;
+  display: inline-flex;
+  align-items: center;
+  justifyContent: center;
 }

@@ -1,229 +1,166 @@
-import React, { useMemo, useRef, useEffect } from 'react';
+import React from 'react';
 import ReactECharts from 'echarts-for-react';
-import type { SpikePoint } from '../../types/analytics.types';
+import { Switch } from 'antd';
+import type { SpikePoint, TimeGranularity } from '../../types/analytics.types';
 import dayjs from 'dayjs';
 
-interface Props {
+interface SpikeChartProps {
   data: SpikePoint[];
-  showMarkers?: boolean;
-  onPointClick?: (point: SpikePoint) => void;
+  showMarkers: boolean;
+  onPointClick: (point: SpikePoint) => void;
+  granularity: TimeGranularity;
+  onGranularityChange: (v: TimeGranularity) => void;
 }
 
-export const SpikeChart: React.FC<Props> = ({ data, showMarkers = true, onPointClick }) => {
-  const chartRef = useRef<ReactECharts>(null);
-
-  const sortedData = useMemo(() => {
-    return [...data].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-  }, [data]);
-
-  useEffect(() => {
-    if (!chartRef.current) return;
-    const echartsInstance = chartRef.current.getEchartsInstance();
-    const zr = echartsInstance.getZr();
-
-    const handleClick = (params: any) => {
-      const pointInPixel = [params.offsetX, params.offsetY];
-      if (echartsInstance.containPixel('grid', pointInPixel)) {
-        const pointInGrid = echartsInstance.convertFromPixel({ seriesIndex: 0 }, pointInPixel);
-        if (pointInGrid && pointInGrid.length > 0) {
-          // xAxis is category axis, so pointInGrid[0] is the index
-          const xIndex = Math.round(pointInGrid[0]);
-          if (xIndex >= 0 && xIndex < sortedData.length) {
-            const dataPoint = sortedData[xIndex];
-            if (dataPoint && onPointClick) {
-              onPointClick(dataPoint);
+export const SpikeChart: React.FC<SpikeChartProps> = ({ data, onPointClick, granularity, onGranularityChange }) => {
+  
+  const chartOptions = {
+    backgroundColor: 'transparent',
+    
+    grid: { 
+      top: 60, 
+      left: 20, 
+      right: 20, 
+      bottom: 40, 
+      containLabel: true 
+    },
+    tooltip: { 
+      trigger: 'axis', 
+      backgroundColor: '#1A2332', 
+      textStyle: { color: '#ffffff' } 
+    },
+    xAxis: {
+      type: 'category',
+      data: data.map(d => d.timestamp),
+      axisLabel: { 
+        formatter: (v: string) => dayjs(v).format('DD.MM HH:mm'), 
+        color: '#7A8B9E', 
+        fontSize: 10 
+      },
+      axisLine: { lineStyle: { color: '#E9EEFA' } },
+      axisTick: { show: false }
+    },
+    yAxis: { 
+      type: 'value', 
+      splitLine: { lineStyle: { color: '#EFF2F9' } },
+      axisLine: { show: false },
+      axisTick: { show: false }
+    },
+    dataZoom: [
+      {
+        type: 'slider',
+        show: true,
+        start: 0,
+        end: 100,
+        height: 8,
+        bottom: 0,
+        borderColor: 'transparent',
+        backgroundColor: '#E9EEFA',
+        fillerColor: 'rgba(71, 97, 191, 0.15)',
+        handleIcon: 'circle',
+        handleSize: '120%',
+        handleStyle: { color: '#4761BF', borderWidth: 0 },
+        textStyle: { color: 'transparent' }
+      }
+    ],
+    series: [
+      {
+        name: 'Показатели',
+        type: 'line',
+        data: data.map(d => d.value),
+        smooth: false, 
+        showSymbol: false,
+        
+        // Мощное и глубокое неоновое свечение графика
+        lineStyle: { 
+          color: '#4761BF', 
+          width: 2.5,
+          shadowBlur: 32,
+          shadowColor: 'rgba(71, 97, 191, 0.95)',
+          shadowOffsetY: 6
+        },
+        areaStyle: {
+          color: {
+            type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+            colorStops: [
+              { offset: 0, color: 'rgba(71, 97, 191, 0.25)' },
+              { offset: 1, color: 'rgba(71, 97, 191, 0.0)' }
+            ]
+          }
+        },
+        
+        markPoint: {
+          symbol: 'circle',
+          symbolSize: 8,
+          data: data.map((d, idx) => d.isSpike ? {
+            coord: [idx, d.value + 10], 
+            itemStyle: { 
+              color: d.pValue < 0.01 ? '#D94A4A' : '#E8A838',
+              shadowBlur: 8,
+              shadowColor: d.pValue < 0.01 ? 'rgba(219,74,74,0.5)' : 'rgba(232,168,56,0.5)'
             }
-          }
+          } : null).filter(Boolean)
         }
       }
-    };
-
-    zr.on('click', handleClick);
-    return () => {
-      zr.off('click', handleClick);
-    };
-  }, [sortedData, onPointClick]);
-
-  const option = useMemo(() => {
-    const timestamps = sortedData.map(d => d.timestamp);
-    const values = sortedData.map(d => d.value);
-
-    const spikeMarkers = showMarkers ? sortedData
-      .filter(d => d.isSpike)
-      .map(d => ({
-        name: 'Аварийное событие',
-        coord: [d.timestamp, d.value],
-        value: d.value,
-        symbol: 'pin',
-        symbolSize: d.pValue < 0.01 ? 60 : 45,
-        itemStyle: {
-          color: d.pValue < 0.01 ? '#d94a4a' : '#e8a838',
-        },
-        label: {
-          show: true,
-          formatter: `${d.value}`,
-          position: 'top',
-          color: '#d94a4a',
-          fontWeight: 'bold',
-          fontSize: 12,
-        },
-      })) : [];
-
-    return {
-      tooltip: {
-        trigger: 'axis',
-        backgroundColor: 'rgba(255,255,255,0.95)',
-        borderColor: '#e8edf3',
-        borderWidth: 1,
-        borderRadius: 8,
-        padding: [12, 16],
-        textStyle: { color: '#1a2332', fontSize: 13 },
-        formatter: (params: any) => {
-          const point = params[0];
-          const dataPoint = sortedData.find(d => d.timestamp === point.axisValue);
-          if (!dataPoint) return '';
-
-          let html = `<b>${dayjs(dataPoint.timestamp).format('DD.MM.YYYY HH:mm')}</b><br/>`;
-          html += `Сообщений: <b>${dataPoint.value}</b><br/>`;
-          html += `P-Value: ${dataPoint.pValue.toFixed(4)}<br/>`;
-          html += `Доверие: ${dataPoint.confidencePercent.toFixed(1)}%<br/>`;
-
-          if (dataPoint.isSpike) {
-            const severityText = dataPoint.pValue < 0.01 ? '🔴 АНОМАЛЬНОЕ ЗНАЧЕНИЕ' : '🟠 ВОЗМОЖНО АНОМАЛЬНОЕ ЗНАЧЕНИЕ';
-            html += `<span style="color:#d94a4a;font-weight:700;">${severityText}</span>`;
-          }
-
-          return html;
-        },
-      },
-      xAxis: {
-        type: 'category',
-        data: timestamps,
-        axisLine: { lineStyle: { color: '#dce2ea' } },
-        axisLabel: {
-          color: '#6b7a8f',
-          fontSize: 11,
-          rotate: 30,
-          formatter: (value: string) => dayjs(value).format('DD.MM HH:mm'),
-        },
-        splitLine: { show: false },
-      },
-      yAxis: {
-        type: 'value',
-        name: 'Количество сообщений телеметрии',
-        nameLocation: 'middle',
-        nameRotate: 90,
-        nameGap: 50,
-        nameTextStyle: { color: '#6b7a8f', fontSize: 12 },
-        axisLine: { show: false },
-        axisTick: { show: false },
-        splitLine: { lineStyle: { color: '#eef2f6', type: 'dashed' } },
-        axisLabel: { color: '#6b7a8f', fontSize: 11 },
-      },
-      series: [
-        {
-          name: 'Сообщения телеметрии',
-          type: 'line',
-          data: values,
-          smooth: true,
-          lineStyle: { color: '#4a90d9', width: 2.5 },
-          areaStyle: {
-            color: {
-              type: 'linear',
-              x: 0,
-              y: 0,
-              x2: 0,
-              y2: 1,
-              colorStops: [
-                { offset: 0, color: 'rgba(74, 144, 217, 0.25)' },
-                { offset: 1, color: 'rgba(74, 144, 217, 0.02)' },
-              ],
-            },
-          },
-          markPoint: {
-            data: spikeMarkers,
-          },
-          markLine: {
-            silent: true,
-            symbol: 'none',
-            data: [
-              {
-                type: 'average',
-                name: 'Средняя',
-                label: { formatter: 'Ср.: {c}', color: '#6b7a8f', position: 'insideEndTop' },
-                lineStyle: { color: '#6b7a8f' }
-              },
-              {
-                type: 'max',
-                name: 'Максимум',
-                label: { formatter: 'Макс.: {c}', color: '#d94a4a', position: 'insideEndTop' },
-                lineStyle: { color: '#d94a4a', type: 'dotted' }
-              },
-              {
-                type: 'min',
-                name: 'Минимум',
-                label: { formatter: 'Мин.: {c}', color: '#22a67e', position: 'insideEndBottom' },
-                lineStyle: { color: '#22a67e', type: 'dotted' }
-              },
-            ],
-          },
-        },
-      ],
-      dataZoom: [
-        {
-          type: 'slider',
-          start: 0,
-          end: 100,
-          height: 28,
-          bottom: 8,
-          borderColor: '#dce2ea',
-          backgroundColor: '#f5f7fa',
-          fillerColor: 'rgba(74, 144, 217, 0.15)',
-          handleStyle: { color: '#4a90d9' },
-          textStyle: { color: '#6b7a8f', fontSize: 10 },
-        },
-      ],
-      grid: {
-        left: 60,
-        right: 30,
-        bottom: 80,
-        top: 30,
-      },
-      color: ['#4a90d9'],
-    };
-  }, [sortedData, showMarkers]);
-
-  const onEvents = {
-    click: (params: any) => {
-      // params.name corresponds to the axis value (timestamp) in a category axis
-      // params.dataIndex is the index in the series
-      let timestamp = null;
-      if (params.componentType === 'series' && params.seriesType === 'line') {
-        if (params.name) {
-          timestamp = params.name;
-        } else if (params.dataIndex !== undefined) {
-          timestamp = sortedData[params.dataIndex]?.timestamp;
-        }
-      } else if (params.componentType === 'markPoint') {
-        timestamp = params.data.coord[0];
-      }
-
-      if (timestamp && onPointClick) {
-        const point = sortedData.find(d => d.timestamp === timestamp);
-        if (point) {
-          onPointClick(point);
-        }
-      }
-    }
+    ]
   };
 
+  const timeOptions: { label: string; value: TimeGranularity }[] = [
+    { label: 'Час', value: 'Hour' },
+    { label: 'День', value: 'Day' },
+    { label: 'Неделя', value: 'Week' }
+  ];
+
+  const currentGranularity = granularity === 'Custom' || granularity === 'Minute' ? 'Hour' : granularity;
+
   return (
-    <ReactECharts
-      ref={chartRef}
-      option={option}
-      style={{ height: 480, width: '100%' }}
-      opts={{ renderer: 'canvas' }}
-      onEvents={onEvents}
-    />
+    <div style={{ position: 'relative', width: '100%' }}>
+      {/* Кастомная стильная панель управления над графиком */}
+      <div style={{ position: 'absolute', top: -60, right: 0, zIndex: 10, display: 'flex', alignItems: 'center', gap: 20 }}>
+        
+        {/* Выровненный выбор периода одинаковой ширины в цвет графика */}
+        <div style={{ display: 'flex', background: '#FFF', padding: '3px', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+          {timeOptions.map((opt) => {
+            const isActive = currentGranularity === opt.value;
+            return (
+              <button
+                key={opt.value}
+                onClick={() => onGranularityChange(opt.value)}
+                style={{
+                  width: '68px',
+                  height: '30px',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                  background: isActive ? '#4761BF' : 'transparent',
+                  color: isActive ? '#FFF' : '#7A8B9E',
+                  boxShadow: isActive ? '0 3px 10px rgba(71, 97, 191, 0.4)' : 'none'
+                }}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Легенда с точками-индикаторами и свитч */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, fontSize: 12, color: '#7A8B9E', fontWeight: 600 }}>
+          <span style={{ background: '#FBECE9', color: '#D94A4A', padding: '4px 10px', borderRadius: 6, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#D94A4A' }} /> Критическая
+          </span>
+          <span style={{ background: '#FFF8EB', color: '#E8A838', padding: '4px 10px', borderRadius: 6, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#E8A838' }} /> Предупреждение
+          </span>
+          <Switch defaultChecked size="small" style={{ background: '#4761BF' }} />
+        </div>
+      </div>
+      
+      <ReactECharts option={chartOptions} style={{ height: '370px', width: '100%' }} onEvents={{
+        'click': (p: any) => { const pt = data[p.dataIndex]; if (pt) onPointClick(pt); }
+      }} />
+    </div>
   );
 };
