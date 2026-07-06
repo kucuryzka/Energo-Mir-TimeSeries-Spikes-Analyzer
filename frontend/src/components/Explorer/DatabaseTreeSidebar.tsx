@@ -164,37 +164,43 @@ export const DatabaseTreeSidebar: React.FC<DatabaseTreeSidebarProps> = ({
   };
 
   return (
-    <div style={{ height: '100%', display: collapsed ? 'none' : 'flex', flexDirection: 'column', background: '#FFF', padding: '24px 16px', gap: 20 }}>
+    <div className={`db-tree-sidebar${collapsed ? ' db-tree-sidebar--collapsed' : ''}`}>
       <div>
-        <Typography.Title level={4} style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#1A2332' }}>
+        <Typography.Title level={4} className="db-tree-sidebar__title">
           Источники данных
         </Typography.Title>
-        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+        <Typography.Text className="db-tree-sidebar__subtitle">
           Выберите таблицу или схему для анализа
         </Typography.Text>
       </div>
 
-      <div style={{ display: 'flex', gap: 8 }}>
+      <div className="db-tree-sidebar__search-row">
         <Input
+          className="db-tree-sidebar__search"
           placeholder="Поиск БД..."
-          prefix={<SearchOutlined style={{ color: '#A3AED0' }} />}
+          prefix={<SearchOutlined />}
           allowClear
           onChange={(e) => setSearchTerm(e.target.value)}
-          style={{ borderRadius: 10, background: '#F4F7FE', border: 'none', height: 38, flex: 1 }}
         />
-        <Button type="text" icon={<LogoutOutlined />} onClick={onLogout} title="Отключиться" style={{ color: '#7A8B9E' }} />
+        <Button
+          type="text"
+          className="db-tree-sidebar__logout"
+          icon={<LogoutOutlined />}
+          onClick={onLogout}
+          title="Отключиться"
+        />
       </div>
 
-      <div style={{ flex: 1, overflow: 'auto' }}>
+      <div className="db-tree-sidebar__tree-wrap">
         <Spin spinning={loading}>
           <Tree
             loadData={onLoadData}
             treeData={filteredTreeData}
             onSelect={onSelect}
             showIcon
-            style={{ background: 'transparent' }}
+            className="db-tree-sidebar__tree"
             titleRender={(nodeData: any) => (
-              <div style={{ whiteSpace: 'normal', wordBreak: 'break-all', display: 'inline-block', verticalAlign: 'middle', maxWidth: '220px' }}>
+              <div className="db-tree-sidebar__node-title">
                 {nodeData.title}
               </div>
             )}

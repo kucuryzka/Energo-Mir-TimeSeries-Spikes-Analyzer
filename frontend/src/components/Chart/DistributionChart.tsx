@@ -54,9 +54,9 @@ export const DistributionChart: React.FC<Props> = ({ data, title }) => {
   ];
 
   return (
-    <div className="dashboard-block" style={{ marginBottom: 24 }}>
+    <div className="dashboard-block distribution-chart" style={{ marginBottom: 24 }}>
       {title ? (
-        <div style={{ fontSize: 15, fontWeight: 800, color: '#1A2332', marginBottom: 24 }}>
+        <div className="distribution-chart__title">
           {title}
         </div>
       ) : null}
@@ -84,10 +84,15 @@ export const DistributionChart: React.FC<Props> = ({ data, title }) => {
                   <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                 ))}
               </Pie>
-              <Tooltip 
+              <Tooltip
                 formatter={(value: any) => [Number(value).toLocaleString('ru-RU'), 'Количество']}
-                contentStyle={{ borderRadius: 8, backgroundColor: '#ffffff', border: '1px solid #e2e8f0', color: '#0f172a' }}
-                itemStyle={{ color: '#0f172a' }}
+                contentStyle={{
+                  borderRadius: 8,
+                  backgroundColor: 'var(--list-card-bg, #ffffff)',
+                  border: '1px solid var(--border-subtle, #e2e8f0)',
+                  color: 'var(--text-heading, #0f172a)',
+                }}
+                itemStyle={{ color: 'var(--text-heading, #0f172a)' }}
               />
             </PieChart>
           </ResponsiveContainer>

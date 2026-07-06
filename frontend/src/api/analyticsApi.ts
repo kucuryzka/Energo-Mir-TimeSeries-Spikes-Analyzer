@@ -3,8 +3,6 @@ import type { DetectSpikesRequest, SpikeResponse, ChannelDto, DataSourceDto, Dis
 import { apiCache } from '../store/apiCache';
 import { pollAnalysisJob, type AnalysisJobApi } from '../utils/jobPolling';
 
-const USE_MOCK = false;
-
 async function pollJobResult(
   api: AnalysisJobApi,
   jobId: string,
@@ -16,7 +14,6 @@ async function pollJobResult(
 
 export const analyticsApi = {
   getSources: async (): Promise<DataSourceDto[]> => {
-    if (USE_MOCK) return [{ id: 'mock', name: 'Мок источник', supportedDistributions: ['MockCategory'] }];
     const response = await apiClient.get<DataSourceDto[]>('/sources');
     return response.data;
   },

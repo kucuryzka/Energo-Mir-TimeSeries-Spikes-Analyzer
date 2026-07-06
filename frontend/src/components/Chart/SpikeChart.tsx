@@ -7,6 +7,9 @@ import dayjs from 'dayjs';
 interface Props {
   data: SpikePoint[];
   showMarkers?: boolean;
+  showCriticalMarkers?: boolean;
+  showWarningMarkers?: boolean;
+  hideToolbar?: boolean;
   onShowMarkersChange?: (value: boolean) => void;
   onPointClick?: (point: SpikePoint) => void;
 }
@@ -14,6 +17,9 @@ interface Props {
 export const SpikeChart: React.FC<Props> = ({
   data,
   showMarkers = true,
+  showCriticalMarkers = true,
+  showWarningMarkers = true,
+  hideToolbar = false,
   onShowMarkersChange,
   onPointClick,
 }) => {
@@ -55,6 +61,7 @@ export const SpikeChart: React.FC<Props> = ({
     const spikeMarkers = showMarkers
       ? sortedData
           .filter(d => d.isSpike)
+          .filter(d => (d.pValue < 0.01 ? showCriticalMarkers : showWarningMarkers))
           .map(d => ({
             coord: [d.timestamp, d.value] as [string, number],
             symbol: 'circle',
@@ -161,6 +168,18 @@ export const SpikeChart: React.FC<Props> = ({
                 label: { formatter: 'Ср.: {c}', color: '#7A8B9E', position: 'insideEndTop', fontSize: 10 },
                 lineStyle: { color: '#7A8B9E', type: 'dashed' },
               },
+              {
+                type: 'min',
+                name: 'Минимум',
+                label: { formatter: 'Мин.: {c}', color: '#5A9E7A', position: 'insideStartTop', fontSize: 10 },
+                lineStyle: { color: '#5A9E7A', type: 'dashed' },
+              },
+              {
+                type: 'max',
+                name: 'Максимум',
+                label: { formatter: 'Макс.: {c}', color: '#C97A6E', position: 'insideEndBottom', fontSize: 10 },
+                lineStyle: { color: '#C97A6E', type: 'dashed' },
+              },
             ],
           },
         },
@@ -181,7 +200,7 @@ export const SpikeChart: React.FC<Props> = ({
       ],
       color: ['#4761BF'],
     };
-  }, [sortedData, showMarkers, onShowMarkersChange]);
+  }, [sortedData, showMarkers, showCriticalMarkers, showWarningMarkers, onShowMarkersChange]);
 
   const onEvents = {
     click: (params: {
@@ -218,7 +237,7 @@ export const SpikeChart: React.FC<Props> = ({
 
   return (
     <div style={{ position: 'relative', width: '100%' }}>
-      {onShowMarkersChange && (
+      {onShowMarkersChange && !hideToolbar && (
         <div
           style={{
             display: 'flex',
