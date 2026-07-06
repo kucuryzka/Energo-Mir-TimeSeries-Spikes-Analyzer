@@ -1,7 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { Typography, Card, Space, Button, DatePicker, Select, InputNumber, Spin, message, Drawer, Table, Switch, Popconfirm, Progress, Alert } from 'antd';
-import { DashboardOutlined, HistoryOutlined, DeleteOutlined } from '@ant-design/icons';
-import { API_BASE_URL } from '../../api/index';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Typography, Card, Space, Button, DatePicker, Select, InputNumber, Spin, message, Drawer, Table, Popconfirm } from 'antd';
+import { DeleteOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { formatUtcDateTime } from '../../utils/dateTimeUtils';
 import { confirmHeavyAnalysis } from '../../utils/granularityWarning';
@@ -11,8 +10,10 @@ import { exportSpikesToExcel } from '../../utils/exportUtils';
 import { genericAnalysisApi } from '../../api/explorerApi';
 import { TablePreviewContent, type TablePreviewData } from './TablePreviewCard';
 import { AnalysisActionBar } from './AnalysisActionBar';
+import { AnalysisJobProgress } from '../Dashboard/AnalysisJobProgress';
 import type { TimeGranularity, SpikePoint, SpikeResponse } from '../../types/analytics.types';
 import { apiCache } from '../../store/apiCache';
+import { useRegisterShellRailActions } from '../../context/ShellRailContext';
 
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
@@ -160,6 +161,21 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({ db, schema, ta
     message.success('Данные экспортированы в Excel');
   };
 
+  const openHistory = useCallback(async () => {
+    setHistoryOpen(true);
+    setLoadingHistory(true);
+    try {
+      const hist = await genericAnalysisApi.getHistory(db, schema, table);
+      setHistoryList(hist);
+    } catch {
+      message.error('Ошибка загрузки истории');
+    } finally {
+      setLoadingHistory(false);
+    }
+  }, [db, schema, table]);
+
+  useRegisterShellRailActions({ onOpenHistory: openHistory });
+
   const enrichedData = data?.series?.length ? enrichSpikeData(data.series) : [];
 
   const handlePointClick = async (point: SpikePoint) => {
@@ -283,63 +299,31 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({ db, schema, ta
       </Card>
 
       {!data && loading ? (
-        <div style={{ display: 'flex', justifyContent: 'center', padding: 50 }}>
-          <Spin size="large" />
-        </div>
+        <AnalysisJobProgress
+          loading
+          progress={analysisProgress}
+          isPartialResult={isPartialResult}
+          showSpinner
+        />
       ) : enrichedData.length > 0 ? (
         <Card style={{ borderRadius: 12 }}>
-          {loading && (
-            <div style={{ marginBottom: 16 }}>
-              <Progress percent={analysisProgress} status="active" />
-              {isPartialResult && (
-                <Alert
-                  type="info"
-                  showIcon
-                  message="Загрузка данных по батчам"
-                  description="График обновляется по мере обработки периода. Аномалии будут рассчитаны после завершения анализа."
-                  style={{ marginTop: 12, borderRadius: 12 }}
-                />
-              )}
-            </div>
-          )}
-          <div style={{ 
-            display: 'flex', 
-            justifyContent: 'space-between', 
-            alignItems: 'center',
-            marginBottom: 16,
-            flexWrap: 'wrap',
-            gap: 8
-          }}>
-            <div>
-              <h3 style={{ margin: 0, fontSize: 18, fontWeight: 600, color: '#1a2332' }}>
-                Временной ряд
-              </h3>
-              <span style={{ fontSize: 13, color: '#6b7a8f' }}>
-                {dayjs(dateRange[0]).format('DD.MM.YYYY')} — {dayjs(dateRange[1]).format('DD.MM.YYYY')}
-              </span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 16, fontSize: 13 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginRight: 8 }}>
-                <Switch size="small" checked={showMarkers} onChange={setShowMarkers} />
-                <span style={{ color: '#6b7a8f' }}>Маркеры</span>
-              </div>
-              <span>
-                <span style={{ display: 'inline-block', width: 12, height: 3, background: '#4a90d9', borderRadius: 2, marginRight: 6 }}></span>
-                Значения
-              </span>
-              <span>
-                <span style={{ display: 'inline-block', width: 12, height: 12, background: '#d94a4a', borderRadius: '50%', marginRight: 6 }}></span>
-                Аномалия
-              </span>
-              <span>
-                <span style={{ display: 'inline-block', width: 12, height: 2, background: '#6b7a8f', borderStyle: 'dashed', marginRight: 6 }}></span>
-                Среднее
-              </span>
-            </div>
+          <AnalysisJobProgress
+            loading={loading}
+            progress={analysisProgress}
+            isPartialResult={isPartialResult}
+          />
+          <div style={{ marginBottom: 16 }}>
+            <h3 style={{ margin: 0, fontSize: 18, fontWeight: 600, color: '#1a2332' }}>
+              Временной ряд
+            </h3>
+            <span style={{ fontSize: 13, color: '#6b7a8f' }}>
+              {dayjs(dateRange[0]).format('DD.MM.YYYY')} — {dayjs(dateRange[1]).format('DD.MM.YYYY')}
+            </span>
           </div>
-          <SpikeChart 
-            data={enrichedData} 
-            showMarkers={showMarkers} 
+          <SpikeChart
+            data={enrichedData}
+            showMarkers={showMarkers}
+            onShowMarkersChange={setShowMarkers}
             onPointClick={handlePointClick}
           />
         </Card>
@@ -450,37 +434,6 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({ db, schema, ta
           )
         )}
       </Drawer>
-      <div style={{ position: 'fixed', bottom: 80, right: 24, zIndex: 1000, display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <Button 
-          type="primary" 
-          shape="circle" 
-          size="large" 
-          icon={<DashboardOutlined />} 
-          onClick={() => window.open(`${API_BASE_URL}/hangfire`, '_blank')} 
-          title="Панель Hangfire" 
-          style={{ boxShadow: '0 4px 12px rgba(0,0,0,0.15)', background: '#52c41a', borderColor: '#52c41a' }}
-        />
-        <Button 
-          type="primary" 
-          shape="circle" 
-          size="large" 
-          icon={<HistoryOutlined />} 
-          onClick={async () => {
-            setHistoryOpen(true);
-            setLoadingHistory(true);
-            try {
-              const hist = await genericAnalysisApi.getHistory(db, schema, table);
-              setHistoryList(hist);
-            } catch(e) {
-              message.error('Ошибка загрузки истории');
-            } finally {
-              setLoadingHistory(false);
-            }
-          }}
-          title="История запросов" 
-          style={{ boxShadow: '0 4px 12px rgba(0,0,0,0.15)', background: '#faad14', borderColor: '#faad14' }}
-        />
-      </div>
 
     </div>
   );

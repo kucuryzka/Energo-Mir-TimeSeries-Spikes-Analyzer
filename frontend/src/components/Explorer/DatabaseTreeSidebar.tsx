@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Tree, message, Spin, Typography, Button, Input } from 'antd';
-import { DatabaseOutlined, FolderOutlined, TableOutlined, FieldTimeOutlined, LogoutOutlined, MenuFoldOutlined, BarsOutlined } from '@ant-design/icons';
+import { DatabaseOutlined, FolderOutlined, TableOutlined, FieldTimeOutlined, LogoutOutlined, SearchOutlined } from '@ant-design/icons';
 import { explorerApi } from '../../api/explorerApi';
 
 const { Text } = Typography;
@@ -24,7 +24,7 @@ interface DatabaseTreeSidebarProps {
 
 export const DatabaseTreeSidebar: React.FC<DatabaseTreeSidebarProps> = ({
   collapsed,
-  onToggleCollapse,
+  onToggleCollapse: _onToggleCollapse,
   onSelectStandardSchema,
   onSelectGenericTable,
   onLogout,
@@ -99,7 +99,7 @@ export const DatabaseTreeSidebar: React.FC<DatabaseTreeSidebarProps> = ({
           isLeaf: true,
           icon: col.isTimeColumn 
             ? <FieldTimeOutlined style={{ color: '#52c41a' }} />
-            : <BarsOutlined style={{ color: '#bfbfbf' }} />,
+            : <TableOutlined style={{ color: '#bfbfbf' }} />,
         }));
         if (newChildren.length === 0) {
            newChildren.push({
@@ -164,31 +164,37 @@ export const DatabaseTreeSidebar: React.FC<DatabaseTreeSidebarProps> = ({
   };
 
   return (
-    <div style={{ height: '100%', display: collapsed ? 'none' : 'flex', flexDirection: 'column', background: '#fff', borderRight: '1px solid #f0f0f0' }}>
-      <div style={{ padding: '16px', borderBottom: '1px solid #f0f0f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Text strong>Обозреватель</Text>
-        <div>
-          <Button type="text" icon={<MenuFoldOutlined />} onClick={onToggleCollapse} title="Свернуть" />
-          <Button type="text" icon={<LogoutOutlined />} onClick={onLogout} title="Отключиться" />
-        </div>
+    <div style={{ height: '100%', display: collapsed ? 'none' : 'flex', flexDirection: 'column', background: '#FFF', padding: '24px 16px', gap: 20 }}>
+      <div>
+        <Typography.Title level={4} style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#1A2332' }}>
+          Источники данных
+        </Typography.Title>
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          Выберите таблицу или схему для анализа
+        </Typography.Text>
       </div>
-      <div style={{ padding: '8px 16px', borderBottom: '1px solid #f0f0f0' }}>
-        <Input.Search 
-          placeholder="Поиск БД..." 
+
+      <div style={{ display: 'flex', gap: 8 }}>
+        <Input
+          placeholder="Поиск БД..."
+          prefix={<SearchOutlined style={{ color: '#A3AED0' }} />}
           allowClear
           onChange={(e) => setSearchTerm(e.target.value)}
-          size="small"
+          style={{ borderRadius: 10, background: '#F4F7FE', border: 'none', height: 38, flex: 1 }}
         />
+        <Button type="text" icon={<LogoutOutlined />} onClick={onLogout} title="Отключиться" style={{ color: '#7A8B9E' }} />
       </div>
-      <div style={{ flex: 1, overflow: 'auto', padding: '8px' }}>
+
+      <div style={{ flex: 1, overflow: 'auto' }}>
         <Spin spinning={loading}>
           <Tree
             loadData={onLoadData}
             treeData={filteredTreeData}
             onSelect={onSelect}
             showIcon
+            style={{ background: 'transparent' }}
             titleRender={(nodeData: any) => (
-              <div style={{ whiteSpace: 'normal', wordBreak: 'break-all', display: 'inline-block', verticalAlign: 'middle', maxWidth: '200px' }}>
+              <div style={{ whiteSpace: 'normal', wordBreak: 'break-all', display: 'inline-block', verticalAlign: 'middle', maxWidth: '220px' }}>
                 {nodeData.title}
               </div>
             )}

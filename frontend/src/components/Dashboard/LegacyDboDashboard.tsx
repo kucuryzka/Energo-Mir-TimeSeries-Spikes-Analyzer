@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
-import { Spin, Alert, message, Switch, Drawer, Table, Typography, Tabs, Popconfirm, Progress } from 'antd';
-import { LoadingOutlined, DeleteOutlined } from '@ant-design/icons';
-import { SpikeChart } from '../Chart/SpikeChart';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Spin, Alert, message, Drawer, Table, Typography, Tabs, Popconfirm } from 'antd';
+import { DeleteOutlined } from '@ant-design/icons';
 import { DistributionChart } from '../Chart/DistributionChart';
 import { ControlsPanel } from '../Controls/ControlsPanel';
-import { SpikeTable } from '../Stats/SpikeTable';
+import { DashboardResultsSection } from './DashboardResultsSection';
+import { AnalysisJobProgress } from './AnalysisJobProgress';
 import { analyticsApi } from '../../api/analyticsApi';
 
 import { enrichSpikeData, getSpikesOnly, getStatistics } from '../../utils/spikeUtils';
@@ -15,8 +15,7 @@ import { formatUtcDateTime } from '../../utils/dateTimeUtils';
 import { confirmHeavyAnalysis } from '../../utils/granularityWarning';
 import { TablePreviewContent, type TablePreviewData } from '../GenericAnalyzer/TablePreviewCard';
 import { Button, Space } from 'antd';
-import { DashboardOutlined, HistoryOutlined } from '@ant-design/icons';
-import { API_BASE_URL } from '../../api/index';
+import { useRegisterShellRailActions } from '../../context/ShellRailContext';
 
 const { Title, Text } = Typography;
 
@@ -229,6 +228,21 @@ export const LegacyDboDashboard: React.FC<{ database: string }> = ({ database })
     message.success('Данные экспортированы в Excel');
   };
 
+  const openHistory = useCallback(async () => {
+    setHistoryOpen(true);
+    setLoadingHistory(true);
+    try {
+      const hist = await analyticsApi.dbo.getHistory(database);
+      setHistoryList(hist);
+    } catch {
+      message.error('Ошибка загрузки истории');
+    } finally {
+      setLoadingHistory(false);
+    }
+  }, [database]);
+
+  useRegisterShellRailActions({ onOpenHistory: openHistory });
+
   const enrichedData = data ? enrichSpikeData(data.series) : [];
   const spikesOnly = data ? getSpikesOnly(data.series) : [];
   const stats = data ? getStatistics(data.series) : null;
@@ -241,8 +255,6 @@ export const LegacyDboDashboard: React.FC<{ database: string }> = ({ database })
       count: item.count
     })).sort((a: { count: number }, b: { count: number }) => b.count - a.count);
   }, [data, channels]);
-
-  const antIcon = <LoadingOutlined style={{ fontSize: 32, color: '#2a5298' }} spin />;
 
   return (
     <>
@@ -298,145 +310,47 @@ export const LegacyDboDashboard: React.FC<{ database: string }> = ({ database })
         )}
 
         {!data && loading && !error && (
-          <div style={{ display: 'flex', justifyContent: 'center', padding: '60px 20px' }}>
-            <Spin indicator={antIcon} />
-          </div>
+          <AnalysisJobProgress
+            loading
+            progress={analysisProgress}
+            isPartialResult={isPartialResult}
+            showSpinner
+          />
         )}
 
-        {data && enrichedData.length > 0 && (
-            <>
-              {loading && (
-                <div style={{ marginBottom: 16 }}>
-                  <Progress percent={analysisProgress} status="active" />
-                  {isPartialResult && (
-                    <Alert
-                      type="info"
-                      showIcon
-                      message="Загрузка данных по батчам"
-                      description="График обновляется по мере обработки периода. Аномалии будут рассчитаны после завершения анализа."
-                      style={{ marginTop: 12, borderRadius: 12 }}
-                    />
-                  )}
-                </div>
-              )}
-
-              {stats && (
-              <div className="stat-grid">
-                <div className="stat-item">
-                  <div className="stat-header">
-                    <span className="label">Всего значений</span>
-                  </div>
-                  <div className="value primary">{stats.totalCalls.toLocaleString()}</div>
-                </div>
-
-                <div className="stat-item">
-                  <div className="stat-header">
-                    <span className="label">Обнаружено аномалий</span>
-                  </div>
-                  <div className={`value ${stats.spikesCount > 0 ? 'warning' : 'success'}`}>
-                    {stats.spikesCount}
-                  </div>
-                </div>
-
-                <div className="stat-item">
-                  <div className="stat-header">
-                    <span className="label">Критических аномалий</span>
-                  </div>
-                  <div className={`value ${stats.criticalSpikes > 0 ? 'danger' : 'success'}`}>
-                    {stats.criticalSpikes}
-                  </div>
-                </div>
-
-                <div className="stat-item">
-                  <div className="stat-header">
-                    <span className="label">Среднее значение</span>
-                  </div>
-                  <div className="value primary">{stats.average.toFixed(0)}</div>
-                </div>
-
-                <div className="stat-item">
-                  <div className="stat-header">
-                    <span className="label">Максимум</span>
-                  </div>
-                  <div className="value warning">{stats.max}</div>
-                </div>
-
-                <div className="stat-item">
-                  <div className="stat-header">
-                    <span className="label">Всего точек</span>
-                  </div>
-                  <div className="value primary">{stats.totalPoints}</div>
-                </div>
-              </div>
-              )}
-
-              <div className="dashboard-card" style={{ marginBottom: 24 }}>
-                <div style={{ 
-                  display: 'flex', 
-                  justifyContent: 'space-between', 
-                  alignItems: 'center',
-                  marginBottom: 16,
-                  flexWrap: 'wrap',
-                  gap: 8
-                }}>
-                  <div>
-                    <h3 style={{ margin: 0, fontSize: 18, fontWeight: 600, color: '#1a2332' }}>
-                      Временной ряд
-                    </h3>
-                    <span style={{ fontSize: 13, color: '#6b7a8f' }}>
-                      {dayjs(dateRange[0]).format('DD.MM.YYYY')} — {dayjs(dateRange[1]).format('DD.MM.YYYY')}
-                    </span>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 16, fontSize: 13 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginRight: 8 }}>
-                      <Switch size="small" checked={showMarkers} onChange={setShowMarkers} />
-                      <span style={{ color: '#6b7a8f' }}>Маркеры</span>
+        {data && enrichedData.length > 0 && stats && (
+            <DashboardResultsSection
+              stats={stats}
+              enrichedData={enrichedData}
+              spikesOnly={spikesOnly}
+              showMarkers={showMarkers}
+              onShowMarkersChange={setShowMarkers}
+              onPointClick={setSelectedPoint}
+              entityLabel="Объекты"
+              loading={loading}
+              analysisProgress={analysisProgress}
+              isPartialResult={isPartialResult}
+              distributionCharts={
+                <>
+                  {objectDistribution.length > 0 && (
+                    <div className="dashboard-block" style={{ marginBottom: 24 }}>
+                      <DistributionChart
+                        data={objectDistribution}
+                        title="Распределение по объектам"
+                      />
                     </div>
-                    <span>
-                      <span style={{ display: 'inline-block', width: 12, height: 3, background: '#4a90d9', borderRadius: 2, marginRight: 6 }}></span>
-                      Значения
-                    </span>
-                    <span>
-                      <span style={{ display: 'inline-block', width: 12, height: 12, background: '#d94a4a', borderRadius: '50%', marginRight: 6 }}></span>
-                      Аномалия
-                    </span>
-                    <span>
-                      <span style={{ display: 'inline-block', width: 12, height: 2, background: '#6b7a8f', borderStyle: 'dashed', marginRight: 6 }}></span>
-                      Среднее
-                    </span>
-                  </div>
-                </div>
-                <SpikeChart 
-                  data={enrichedData} 
-                  showMarkers={showMarkers} 
-                  onPointClick={setSelectedPoint}
-                />
-              </div>
-
-              {spikesOnly.length > 0 && (
-                <div className="dashboard-card" style={{ marginBottom: 24 }}>
-                  <SpikeTable spikes={spikesOnly} entityLabel="Объекты" />
-                </div>
-              )}
-
-              {objectDistribution.length > 0 && (
-                <div style={{ marginBottom: 24 }}>
-                  <DistributionChart 
-                    data={objectDistribution} 
-                    title="Распределение по объектам"
-                  />
-                </div>
-              )}
-
-              {Object.keys(distributions).map(category => (
-                <div key={category} style={{ marginBottom: 24 }}>
-                  <DistributionChart 
-                    data={distributions[category]} 
-                    title={`Распределение по: ${category === 'EventCode' ? 'Код события (EventCode)' : category}`}
-                  />
-                </div>
-              ))}
-            </>
+                  )}
+                  {Object.keys(distributions).map(category => (
+                    <div key={category} className="dashboard-block" style={{ marginBottom: 24 }}>
+                      <DistributionChart
+                        data={distributions[category]}
+                        title={`Распределение по: ${category === 'EventCode' ? 'Код события (EventCode)' : category}`}
+                      />
+                    </div>
+                  ))}
+                </>
+              }
+            />
           )}
 
           {!data && !loading && !error && (
@@ -629,37 +543,6 @@ export const LegacyDboDashboard: React.FC<{ database: string }> = ({ database })
           )
         )}
       </Drawer>
-      <div style={{ position: 'fixed', bottom: 80, right: 24, zIndex: 1000, display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <Button 
-          type="primary" 
-          shape="circle" 
-          size="large" 
-          icon={<DashboardOutlined />} 
-          onClick={() => window.open(`${API_BASE_URL}/hangfire`, '_blank')} 
-          title="Панель Hangfire" 
-          style={{ boxShadow: '0 4px 12px rgba(0,0,0,0.15)', background: '#52c41a', borderColor: '#52c41a' }}
-        />
-        <Button 
-          type="primary" 
-          shape="circle" 
-          size="large" 
-          icon={<HistoryOutlined />} 
-          onClick={async () => {
-            setHistoryOpen(true);
-            setLoadingHistory(true);
-            try {
-              const hist = await analyticsApi.dbo.getHistory(database);
-              setHistoryList(hist);
-            } catch(e) {
-              message.error('Ошибка загрузки истории');
-            } finally {
-              setLoadingHistory(false);
-            }
-          }}
-          title="История запросов" 
-          style={{ boxShadow: '0 4px 12px rgba(0,0,0,0.15)', background: '#faad14', borderColor: '#faad14' }}
-        />
-      </div>
 
     </>
   );

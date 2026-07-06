@@ -1,15 +1,22 @@
 import React, { useMemo, useRef, useEffect } from 'react';
 import ReactECharts from 'echarts-for-react';
+import { Switch } from 'antd';
 import type { SpikePoint } from '../../types/analytics.types';
 import dayjs from 'dayjs';
 
 interface Props {
   data: SpikePoint[];
   showMarkers?: boolean;
+  onShowMarkersChange?: (value: boolean) => void;
   onPointClick?: (point: SpikePoint) => void;
 }
 
-export const SpikeChart: React.FC<Props> = ({ data, showMarkers = true, onPointClick }) => {
+export const SpikeChart: React.FC<Props> = ({
+  data,
+  showMarkers = true,
+  onShowMarkersChange,
+  onPointClick,
+}) => {
   const chartRef = useRef<ReactECharts>(null);
 
   const sortedData = useMemo(() => {
@@ -17,22 +24,19 @@ export const SpikeChart: React.FC<Props> = ({ data, showMarkers = true, onPointC
   }, [data]);
 
   useEffect(() => {
-    if (!chartRef.current) return;
+    if (!chartRef.current || !onPointClick) return;
     const echartsInstance = chartRef.current.getEchartsInstance();
     const zr = echartsInstance.getZr();
 
-    const handleClick = (params: any) => {
+    const handleClick = (params: { offsetX: number; offsetY: number }) => {
       const pointInPixel = [params.offsetX, params.offsetY];
       if (echartsInstance.containPixel('grid', pointInPixel)) {
         const pointInGrid = echartsInstance.convertFromPixel({ seriesIndex: 0 }, pointInPixel);
         if (pointInGrid && pointInGrid.length > 0) {
-          // xAxis is category axis, so pointInGrid[0] is the index
-          const xIndex = Math.round(pointInGrid[0]);
+          const xIndex = Math.round(pointInGrid[0] as number);
           if (xIndex >= 0 && xIndex < sortedData.length) {
             const dataPoint = sortedData[xIndex];
-            if (dataPoint && onPointClick) {
-              onPointClick(dataPoint);
-            }
+            if (dataPoint) onPointClick(dataPoint);
           }
         }
       }
@@ -48,37 +52,28 @@ export const SpikeChart: React.FC<Props> = ({ data, showMarkers = true, onPointC
     const timestamps = sortedData.map(d => d.timestamp);
     const values = sortedData.map(d => d.value);
 
-    const spikeMarkers = showMarkers ? sortedData
-      .filter(d => d.isSpike)
-      .map(d => ({
-        name: 'Аварийное событие',
-        coord: [d.timestamp, d.value],
-        value: d.value,
-        symbol: 'pin',
-        symbolSize: d.pValue < 0.01 ? 60 : 45,
-        itemStyle: {
-          color: d.pValue < 0.01 ? '#d94a4a' : '#e8a838',
-        },
-        label: {
-          show: true,
-          formatter: `${d.value}`,
-          position: 'top',
-          color: '#d94a4a',
-          fontWeight: 'bold',
-          fontSize: 12,
-        },
-      })) : [];
+    const spikeMarkers = showMarkers
+      ? sortedData
+          .filter(d => d.isSpike)
+          .map(d => ({
+            coord: [d.timestamp, d.value] as [string, number],
+            symbol: 'circle',
+            symbolSize: d.pValue < 0.01 ? 10 : 8,
+            itemStyle: {
+              color: d.pValue < 0.01 ? '#D94A4A' : '#E8A838',
+              shadowBlur: 12,
+              shadowColor: d.pValue < 0.01 ? 'rgba(219, 74, 74, 0.6)' : 'rgba(232, 168, 56, 0.6)',
+            },
+          }))
+      : [];
 
     return {
+      backgroundColor: 'transparent',
       tooltip: {
         trigger: 'axis',
-        backgroundColor: 'rgba(255,255,255,0.95)',
-        borderColor: '#e8edf3',
-        borderWidth: 1,
-        borderRadius: 8,
-        padding: [12, 16],
-        textStyle: { color: '#1a2332', fontSize: 13 },
-        formatter: (params: any) => {
+        backgroundColor: '#1A2332',
+        textStyle: { color: '#ffffff', fontSize: 12 },
+        formatter: (params: { axisValue: string }[]) => {
           const point = params[0];
           const dataPoint = sortedData.find(d => d.timestamp === point.axisValue);
           if (!dataPoint) return '';
@@ -89,24 +84,32 @@ export const SpikeChart: React.FC<Props> = ({ data, showMarkers = true, onPointC
           html += `Доверие: ${dataPoint.confidencePercent.toFixed(1)}%<br/>`;
 
           if (dataPoint.isSpike) {
-            const severityText = dataPoint.pValue < 0.01 ? '🔴 АНОМАЛЬНОЕ ЗНАЧЕНИЕ' : '🟠 ВОЗМОЖНО АНОМАЛЬНОЕ ЗНАЧЕНИЕ';
-            html += `<span style="color:#d94a4a;font-weight:700;">${severityText}</span>`;
+            const severityText =
+              dataPoint.pValue < 0.01 ? 'Критическая аномалия' : 'Предупреждение';
+            html += `<span style="color:#D94A4A;font-weight:700;">${severityText}</span>`;
           }
 
           return html;
         },
       },
+      grid: {
+        left: 60,
+        right: 30,
+        bottom: 80,
+        top: onShowMarkersChange ? 40 : 30,
+      },
       xAxis: {
         type: 'category',
         data: timestamps,
-        axisLine: { lineStyle: { color: '#dce2ea' } },
+        axisLine: { lineStyle: { color: '#E9EEFA' } },
         axisLabel: {
-          color: '#6b7a8f',
+          color: '#7A8B9E',
           fontSize: 11,
           rotate: 30,
           formatter: (value: string) => dayjs(value).format('DD.MM HH:mm'),
         },
         splitLine: { show: false },
+        axisTick: { show: false },
       },
       yAxis: {
         type: 'value',
@@ -114,19 +117,26 @@ export const SpikeChart: React.FC<Props> = ({ data, showMarkers = true, onPointC
         nameLocation: 'middle',
         nameRotate: 90,
         nameGap: 50,
-        nameTextStyle: { color: '#6b7a8f', fontSize: 12 },
+        nameTextStyle: { color: '#7A8B9E', fontSize: 12 },
         axisLine: { show: false },
         axisTick: { show: false },
-        splitLine: { lineStyle: { color: '#eef2f6', type: 'dashed' } },
-        axisLabel: { color: '#6b7a8f', fontSize: 11 },
+        splitLine: { lineStyle: { color: '#EFF2F9', type: 'dashed' } },
+        axisLabel: { color: '#7A8B9E', fontSize: 11 },
       },
       series: [
         {
-          name: 'Сообщения телеметрии',
+          name: 'Показатели',
           type: 'line',
           data: values,
-          smooth: true,
-          lineStyle: { color: '#4a90d9', width: 2.5 },
+          smooth: false,
+          showSymbol: false,
+          lineStyle: {
+            color: '#4761BF',
+            width: 2.5,
+            shadowBlur: 32,
+            shadowColor: 'rgba(71, 97, 191, 0.95)',
+            shadowOffsetY: 6,
+          },
           areaStyle: {
             color: {
               type: 'linear',
@@ -135,14 +145,12 @@ export const SpikeChart: React.FC<Props> = ({ data, showMarkers = true, onPointC
               x2: 0,
               y2: 1,
               colorStops: [
-                { offset: 0, color: 'rgba(74, 144, 217, 0.25)' },
-                { offset: 1, color: 'rgba(74, 144, 217, 0.02)' },
+                { offset: 0, color: 'rgba(71, 97, 191, 0.25)' },
+                { offset: 1, color: 'rgba(71, 97, 191, 0.0)' },
               ],
             },
           },
-          markPoint: {
-            data: spikeMarkers,
-          },
+          markPoint: spikeMarkers.length > 0 ? { data: spikeMarkers, symbolKeepAspect: true } : undefined,
           markLine: {
             silent: true,
             symbol: 'none',
@@ -150,20 +158,8 @@ export const SpikeChart: React.FC<Props> = ({ data, showMarkers = true, onPointC
               {
                 type: 'average',
                 name: 'Средняя',
-                label: { formatter: 'Ср.: {c}', color: '#6b7a8f', position: 'insideEndTop' },
-                lineStyle: { color: '#6b7a8f' }
-              },
-              {
-                type: 'max',
-                name: 'Максимум',
-                label: { formatter: 'Макс.: {c}', color: '#d94a4a', position: 'insideEndTop' },
-                lineStyle: { color: '#d94a4a', type: 'dotted' }
-              },
-              {
-                type: 'min',
-                name: 'Минимум',
-                label: { formatter: 'Мин.: {c}', color: '#22a67e', position: 'insideEndBottom' },
-                lineStyle: { color: '#22a67e', type: 'dotted' }
+                label: { formatter: 'Ср.: {c}', color: '#7A8B9E', position: 'insideEndTop', fontSize: 10 },
+                lineStyle: { color: '#7A8B9E', type: 'dashed' },
               },
             ],
           },
@@ -178,52 +174,80 @@ export const SpikeChart: React.FC<Props> = ({ data, showMarkers = true, onPointC
           bottom: 8,
           borderColor: '#dce2ea',
           backgroundColor: '#f5f7fa',
-          fillerColor: 'rgba(74, 144, 217, 0.15)',
-          handleStyle: { color: '#4a90d9' },
-          textStyle: { color: '#6b7a8f', fontSize: 10 },
+          fillerColor: 'rgba(71, 97, 191, 0.15)',
+          handleStyle: { color: '#4761BF' },
+          textStyle: { color: '#7A8B9E', fontSize: 10 },
         },
       ],
-      grid: {
-        left: 60,
-        right: 30,
-        bottom: 80,
-        top: 30,
-      },
-      color: ['#4a90d9'],
+      color: ['#4761BF'],
     };
-  }, [sortedData, showMarkers]);
+  }, [sortedData, showMarkers, onShowMarkersChange]);
 
   const onEvents = {
-    click: (params: any) => {
-      // params.name corresponds to the axis value (timestamp) in a category axis
-      // params.dataIndex is the index in the series
-      let timestamp = null;
+    click: (params: {
+      componentType?: string;
+      seriesType?: string;
+      name?: string;
+      dataIndex?: number;
+      data?: { coord: [string | number, number] };
+    }) => {
+      if (!onPointClick) return;
+
+      let timestamp: string | undefined;
       if (params.componentType === 'series' && params.seriesType === 'line') {
         if (params.name) {
           timestamp = params.name;
         } else if (params.dataIndex !== undefined) {
           timestamp = sortedData[params.dataIndex]?.timestamp;
         }
-      } else if (params.componentType === 'markPoint') {
-        timestamp = params.data.coord[0];
-      }
-
-      if (timestamp && onPointClick) {
-        const point = sortedData.find(d => d.timestamp === timestamp);
-        if (point) {
-          onPointClick(point);
+      } else if (params.componentType === 'markPoint' && params.data?.coord) {
+        const coordX = params.data.coord[0];
+        if (typeof coordX === 'string') {
+          timestamp = coordX;
+        } else if (typeof coordX === 'number') {
+          timestamp = sortedData[coordX]?.timestamp;
         }
       }
-    }
+
+      if (timestamp) {
+        const point = sortedData.find(d => d.timestamp === timestamp);
+        if (point) onPointClick(point);
+      }
+    },
   };
 
   return (
-    <ReactECharts
-      ref={chartRef}
-      option={option}
-      style={{ height: 480, width: '100%' }}
-      opts={{ renderer: 'canvas' }}
-      onEvents={onEvents}
-    />
+    <div style={{ position: 'relative', width: '100%' }}>
+      {onShowMarkersChange && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'flex-end',
+            gap: 8,
+            marginBottom: 8,
+            fontSize: 12,
+            color: '#7A8B9E',
+            fontWeight: 600,
+          }}
+        >
+          <span>Маркеры пиков</span>
+          <Switch
+            size="small"
+            checked={showMarkers}
+            onChange={onShowMarkersChange}
+            style={{ background: showMarkers ? '#4761BF' : undefined }}
+          />
+        </div>
+      )}
+
+      <ReactECharts
+        ref={chartRef}
+        option={option}
+        style={{ height: 480, width: '100%' }}
+        opts={{ renderer: 'canvas' }}
+        onEvents={onEvents}
+      />
+    </div>
   );
 };

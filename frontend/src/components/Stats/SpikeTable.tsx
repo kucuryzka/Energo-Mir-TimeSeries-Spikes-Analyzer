@@ -1,5 +1,6 @@
-import React from 'react';
-import { Table } from 'antd';
+import React, { useState } from 'react';
+import { List, Tag, Pagination } from 'antd';
+import { DownOutlined, UpOutlined } from '@ant-design/icons';
 import type { AnomalyResultDto } from '../../types/analytics.types';
 import dayjs from 'dayjs';
 
@@ -9,108 +10,133 @@ interface Props {
   entityLabel?: string;
 }
 
+const PAGE_SIZE = 5;
+
 export const SpikeTable: React.FC<Props> = ({ spikes, style, entityLabel = 'Каналы' }) => {
-  const columns = [
-    {
-      title: 'Время события',
-      dataIndex: 'timestamp',
-      key: 'timestamp',
-      render: (value: string) => (
-        <span style={{ fontWeight: 500, color: '#1a2332' }}>
-          {dayjs(value).format('DD.MM.YYYY HH:mm:ss')}
-        </span>
-      ),
-      sorter: (a: AnomalyResultDto, b: AnomalyResultDto) =>
-        new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
-      defaultSortOrder: 'ascend' as const,
-    },
-    {
-      title: 'Количество сообщений',
-      dataIndex: 'value',
-      key: 'value',
-      sorter: (a: AnomalyResultDto, b: AnomalyResultDto) => a.value - b.value,
-      render: (value: number) => (
-        <span style={{ fontWeight: 700, color: '#d94a4a', fontSize: 16 }}>
-          {value}
-        </span>
-      ),
-    },
-    {
-      title: 'P-Value',
-      dataIndex: 'pValue',
-      key: 'pValue',
-      render: (value: number) => (
-        <span style={{ fontFamily: 'monospace', fontSize: 13 }}>
-          {value.toFixed(4)}
-        </span>
-      ),
-      sorter: (a: AnomalyResultDto, b: AnomalyResultDto) => a.pValue - b.pValue,
-    },
-    {
-      title: 'Достоверность',
-      key: 'confidence',
-      render: (_: any, record: AnomalyResultDto) => {
-        const confidence = (1 - record.pValue) * 100;
-        return (
-          <span style={{ fontWeight: 600, color: confidence > 99 ? '#22a67e' : '#e8a838' }}>
-            {confidence.toFixed(1)}%
-          </span>
-        );
-      },
-    },
-  ];
+  const [page, setPage] = useState(1);
+  const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
+
+  const pageData = spikes.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  const toggleExpand = (key: string) => {
+    setExpandedKeys(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
 
   return (
-    <div style={style}>
-      <div style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 16,
-        flexWrap: 'wrap',
-        gap: 8,
-      }}>
-        <h3 style={{ margin: 0, fontSize: 18, fontWeight: 600, color: '#1a2332' }}>
-          Список аномальных событий
-        </h3>
-        <span style={{ fontSize: 14, color: '#6b7a8f', background: '#f0f4f8', padding: '4px 14px', borderRadius: 20 }}>
-          Всего: <b style={{ color: '#d94a4a' }}>{spikes.length}</b>
-        </span>
-      </div>
-      <Table
-        dataSource={spikes}
-        columns={columns}
-        rowKey="timestamp"
-        pagination={{
-          pageSize: 10,
-          showSizeChanger: true,
-          showTotal: (total) => `Всего ${total} событий`,
-        }}
-        expandable={{
-          expandedRowRender: (record) => {
-            if (!record.channelBreakdown || record.channelBreakdown.length === 0) {
-              return <p style={{ margin: 0, color: '#6b7a8f' }}>Нет детализации по каналам</p>;
-            }
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', justifyContent: 'space-between', ...style }}>
+      <div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, paddingBottom: 12 }}>
+          <h3 style={{ fontSize: 16, fontWeight: 700, color: '#1A2332', margin: 0 }}>
+            Аномалии{' '}
+            <span style={{ color: '#7A8B9E', fontWeight: 500, fontSize: 14 }}>({spikes.length})</span>
+          </h3>
+        </div>
+
+        <List
+          dataSource={pageData}
+          split={false}
+          renderItem={item => {
+            const isCritical = item.pValue < 0.01;
+            const hasBreakdown = !!item.channelBreakdown && item.channelBreakdown.length > 0;
+            const isExpanded = expandedKeys.has(item.timestamp);
+
             return (
-              <div style={{ padding: '8px 16px', background: '#f8fafc', borderRadius: 8 }}>
-                <h4 style={{ marginTop: 0, marginBottom: 8, color: '#4a5a6e' }}>{entityLabel} (по кол-ву записей):</h4>
-                <div style={{ maxHeight: '200px', overflowY: 'auto', paddingRight: '8px' }}>
-                  <ul style={{ margin: 0, paddingLeft: 20 }}>
-                    {record.channelBreakdown.map(cb => (
-                      <li key={cb.channelId} style={{ color: '#1a2332', marginBottom: 4 }}>
-                        <span style={{ fontWeight: 500 }}>{cb.channelName}</span> — <span style={{ color: '#d94a4a', fontWeight: 600 }}>{cb.count}</span> записей
-                      </li>
-                    ))}
-                  </ul>
+              <List.Item style={{ padding: 0, border: 'none', marginBottom: 8, display: 'block' }}>
+                <div
+                  style={{
+                    padding: '12px 16px',
+                    borderRadius: 12,
+                    background: '#F8F9FD',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    border: '1px solid transparent',
+                    cursor: hasBreakdown ? 'pointer' : 'default',
+                  }}
+                  onClick={() => hasBreakdown && toggleExpand(item.timestamp)}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                    <div
+                      style={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: '50%',
+                        background: isCritical ? '#D94A4A' : '#E8A838',
+                        boxShadow: isCritical
+                          ? '0 0 8px rgba(219,74,74,0.6)'
+                          : '0 0 8px rgba(232,168,56,0.6)',
+                      }}
+                    />
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      <span style={{ fontWeight: 600, color: '#1A2332', fontSize: 14 }}>
+                        {Math.round(item.value)} сообщений
+                      </span>
+                      <span style={{ fontSize: 11, color: '#7A8B9E' }}>
+                        {dayjs(item.timestamp).format('DD.MM YYYY HH:mm')}
+                        {hasBreakdown && (
+                          <span style={{ marginLeft: 8 }}>
+                            {isExpanded ? <UpOutlined /> : <DownOutlined />}
+                            {' '}
+                            {entityLabel}
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                  </div>
+
+                  <Tag
+                    style={{
+                      margin: 0,
+                      borderRadius: 8,
+                      padding: '4px 12px',
+                      fontWeight: 600,
+                      fontSize: 11,
+                      border: 'none',
+                      background: isCritical ? '#FBECE9' : '#FFF8EB',
+                      color: isCritical ? '#D94A4A' : '#E8A838',
+                    }}
+                  >
+                    {isCritical ? 'Критическая' : 'Предупреждение'}
+                  </Tag>
                 </div>
-              </div>
+
+                {hasBreakdown && isExpanded && (
+                  <div style={{ padding: '8px 16px 12px 38px', background: '#F0F2F8', borderRadius: '0 0 12px 12px', marginTop: -4 }}>
+                    <div style={{ maxHeight: 200, overflowY: 'auto' }}>
+                      {item.channelBreakdown!.map(cb => (
+                        <div key={cb.channelId} style={{ color: '#1A2332', marginBottom: 4, fontSize: 13 }}>
+                          <span style={{ fontWeight: 500 }}>{cb.channelName}</span>
+                          {' — '}
+                          <span style={{ color: '#D94A4A', fontWeight: 600 }}>{cb.count}</span> записей
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </List.Item>
             );
-          },
-          rowExpandable: (record) => !!record.channelBreakdown && record.channelBreakdown.length > 0,
-        }}
-        size="middle"
-        style={{ borderRadius: 12, overflow: 'hidden' }}
-      />
+          }}
+        />
+      </div>
+
+      {spikes.length > PAGE_SIZE && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
+          <Pagination
+            simple
+            current={page}
+            total={spikes.length}
+            pageSize={PAGE_SIZE}
+            onChange={setPage}
+            style={{ fontSize: 12, color: '#7A8B9E' }}
+          />
+        </div>
+      )}
     </div>
   );
 };
