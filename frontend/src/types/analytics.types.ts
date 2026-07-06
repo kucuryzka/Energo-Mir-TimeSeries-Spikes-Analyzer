@@ -45,6 +45,7 @@ export interface ChannelContributionDto {
 
 export interface SpikeResponse {
   series: AnomalyResultDto[];
+  distribution?: ChannelContributionDto[];
 }
 
 export interface SpikePoint extends AnomalyResultDto {

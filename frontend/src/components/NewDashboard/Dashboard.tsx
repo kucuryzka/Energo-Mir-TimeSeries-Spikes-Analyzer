@@ -10,7 +10,8 @@ import { DistributionChart } from '../Chart/DistributionChart';
 import { analyticsApi } from '../../api/analyticsApi';
 import { enrichSpikeData, getSpikesOnly, getStatistics } from '../../utils/spikeUtils';
 import dayjs from 'dayjs';
-import type { TimeGranularity, SpikePoint, DistributionItemDto, ChannelDto } from '../../types/analytics.types';
+import { confirmHeavyAnalysis } from '../../utils/granularityWarning';
+import type { TimeGranularity, SpikePoint, DistributionItemDto, ChannelDto, ChannelContributionDto } from '../../types/analytics.types';
 import './Dashboard.css';
 
 const { Title, Text } = Typography;
@@ -19,6 +20,8 @@ export const Dashboard: React.FC = () => {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [selectedPoint, setSelectedPoint] = useState<SpikePoint | null>(null);
+  const [pointChannels, setPointChannels] = useState<ChannelContributionDto[]>([]);
+  const [loadingPointChannels, setLoadingPointChannels] = useState(false);
   const [distributions, setDistributions] = useState<Record<string, DistributionItemDto[]>>({});
 
   // States for filters
@@ -66,53 +69,42 @@ export const Dashboard: React.FC = () => {
   };
 
   const fetchData = async () => {
+    const confirmed = await confirmHeavyAnalysis(
+      granularity,
+      dateRange[0],
+      dateRange[1],
+      granularity === 'Custom' ? customMinutes : null,
+    );
+    if (!confirmed) return;
+
     setLoading(true);
     setData(null);
     try {
-      const start = dayjs(dateRange[0]);
-      const end = dayjs(dateRange[1]);
-      const totalDays = end.diff(start, 'day');
-      
-      let chunkSize = 1;
-      if (totalDays > 180) chunkSize = 30;
-      else if (totalDays > 60) chunkSize = 7;
+      const requestPayload = {
+        database: '',
+        sourceId,
+        channelId,
+        granularity,
+        customMinutes: granularity === 'Custom' ? customMinutes : null,
+        confidence,
+        windowSize: windowSize ?? 30,
+        startDate: dateRange[0],
+        endDate: dateRange[1],
+      };
 
-      let accumulatedSeries: any[] = [];
-      let currentStart = start;
-      let finalResponse: any = null;
+      message.loading({ content: 'Анализ поставлен в очередь...', key: 'jobProgress' });
+      const run = sourceId.toLowerCase() === 'dbo'
+        ? analyticsApi.dbo.runAnalysis
+        : analyticsApi.emProtocol.runAnalysis;
 
-      while (currentStart.isBefore(end)) {
-        let chunkEnd = currentStart.add(chunkSize, 'day');
-        if (chunkEnd.isAfter(end)) chunkEnd = end;
-
-        const requestPayload = {
-          database: '',
-          sourceId,
-          channelId,
-          granularity,
-          customMinutes: granularity === 'Custom' ? customMinutes : null,
-          confidence,
-          windowSize: windowSize ?? 30,
-          startDate: currentStart.toISOString(),
-          endDate: chunkEnd.toISOString(),
-        };
-        
-        let response;
-        if (sourceId.toLowerCase() === 'dbo') {
-          response = await analyticsApi.dbo.detectSpikes(requestPayload);
-        } else {
-          response = await analyticsApi.emProtocol.detectSpikes(requestPayload);
-        }
-
-        accumulatedSeries = [...accumulatedSeries, ...response.series];
-        finalResponse = { ...response, series: accumulatedSeries };
-
-        setData(finalResponse);
-        currentStart = chunkEnd;
-      }
+      const result = await run(requestPayload, (progress) => {
+        message.loading({ content: `Анализ выполняется... (${progress}%)`, key: 'jobProgress' });
+      });
+      message.success({ content: 'Анализ завершен', key: 'jobProgress' });
+      setData(result);
 
       const currentSource = sources.find(s => s.value === sourceId);
-      if (currentSource && currentSource.supportedDistributions) {
+      if (currentSource?.supportedDistributions) {
         const newDists: Record<string, DistributionItemDto[]> = {};
         for (const category of currentSource.supportedDistributions) {
           try {
@@ -127,11 +119,33 @@ export const Dashboard: React.FC = () => {
         setDistributions({});
       }
     } catch (err) {
-      message.error('Ошибка загрузки данных');
+      message.error({ content: 'Ошибка загрузки данных', key: 'jobProgress' });
     } finally {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!selectedPoint || !sourceId) {
+      setPointChannels([]);
+      return;
+    }
+    setLoadingPointChannels(true);
+    const api = sourceId.toLowerCase() === 'dbo' ? analyticsApi.dbo : analyticsApi.emProtocol;
+    api.getPointChannels(
+      '',
+      selectedPoint.timestamp,
+      granularity,
+      granularity === 'Custom' ? customMinutes ?? undefined : undefined,
+      channelId ?? undefined
+    ).then(breakdown => {
+      const meta = new Map(channels.map(c => [c.id, c]));
+      setPointChannels(breakdown.map(c => ({
+        ...c,
+        channelName: c.channelName || meta.get(c.channelId)?.name || `ID ${c.channelId}`
+      })));
+    }).catch(console.error).finally(() => setLoadingPointChannels(false));
+  }, [selectedPoint, sourceId, granularity, customMinutes, channelId, channels]);
 
   useEffect(() => {
     initSources();
@@ -160,24 +174,13 @@ export const Dashboard: React.FC = () => {
   const stats = data ? getStatistics(data.series) : null;
 
   const objectDistribution = React.useMemo(() => {
-    if (!data || !data.series) return [];
-    
-    const objCounts: Record<string, number> = {};
-    data.series.forEach((point: any) => {
-      if (point.channelBreakdown) {
-        point.channelBreakdown.forEach((cb: any) => {
-          const match = cb.channelName.match(/^(.*?)\s*\((.*?)\)$/);
-          const source = match ? match[1].trim() : cb.channelName;
-          objCounts[source] = (objCounts[source] || 0) + cb.count;
-        });
-      }
-    });
-
-    return Object.entries(objCounts).map(([category, count]) => ({
-      category,
-      count
+    if (!data?.distribution?.length) return [];
+    const nameById = new Map(channels.map(c => [c.id, c.name]));
+    return data.distribution.map((item: ChannelContributionDto) => ({
+      category: item.channelName || nameById.get(item.channelId) || `ID ${item.channelId}`,
+      count: item.count
     })).sort((a, b) => b.count - a.count);
-  }, [data]);
+  }, [data, channels]);
 
   return (
     <DashboardLayout>
@@ -288,8 +291,8 @@ export const Dashboard: React.FC = () => {
                     <Table
                       dataSource={
                         Object.entries(
-                          (selectedPoint.channelBreakdown || []).reduce((acc, curr) => {
-                            const source = curr.channelName;
+                          pointChannels.reduce((acc, curr) => {
+                            const source = curr.channelName || `ID ${curr.channelId}`;
                             acc[source] = (acc[source] || 0) + curr.count;
                             return acc;
                           }, {} as Record<string, number>)
@@ -297,6 +300,7 @@ export const Dashboard: React.FC = () => {
                       }
                       rowKey="name"
                       size="small"
+                      loading={loadingPointChannels}
                       pagination={{ pageSize: 10, showSizeChanger: true }}
                       columns={[
                         { title: 'Источник', dataIndex: 'name', key: 'name' },
@@ -319,8 +323,8 @@ export const Dashboard: React.FC = () => {
                     <Table
                       dataSource={
                         Object.entries(
-                          (selectedPoint.channelBreakdown || []).reduce((acc, curr) => {
-                            const code = curr.eventCode || 'Неизвестный код';
+                          pointChannels.reduce((acc, curr) => {
+                            const code = curr.eventCode ? String(curr.eventCode) : 'Неизвестный код';
                             acc[code] = (acc[code] || 0) + curr.count;
                             return acc;
                           }, {} as Record<string, number>)
@@ -328,6 +332,7 @@ export const Dashboard: React.FC = () => {
                       }
                       rowKey="code"
                       size="small"
+                      loading={loadingPointChannels}
                       pagination={{ pageSize: 10, showSizeChanger: true }}
                       columns={[
                         { title: 'Код', dataIndex: 'code', key: 'code' },
