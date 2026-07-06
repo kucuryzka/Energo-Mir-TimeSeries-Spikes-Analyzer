@@ -135,13 +135,13 @@ export const TelemetryChart: React.FC<TelemetryChartProps> = ({
             <span className="dot7" style={{ background: '#e2a339' }} />Предупреждение
           </button>
           <span className="line-legend">
-            <span className="line-legend-item"><span className="line-swatch" style={{ borderTopColor: '#c3cadb' }} />Среднее</span>
-            <span className="line-legend-item"><span className="line-swatch" style={{ borderTopColor: '#e79b90' }} />Максимум</span>
+            <span className="line-legend-item"><span className="line-swatch" style={{ borderTopColor: 'var(--chart-avg-line)' }} />Среднее</span>
+            <span className="line-legend-item"><span className="line-swatch" style={{ borderTopColor: 'var(--chart-max-line)' }} />Максимум</span>
           </span>
           <button
             type="button"
             className="switch-track"
-            style={{ background: showMarkers ? '#3D63DD' : '#d7dceb' }}
+            style={{ background: showMarkers ? '#3D63DD' : 'var(--switch-off)' }}
             onClick={onToggleMarkers}
             title="Маркеры"
           >
@@ -167,8 +167,8 @@ export const TelemetryChart: React.FC<TelemetryChartProps> = ({
             </filter>
           </defs>
 
-          <line x1="0" y1={yForValue(stats.avg)} x2={VIEW_W} y2={yForValue(stats.avg)} stroke="#d7dceb" strokeWidth="1" strokeOpacity="0.6" strokeDasharray="4 4" />
-          <line x1="0" y1={yForValue(stats.max)} x2={VIEW_W} y2={yForValue(stats.max)} stroke="#f0c9c2" strokeWidth="1" strokeDasharray="4 4" />
+          <line x1="0" y1={yForValue(stats.avg)} x2={VIEW_W} y2={yForValue(stats.avg)} stroke="var(--chart-avg-line)" strokeWidth="1" strokeOpacity="0.6" strokeDasharray="4 4" />
+          <line x1="0" y1={yForValue(stats.max)} x2={VIEW_W} y2={yForValue(stats.max)} stroke="var(--chart-max-line)" strokeWidth="1" strokeDasharray="4 4" />
 
           {areaPath && <path d={areaPath} fill="url(#areaGrad)" stroke="none" />}
           {linePath && (

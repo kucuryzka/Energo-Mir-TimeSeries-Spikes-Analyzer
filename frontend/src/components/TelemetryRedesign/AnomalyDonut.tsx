@@ -25,7 +25,7 @@ export const AnomalyDonut: React.FC<AnomalyDonutProps> = ({ critical, warning })
       <div className="donut-wrap">
         <div className="donut-glow" />
         <svg width="150" height="150" viewBox="0 0 96 96">
-          <circle cx="48" cy="48" r={R} fill="none" stroke="#eef2fb" strokeWidth="11" />
+          <circle className="donut-track" cx="48" cy="48" r={R} fill="none" strokeWidth="11" />
           {total > 0 && (
             <>
               <circle

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Drawer, Badge } from 'antd';
 import { HistoryOutlined, DashboardOutlined, ApiOutlined } from '@ant-design/icons';
 import { DatabaseTreeSidebar } from '../Explorer/DatabaseTreeSidebar';
@@ -12,6 +12,8 @@ import './TelemetryScreen.css';
 
 interface TelemetryScreenProps {
   onLogout: () => void;
+  uiTheme: 'light' | 'dark';
+  onToggleTheme: () => void;
 }
 
 interface GenericConfig {
@@ -21,11 +23,15 @@ interface GenericConfig {
   timeColumn: string;
 }
 
-export const TelemetryScreen: React.FC<TelemetryScreenProps> = ({ onLogout }) => {
+export const TelemetryScreen: React.FC<TelemetryScreenProps> = ({ onLogout, uiTheme, onToggleTheme }) => {
   const [selectedDb, setSelectedDb] = useState<string>(isMockMode() ? 'MockDB' : '');
   const [activeTab, setActiveTab] = useState<TabKey>('dbo');
   const [dbDrawerOpen, setDbDrawerOpen] = useState(false);
   const [genericConfig, setGenericConfig] = useState<GenericConfig | null>(null);
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', uiTheme);
+  }, [uiTheme]);
 
   const { actions } = useShellRail();
   const { open: openQueryTracker, activeCount } = useQueryTracker();
@@ -43,7 +49,7 @@ export const TelemetryScreen: React.FC<TelemetryScreenProps> = ({ onLogout }) =>
   };
 
   return (
-    <div className="page">
+    <div className="page" data-theme={uiTheme}>
       <div className="app-bg">
         <div className="blob1" />
         <div className="blob2" />
@@ -102,11 +108,22 @@ export const TelemetryScreen: React.FC<TelemetryScreenProps> = ({ onLogout }) =>
               </Badge>
             </div>
 
-            <div className="nav-item" title="Настройки">
-              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-                <circle cx="12" cy="12" r="3.2" />
-                <path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1" />
-              </svg>
+            <div
+              className="nav-item"
+              title={uiTheme === 'dark' ? 'Светлая тема' : 'Тёмная тема'}
+              onClick={onToggleTheme}
+              style={{ cursor: 'pointer' }}
+            >
+              {uiTheme === 'dark' ? (
+                <svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+                  <path d="M20.7 14.6a8.6 8.6 0 0 1-10.3-10.3.6.6 0 0 0-.8-.7A9.5 9.5 0 1 0 21.4 15.4a.6.6 0 0 0-.7-.8Z" />
+                </svg>
+              ) : (
+                <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                  <circle cx="12" cy="12" r="3.2" />
+                  <path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1" />
+                </svg>
+              )}
             </div>
           </div>
 

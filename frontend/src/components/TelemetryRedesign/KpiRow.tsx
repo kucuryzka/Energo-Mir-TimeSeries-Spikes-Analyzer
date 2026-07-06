@@ -36,43 +36,43 @@ export const KpiRow: React.FC<KpiRowProps> = ({ totalPoints, spikesCount, critic
     <div className="kpi-row">
       <div className="kpi kpi-blue1">
         <div className="kpi-label-row">
-          <span className="kpi-label" style={{ color: '#5b6a99' }}>Всего значений</span>
-          <MiniBars color="#5b6a99" variant={1} />
+          <span className="kpi-label" style={{ color: 'var(--kpi-label-blue)' }}>Всего значений</span>
+          <MiniBars color="var(--kpi-label-blue)" variant={1} />
         </div>
         <KpiValue target={totalPoints} />
       </div>
 
       <div className="kpi kpi-blue2">
         <div className="kpi-label-row">
-          <span className="kpi-label" style={{ color: '#3d537f' }}>Обнаружено аномалий</span>
-          <MiniBars color="#3d537f" variant={2} />
+          <span className="kpi-label" style={{ color: 'var(--kpi-label-blue2)' }}>Обнаружено аномалий</span>
+          <MiniBars color="var(--kpi-label-blue2)" variant={2} />
         </div>
         <KpiValue target={spikesCount} />
       </div>
 
       <div className="kpi kpi-red">
         <div className="kpi-label-row">
-          <span className="kpi-label" style={{ color: '#9a4a3f' }}>Критических</span>
+          <span className="kpi-label" style={{ color: 'var(--kpi-label-red)' }}>Критических</span>
           <MiniBars color="#d64933" variant={3} />
         </div>
         <KpiValue target={criticalCount} color="#d64933" />
       </div>
 
       <div className="kpi kpi-white">
-        <span className="kpi-label" style={{ color: '#9aa3b5' }}>Среднее значение</span>
+        <span className="kpi-label" style={{ color: 'var(--kpi-label-muted)' }}>Среднее значение</span>
         <KpiValue target={average} decimals={2} />
       </div>
 
       <div className="kpi kpi-blue1">
         <div className="kpi-label-row">
-          <span className="kpi-label" style={{ color: '#5b6a99' }}>Максимум</span>
-          <MiniBars color="#5b6a99" variant={4} />
+          <span className="kpi-label" style={{ color: 'var(--kpi-label-blue)' }}>Максимум</span>
+          <MiniBars color="var(--kpi-label-blue)" variant={4} />
         </div>
         <KpiValue target={max} decimals={2} />
       </div>
 
       <div className="kpi kpi-white">
-        <span className="kpi-label" style={{ color: '#9aa3b5' }}>Всего точек</span>
+        <span className="kpi-label" style={{ color: 'var(--kpi-label-muted)' }}>Всего точек</span>
         <KpiValue target={totalPoints} />
       </div>
     </div>

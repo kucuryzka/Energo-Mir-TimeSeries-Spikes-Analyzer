@@ -557,9 +557,9 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({ database, ac
               <div
                 key={job.id}
                 style={{
-                  border: '1px solid #f0f0f0', padding: 12, borderRadius: 8,
+                  border: '1px solid var(--border-subtle)', padding: 12, borderRadius: 8,
                   cursor: job.status === 'Completed' ? 'pointer' : 'default',
-                  background: job.status === 'Completed' ? '#fafafa' : '#fff',
+                  background: job.status === 'Completed' ? 'rgba(61,99,221,.06)' : 'transparent',
                 }}
                 onClick={() => job.status === 'Completed' && loadHistoryItem(job)}
               >

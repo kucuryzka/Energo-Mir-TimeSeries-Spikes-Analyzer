@@ -18,7 +18,7 @@ export const AnomalyList: React.FC<AnomalyListProps> = ({ spikes, showCritical, 
     <div className="list-card">
       <div className="list-title">Аномалии <span className="list-count">({filtered.length})</span></div>
       {filtered.length === 0 && (
-        <div style={{ color: '#9aa3b5', fontSize: 13, padding: '12px 4px' }}>Аномалий не обнаружено</div>
+        <div className="anomaly-empty" style={{ fontSize: 13, padding: '12px 4px' }}>Аномалий не обнаружено</div>
       )}
       {filtered.map(s => {
         const isCritical = s.severity === 'critical';
