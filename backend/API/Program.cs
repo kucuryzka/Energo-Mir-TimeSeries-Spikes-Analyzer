@@ -1,11 +1,17 @@
-using Microsoft.EntityFrameworkCore;
+using API.Configuration;
 using API.Data;
 using Hangfire;
 using Hangfire.Storage.SQLite;
+using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
+builder.Services.Configure<AnalysisSettings>(
+    builder.Configuration.GetSection(AnalysisSettings.SectionName));
+var analysisSettings = builder.Configuration
+    .GetSection(AnalysisSettings.SectionName)
+    .Get<AnalysisSettings>() ?? new AnalysisSettings();
+
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
@@ -13,68 +19,62 @@ builder.Services.AddControllers()
     });
 builder.Services.AddHttpContextAccessor();
 
-// Configure EF Core DbContext with SQL Server
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(
         builder.Configuration.GetConnectionString("DefaultConnection"),
-        sqlServerOptionsAction: sqlOptions =>
-        {
-            sqlOptions.CommandTimeout(300); // 5 minutes timeout for heavy queries
-        }
-    ));
+        sqlOptions => sqlOptions.CommandTimeout(analysisSettings.CommandTimeoutSeconds)));
 
-// Configure Internal DB Context for Hangfire and Jobs
 builder.Services.AddDbContext<InternalDbContext>(options =>
     options.UseSqlite(builder.Configuration.GetConnectionString("InternalConnection")));
 
-// Configure Hangfire
 builder.Services.AddHangfire(configuration => configuration
     .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
     .UseSimpleAssemblyNameTypeSerializer()
     .UseRecommendedSerializerSettings()
     .UseSQLiteStorage(builder.Configuration.GetConnectionString("InternalConnection"), new SQLiteStorageOptions
     {
-        QueuePollInterval = TimeSpan.FromSeconds(1)
+        QueuePollInterval = TimeSpan.FromSeconds(1),
+        InvisibilityTimeout = TimeSpan.FromHours(
+            Math.Clamp(analysisSettings.HangfireJobInvisibilityTimeoutHours, 1, 24))
     }));
 
 builder.Services.AddHangfireServer(options =>
 {
+    options.WorkerCount = analysisSettings.HangfireWorkerCount;
     options.SchedulePollingInterval = TimeSpan.FromSeconds(1);
-    options.ServerCheckInterval = TimeSpan.FromSeconds(2);
+    options.ServerCheckInterval = TimeSpan.FromSeconds(5);
 });
 
-// Register implementations of Core interfaces
+builder.Services.AddSingleton<API.Sql.ISqlDialectProvider, API.Sql.SqlDialectProvider>();
+builder.Services.AddSingleton<API.Services.IDatabaseContextFactory, API.Services.DatabaseContextFactory>();
+builder.Services.AddScoped<API.Services.AnalysisPipelineService>();
+
 builder.Services.AddScoped<Core.Interfaces.ITimeSeriesService, Core.Services.TimeService>();
 builder.Services.AddScoped<Core.Interfaces.ISpikeDetectionService, Core.Services.SpikeDetectionService>();
-
-// Register Connection Manager
 builder.Services.AddSingleton<API.Services.IConnectionManagerService, API.Services.ConnectionManagerService>();
-
-// Register background job processor
+builder.Services.AddSingleton<API.Services.AnalysisResultService>();
+builder.Services.AddScoped<API.Services.TablePreviewService>();
+builder.Services.AddScoped<API.Services.AnalysisRequestValidator>();
 builder.Services.AddScoped<API.Services.AnalysisJobProcessor>();
 
-// Register data sources
 builder.Services.AddScoped<API.DataSources.IDataSourceStrategy, API.DataSources.EmProtocolDataSource>();
 builder.Services.AddScoped<API.DataSources.IDataSourceStrategy, API.DataSources.DboDataSource>();
 
-// Configure CORS for React client integration
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("ReactCorsPolicy", policy =>
     {
-        policy.WithOrigins("http://localhost:5173", "http://localhost:3000") // Vite or Create-React-App default ports
+        policy.WithOrigins("http://localhost:5173", "http://localhost:3000")
               .AllowAnyHeader()
               .AllowAnyMethod();
     });
 });
 
-// Configure Swagger/OpenAPI
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -83,19 +83,20 @@ if (app.Environment.IsDevelopment())
 
 app.UseCors("ReactCorsPolicy");
 
-// Ensure Internal DB is created
 using (var scope = app.Services.CreateScope())
 {
     var internalDb = scope.ServiceProvider.GetRequiredService<InternalDbContext>();
     internalDb.Database.EnsureCreated();
 }
 
-app.UseHangfireDashboard(); // Available at /hangfire
+app.UseHangfireDashboard("/hangfire", new DashboardOptions
+{
+    Authorization = [new API.Infrastructure.HangfireDashboardAuthorizationFilter()]
+});
 
-app.UseHttpsRedirection();
-
+if (app.Environment.IsProduction())
+    app.UseHttpsRedirection();
 app.UseAuthorization();
-
 app.MapControllers();
 
 app.Run();

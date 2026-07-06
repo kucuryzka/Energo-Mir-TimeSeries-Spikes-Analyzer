@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
-using Core.Interfaces;
 using API.DTOs;
 using API.DataSources;
 using API.Data;
@@ -18,27 +17,33 @@ namespace API.Controllers;
 public class EmProtocolController : ControllerBase
 {
     private readonly EmProtocolDataSource _dataSource;
-    private readonly ISpikeDetectionService _spikeDetectionService;
     private readonly InternalDbContext _internalDb;
     private readonly IBackgroundJobClient _backgroundJobClient;
     private readonly API.Services.IConnectionManagerService _connectionManager;
+    private readonly API.Services.AnalysisResultService _resultService;
     private readonly Microsoft.AspNetCore.Http.IHttpContextAccessor _httpContextAccessor;
+    private readonly API.Services.TablePreviewService _tablePreview;
+    private readonly API.Services.AnalysisRequestValidator _requestValidator;
 
     public EmProtocolController(
         IEnumerable<IDataSourceStrategy> dataSourceStrategies,
-        ISpikeDetectionService spikeDetectionService,
         InternalDbContext internalDb,
         IBackgroundJobClient backgroundJobClient,
         API.Services.IConnectionManagerService connectionManager,
-        Microsoft.AspNetCore.Http.IHttpContextAccessor httpContextAccessor)
+        API.Services.AnalysisResultService resultService,
+        Microsoft.AspNetCore.Http.IHttpContextAccessor httpContextAccessor,
+        API.Services.TablePreviewService tablePreview,
+        API.Services.AnalysisRequestValidator requestValidator)
     {
         _dataSource = dataSourceStrategies.OfType<EmProtocolDataSource>().FirstOrDefault() 
             ?? throw new Exception("EmProtocolDataSource not registered.");
-        _spikeDetectionService = spikeDetectionService;
         _internalDb = internalDb;
         _backgroundJobClient = backgroundJobClient;
         _connectionManager = connectionManager;
+        _resultService = resultService;
         _httpContextAccessor = httpContextAccessor;
+        _tablePreview = tablePreview;
+        _requestValidator = requestValidator;
     }
 
     [HttpGet("channels")]
@@ -78,35 +83,43 @@ public class EmProtocolController : ControllerBase
         }
     }
 
-    [HttpPost("detect-spikes")]
-    public async Task<IActionResult> DetectSpikes([FromBody] DetectSpikesRequest request)
+    [HttpGet("preview")]
+    public async Task<IActionResult> GetTablePreview([FromQuery] string database, [FromQuery] int limit = 15)
     {
         try
         {
-            if (request.StartDate >= request.EndDate)
-                return BadRequest("StartDate must be before EndDate.");
-            if (request.Confidence <= 0 || request.Confidence >= 100)
-                return BadRequest("Confidence must be greater than 0 and less than 100 (e.g. 95).");
-            if (request.WindowSize < 2)
-                return BadRequest("WindowSize must be at least 2 for sliding window analysis.");
-
-            var token = _httpContextAccessor.HttpContext?.Request.Headers["X-Session-Token"].ToString();
-            var info = _connectionManager.GetConnectionInfo(token ?? "");
-            if (info == null) return Unauthorized("Invalid or missing session token");
-
-            // The strategy encapsulates all logic including DB querying, aggregation, 
-            // spike detection calling, and channel naming.
-            var response = await _dataSource.ExecuteAnalysisAsync(request, _spikeDetectionService, info.ConnectionString, info.Provider);
-
-            return Ok(response);
+            var info = RequireSession();
+            var preview = await _tablePreview.LoadAsync(
+                info.ConnectionString,
+                info.Provider,
+                database,
+                schema: "em_protocol",
+                table: "Records",
+                timeColumn: "InsertTime",
+                limit);
+            return Ok(preview);
         }
-        catch (NotImplementedException niex)
+        catch (UnauthorizedAccessException ex)
         {
-            return StatusCode(501, new { message = "Backend Core services are not yet implemented.", details = niex.Message });
+            return Unauthorized(ex.Message);
         }
         catch (Exception ex)
         {
-            return StatusCode(500, new { message = "An error occurred during spike detection.", details = ex.Message });
+            return StatusCode(500, new { message = "An error occurred while fetching table preview.", details = ex.Message });
+        }
+    }
+
+    [HttpGet("point-channels")]
+    public async Task<IActionResult> GetPointChannels([FromQuery] string database, [FromQuery] DateTime timestamp, [FromQuery] Core.Enums.TimeGranularity granularity, [FromQuery] int? customMinutes, [FromQuery] int? channelId)
+    {
+        try
+        {
+            var breakdown = await _dataSource.GetPointChannelBreakdownAsync(database, timestamp, granularity, customMinutes, channelId);
+            return Ok(breakdown);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { message = "An error occurred while fetching point channel breakdown.", details = ex.Message });
         }
     }
 
@@ -115,12 +128,20 @@ public class EmProtocolController : ControllerBase
     {
         try
         {
+            var sessionToken = RequireSessionToken();
+            _requestValidator.Validate(
+                request.StartDate,
+                request.EndDate,
+                request.Granularity,
+                request.WindowSize,
+                request.CustomMinutes);
+
             var job = new AnalysisJob
             {
                 Database = request.Database,
-                Schema = "em_protocol", // hardcoded for history filtering
-                Table = request.ChannelId?.ToString() ?? "All", // store channelId in Table
-                TimeColumn = "", // Not used
+                Schema = "em_protocol",
+                Table = request.ChannelId?.ToString() ?? "All",
+                TimeColumn = "",
                 StartDate = request.StartDate,
                 EndDate = request.EndDate,
                 Granularity = request.Granularity,
@@ -132,18 +153,21 @@ public class EmProtocolController : ControllerBase
             _internalDb.AnalysisJobs.Add(job);
             await _internalDb.SaveChangesAsync();
 
-            var token = _httpContextAccessor.HttpContext?.Request.Headers["X-Session-Token"].ToString();
-            var info = _connectionManager.GetConnectionInfo(token ?? "");
-            if (info == null) return Unauthorized("Invalid or missing session token");
-
             var jobId = _backgroundJobClient.Enqueue<API.Services.AnalysisJobProcessor>(
-                p => p.ProcessLegacyJobAsync(job.Id, "em_protocol", info.Provider, info.ConnectionString)
-            );
+                p => p.ProcessSourceJobAsync(job.Id, "em_protocol", sessionToken));
             
             job.BackgroundJobId = jobId;
             await _internalDb.SaveChangesAsync();
 
             return Ok(new { JobId = job.Id });
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Unauthorized(ex.Message);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ex.Message);
         }
         catch (Exception ex)
         {
@@ -162,7 +186,8 @@ public class EmProtocolController : ControllerBase
             job.Status, 
             job.Progress, 
             job.ErrorMessage,
-            HasResult = job.ResultJson != null 
+            HasResult = _resultService.HasResult(job),
+            SeriesPointCount = job.SeriesPointCount
         });
     }
 
@@ -171,9 +196,10 @@ public class EmProtocolController : ControllerBase
     {
         var job = await _internalDb.AnalysisJobs.FindAsync(id);
         if (job == null) return NotFound();
-        if (string.IsNullOrEmpty(job.ResultJson)) return BadRequest("Result is not ready or failed");
+        if (!_resultService.HasResult(job)) return BadRequest("Result is not ready or failed");
 
-        return Content(job.ResultJson, "application/json");
+        var json = await _resultService.SerializeToJsonAsync(job);
+        return Content(json, "application/json");
     }
 
     [HttpGet("history")]
@@ -181,7 +207,7 @@ public class EmProtocolController : ControllerBase
     {
         var history = await _internalDb.AnalysisJobs
             .Where(j => j.Database == database && j.Schema == "em_protocol")
-            .OrderByDescending(j => j.CreatedAt)
+            .OrderByDescending(j => j.CompletedAt ?? j.CreatedAt)
             .Select(j => new {
                 j.Id,
                 j.StartDate,
@@ -190,6 +216,8 @@ public class EmProtocolController : ControllerBase
                 j.Status,
                 j.Progress,
                 j.CreatedAt,
+                j.CompletedAt,
+                j.SeriesPointCount,
                 ChannelId = j.Table == "All" ? null : j.Table
             })
             .ToListAsync();
@@ -208,9 +236,24 @@ public class EmProtocolController : ControllerBase
             _backgroundJobClient.Delete(job.BackgroundJobId);
         }
 
+        _resultService.DeleteResultFiles(job);
         _internalDb.AnalysisJobs.Remove(job);
         await _internalDb.SaveChangesAsync();
 
         return NoContent();
+    }
+
+    private string RequireSessionToken()
+    {
+        var token = _httpContextAccessor.HttpContext?.Request.Headers["X-Session-Token"].ToString();
+        if (string.IsNullOrEmpty(token) || _connectionManager.GetConnectionInfo(token) == null)
+            throw new UnauthorizedAccessException("Invalid or missing session token");
+        return token;
+    }
+
+    private API.Services.ConnectionInfo RequireSession()
+    {
+        var token = RequireSessionToken();
+        return _connectionManager.GetConnectionInfo(token)!;
     }
 }

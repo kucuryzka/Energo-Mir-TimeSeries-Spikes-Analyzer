@@ -26,17 +26,14 @@ public class AuthController : ControllerBase
         try
         {
             string connectionString = BuildConnectionString(request);
-            
-            // Test connection
-            using DbConnection conn = request.Provider.ToLower() == "pgsql" 
-                ? new NpgsqlConnection(connectionString) 
-                : new SqlConnection(connectionString);
-                
+            var normalizedProvider = DatabaseProvider.Normalize(request.Provider);
+
+            using DbConnection conn = DatabaseProvider.OpenConnection(normalizedProvider, connectionString);
             await conn.OpenAsync();
 
             var token = _connectionManager.CreateSession(new API.Services.ConnectionInfo
             {
-                Provider = request.Provider.ToLower(),
+                Provider = normalizedProvider,
                 ConnectionString = connectionString
             });
 
@@ -50,7 +47,7 @@ public class AuthController : ControllerBase
 
     private string BuildConnectionString(AuthRequest request)
     {
-        if (request.Provider.ToLower() == "pgsql")
+        if (DatabaseProvider.IsPostgres(request.Provider))
         {
             var db = string.IsNullOrEmpty(request.Database) ? "postgres" : request.Database;
             var port = request.Port > 0 ? request.Port : 5432;

@@ -1,230 +1,209 @@
 using System;
-using System.Collections.Generic;
-using System.Data.Common;
 using System.Linq;
 using System.Threading.Tasks;
-using Microsoft.EntityFrameworkCore;
+using API.Configuration;
 using API.Data;
-using API.Models;
-using Core.Enums;
-using Core.Models;
-using Core.Interfaces;
-using Dapper;
-using Microsoft.Data.SqlClient;
-using Npgsql;
-using System.Text.Json;
 using API.DataSources;
+using API.Models;
+using Core.Interfaces;
+using Hangfire;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace API.Services;
 
 public class AnalysisJobProcessor
 {
     private readonly InternalDbContext _internalDb;
+    private readonly AnalysisPipelineService _pipeline;
     private readonly ISpikeDetectionService _spikeDetectionService;
     private readonly IEnumerable<IDataSourceStrategy> _dataSourceStrategies;
+    private readonly AnalysisResultService _resultService;
+    private readonly IConnectionManagerService _connectionManager;
+    private readonly IServiceScopeFactory _scopeFactory;
+    private readonly ILogger<AnalysisJobProcessor> _logger;
+    private readonly int _progressSaveIntervalMs;
 
     public AnalysisJobProcessor(
-        InternalDbContext internalDb, 
+        InternalDbContext internalDb,
+        AnalysisPipelineService pipeline,
         ISpikeDetectionService spikeDetectionService,
-        IEnumerable<IDataSourceStrategy> dataSourceStrategies)
+        IEnumerable<IDataSourceStrategy> dataSourceStrategies,
+        AnalysisResultService resultService,
+        IConnectionManagerService connectionManager,
+        IServiceScopeFactory scopeFactory,
+        ILogger<AnalysisJobProcessor> logger,
+        IOptions<AnalysisSettings> settings)
     {
         _internalDb = internalDb;
+        _pipeline = pipeline;
         _spikeDetectionService = spikeDetectionService;
         _dataSourceStrategies = dataSourceStrategies;
+        _resultService = resultService;
+        _connectionManager = connectionManager;
+        _scopeFactory = scopeFactory;
+        _logger = logger;
+        _progressSaveIntervalMs = Math.Max(settings.Value.ProgressSaveIntervalSeconds, 1) * 1000;
     }
 
-    public async Task ProcessJobAsync(string jobId, string provider, string connectionString)
+    [AutomaticRetry(Attempts = 0)]
+    [DisableConcurrentExecution(timeoutInSeconds: 86400)]
+    public Task ProcessJobAsync(string jobId, string sessionToken) =>
+        ProcessJobCoreAsync(jobId, sessionToken, sourceId: null);
+
+    [AutomaticRetry(Attempts = 0)]
+    [DisableConcurrentExecution(timeoutInSeconds: 86400)]
+    public Task ProcessSourceJobAsync(string jobId, string sourceId, string sessionToken) =>
+        ProcessJobCoreAsync(jobId, sessionToken, sourceId);
+
+    private async Task ProcessJobCoreAsync(string jobId, string sessionToken, string? sourceId)
     {
         var job = await _internalDb.AnalysisJobs.FindAsync(jobId);
         if (job == null) return;
 
+        if (job.Status is "Completed" or "Failed")
+            return;
+
+        var connectionInfo = _connectionManager.GetConnectionInfo(sessionToken);
+        if (connectionInfo == null)
+        {
+            await FailJobAsync(job, new InvalidOperationException(
+                "Database session expired. Please reconnect and run the analysis again."));
+            return;
+        }
+
+        var provider = DatabaseProvider.Normalize(connectionInfo.Provider);
+        var connectionString = connectionInfo.ConnectionString;
+
         try
         {
-            job.Status = "Running";
-            job.Progress = 0;
-            await _internalDb.SaveChangesAsync();
+            await SetRunningAsync(job);
 
-            var connStrBuilder = new DbConnectionStringBuilder { ConnectionString = connectionString };
-            connStrBuilder["Database"] = job.Database;
-            var targetConnStr = connStrBuilder.ConnectionString;
-
-            var optionsBuilder = new DbContextOptionsBuilder<AppDbContext>();
-            if (provider == "pgsql") optionsBuilder.UseNpgsql(targetConnStr, opts => opts.CommandTimeout(3600));
-            else optionsBuilder.UseSqlServer(targetConnStr, opts => opts.CommandTimeout(3600));
-
-            using var _context = new AppDbContext(optionsBuilder.Options);
-            _context.Database.SetCommandTimeout(3600);
-
-            string dateAddExpr;
-            if (provider == "pgsql")
+            API.DTOs.SpikeResponse response;
+            if (string.IsNullOrEmpty(sourceId))
             {
-                dateAddExpr = job.Granularity switch
+                var spec = new AnalysisTableSpec
                 {
-                    TimeGranularity.Minute => $"date_trunc('minute', \"{job.TimeColumn}\")",
-                    TimeGranularity.Hour => $"date_trunc('hour', \"{job.TimeColumn}\")",
-                    TimeGranularity.Day => $"date_trunc('day', \"{job.TimeColumn}\")",
-                    TimeGranularity.Week => $"date_trunc('week', \"{job.TimeColumn}\")",
-                    TimeGranularity.Month => $"date_trunc('month', \"{job.TimeColumn}\")",
-                    TimeGranularity.Custom => $"to_timestamp(floor((extract('epoch' from \"{job.TimeColumn}\") / {(job.CustomMinutes ?? 60) * 60 })) * {(job.CustomMinutes ?? 60) * 60})",
-                    _ => $"date_trunc('hour', \"{job.TimeColumn}\")"
+                    Schema = job.Schema,
+                    Table = job.Table,
+                    TimeColumn = job.TimeColumn
                 };
+
+                response = await _pipeline.ExecuteAsync(
+                    spec,
+                    job.StartDate,
+                    job.EndDate,
+                    job.Granularity,
+                    job.CustomMinutes,
+                    channelId: null,
+                    job.Confidence ?? 95,
+                    job.WindowSize ?? 30,
+                    _spikeDetectionService,
+                    connectionString,
+                    provider,
+                    job.Database,
+                    CreateProgressReporter(job.Id));
             }
             else
             {
-                dateAddExpr = job.Granularity switch
+                var dataSource = _dataSourceStrategies.FirstOrDefault(d => d.Id.Equals(sourceId, StringComparison.OrdinalIgnoreCase))
+                    ?? throw new InvalidOperationException($"DataSource {sourceId} not found");
+
+                int? channelId = null;
+                if (!string.IsNullOrEmpty(job.Table) && int.TryParse(job.Table, out var cid))
+                    channelId = cid;
+
+                var request = new API.DTOs.DetectSpikesRequest
                 {
-                    TimeGranularity.Minute => $"DATEADD(minute, DATEDIFF(minute, 0, [{job.TimeColumn}]), 0)",
-                    TimeGranularity.Hour => $"DATEADD(hour, DATEDIFF(hour, 0, [{job.TimeColumn}]), 0)",
-                    TimeGranularity.Day => $"DATEADD(day, DATEDIFF(day, 0, [{job.TimeColumn}]), 0)",
-                    TimeGranularity.Week => $"DATEADD(week, DATEDIFF(week, 0, [{job.TimeColumn}]), 0)",
-                    TimeGranularity.Month => $"DATEADD(month, DATEDIFF(month, 0, [{job.TimeColumn}]), 0)",
-                    TimeGranularity.Custom => $"DATEADD(minute, (DATEDIFF(minute, 0, [{job.TimeColumn}]) / {(job.CustomMinutes ?? 60)}) * {(job.CustomMinutes ?? 60)}, 0)",
-                    _ => $"DATEADD(hour, DATEDIFF(hour, 0, [{job.TimeColumn}]), 0)"
+                    Database = job.Database,
+                    SourceId = sourceId,
+                    ChannelId = channelId,
+                    Granularity = job.Granularity,
+                    CustomMinutes = job.CustomMinutes,
+                    Confidence = job.Confidence ?? 95.0,
+                    WindowSize = job.WindowSize ?? 30,
+                    StartDate = job.StartDate,
+                    EndDate = job.EndDate
                 };
+
+                response = await dataSource.ExecuteAnalysisAsync(
+                    request,
+                    _spikeDetectionService,
+                    connectionString,
+                    provider,
+                    CreateProgressReporter(job.Id));
             }
 
-            var schemaSafe = provider == "pgsql" ? $"\"{job.Schema}\"" : $"[{job.Schema}]";
-            var tableSafe = provider == "pgsql" ? $"\"{job.Table}\"" : $"[{job.Table}]";
-            var timeColSafe = provider == "pgsql" ? $"\"{job.TimeColumn}\"" : $"[{job.TimeColumn}]";
-
-            var sqlAggregate = $@"
-                SELECT 
-                    {dateAddExpr} as Timestamp,
-                    COUNT(*) as Value,
-                    0 as ChannelId
-                FROM {schemaSafe}.{tableSafe}
-                WHERE {timeColSafe} >= @p0 AND {timeColSafe} < @p1
-                GROUP BY {dateAddExpr}
-                ORDER BY Timestamp";
-
-            var groupedSeriesDict = new Dictionary<DateTime, DataPoint>();
-            var currentStart = job.StartDate;
-            
-            double totalMonths = (job.EndDate - job.StartDate).TotalDays / 30.0;
-            if (totalMonths <= 0) totalMonths = 1;
-            int monthsProcessed = 0;
-
-            while (currentStart < job.EndDate)
-            {
-                var currentEnd = currentStart.AddMonths(1);
-                if (currentEnd > job.EndDate) currentEnd = job.EndDate;
-
-                var parameters = new List<object> { currentStart, currentEnd };
-                var batchAggregates = await _context.Database
-                    .SqlQueryRaw<AggregatedResult>(sqlAggregate, parameters.ToArray())
-                    .ToListAsync();
-
-                foreach (var a in batchAggregates)
-                {
-                    if (groupedSeriesDict.TryGetValue(a.Timestamp, out var existing))
-                    {
-                        existing.Value += a.Value;
-                    }
-                    else
-                    {
-                        groupedSeriesDict[a.Timestamp] = new DataPoint { Timestamp = a.Timestamp, Value = a.Value, ChannelBreakdown = new Dictionary<int, int>() };
-                    }
-                }
-                
-                monthsProcessed++;
-                job.Progress = (int)((monthsProcessed / totalMonths) * 90); // 90% is DB fetching
-                await _internalDb.SaveChangesAsync();
-
-                currentStart = currentEnd;
-            }
-
-            var groupedSeries = groupedSeriesDict.Values.OrderBy(p => p.Timestamp).ToList();
-
-            var anomalyResults = _spikeDetectionService.DetectSpikes(
-                groupedSeries,
-                job.Confidence ?? 95,
-                job.WindowSize ?? 30);
-                
-            var lightweightResult = anomalyResults.Select(r => new 
-            {
-                Timestamp = r.Timestamp,
-                Value = r.Value,
-                IsSpike = r.IsSpike,
-                PValue = r.PValue
-            }).ToList();
-
-            var options = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
-            job.ResultJson = JsonSerializer.Serialize(lightweightResult, options);
-            job.Status = "Completed";
-            job.Progress = 100;
-            job.CompletedAt = DateTime.UtcNow;
-            await _internalDb.SaveChangesAsync();
+            await CompleteJobAsync(job, response);
         }
         catch (Exception ex)
         {
-            job.Status = "Failed";
-            job.ErrorMessage = ex.Message;
-            await _internalDb.SaveChangesAsync();
-            throw; // Re-throw for Hangfire to handle retries
+            _logger.LogError(ex, "Analysis job {JobId} failed", jobId);
+            await FailJobAsync(job, ex);
         }
     }
-    public async Task ProcessLegacyJobAsync(string jobId, string sourceId, string provider, string connectionString)
+
+    private async Task SetRunningAsync(AnalysisJob job)
     {
-        var job = await _internalDb.AnalysisJobs.FindAsync(jobId);
-        if (job == null) return;
+        job.Status = "Running";
+        job.Progress = 0;
+        await _internalDb.SaveChangesAsync();
+    }
 
-        try
+    private IProgress<int> CreateProgressReporter(string jobId)
+    {
+        var lastSavedProgress = -1;
+        var lastSaveTicks = 0L;
+
+        return new Progress<int>(percent =>
         {
-            job.Status = "Running";
-            job.Progress = 50; // Cannot easily track progress for single large EF queries
-            await _internalDb.SaveChangesAsync();
+            var clamped = Math.Clamp(percent, 0, 99);
+            var now = Environment.TickCount64;
+            if (clamped <= lastSavedProgress && now - lastSaveTicks < _progressSaveIntervalMs)
+                return;
 
-            var dataSource = _dataSourceStrategies.FirstOrDefault(d => d.Id.Equals(sourceId, StringComparison.OrdinalIgnoreCase));
-            if (dataSource == null) throw new Exception($"DataSource {sourceId} not found");
+            lastSavedProgress = clamped;
+            lastSaveTicks = now;
 
-            int? channelId = null;
-            if (!string.IsNullOrEmpty(job.Table) && int.TryParse(job.Table, out var cid))
+            try
             {
-                channelId = cid;
+                using var scope = _scopeFactory.CreateScope();
+                var db = scope.ServiceProvider.GetRequiredService<InternalDbContext>();
+                var tracked = db.AnalysisJobs.Find(jobId);
+                if (tracked == null || tracked.Status != "Running")
+                    return;
+
+                tracked.Progress = clamped;
+                db.SaveChanges();
             }
-
-            var request = new API.DTOs.DetectSpikesRequest
+            catch (Exception ex)
             {
-                Database = job.Database,
-                SourceId = sourceId,
-                ChannelId = channelId,
-                Granularity = job.Granularity,
-                CustomMinutes = job.CustomMinutes,
-                Confidence = job.Confidence ?? 95.0,
-                WindowSize = job.WindowSize ?? 30,
-                StartDate = job.StartDate,
-                EndDate = job.EndDate
-            };
-
-            var progress = new SyncProgress(percent => 
-            {
-                job.Progress = percent;
-                job.Status = "Running";
-                _internalDb.SaveChanges();
-            });
-
-            var response = await dataSource.ExecuteAnalysisAsync(request, _spikeDetectionService, connectionString, provider, progress);
-
-            var options = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
-            job.ResultJson = JsonSerializer.Serialize(response, options);
-            job.Status = "Completed";
-            job.Progress = 100;
-            job.CompletedAt = DateTime.UtcNow;
-            await _internalDb.SaveChangesAsync();
-        }
-        catch (Exception ex)
-        {
-            job.Status = "Failed";
-            job.ErrorMessage = ex.Message;
-            await _internalDb.SaveChangesAsync();
-            throw; // Re-throw for Hangfire
-        }
+                _logger.LogWarning(ex, "Failed to persist progress for job {JobId}", jobId);
+            }
+        });
     }
 
-    private class SyncProgress : IProgress<int>
+    private async Task CompleteJobAsync(AnalysisJob job, API.DTOs.SpikeResponse response)
     {
-        private readonly Action<int> _action;
-        public SyncProgress(Action<int> action) => _action = action;
-        public void Report(int value) => _action(value);
+        await _resultService.SaveAsync(job, response);
+        job.Status = "Completed";
+        job.Progress = 100;
+        job.CompletedAt = DateTime.UtcNow;
+        await _internalDb.SaveChangesAsync();
     }
+
+    private async Task FailJobAsync(AnalysisJob job, Exception ex)
+    {
+        _resultService.DeleteResultFiles(job);
+        job.ResultFilePath = null;
+        job.SeriesPointCount = 0;
+        job.Status = "Failed";
+        job.ErrorMessage = Truncate(ex.Message, 2000);
+        job.CompletedAt = DateTime.UtcNow;
+        await _internalDb.SaveChangesAsync();
+    }
+
+    private static string Truncate(string value, int maxLength) =>
+        value.Length <= maxLength ? value : value[..maxLength];
 }
