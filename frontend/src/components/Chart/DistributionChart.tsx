@@ -1,9 +1,7 @@
 import React from 'react';
-import { Card, Table, Typography } from 'antd';
+import { Table } from 'antd';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 import type { DistributionItemDto } from '../../types/analytics.types';
-
-const { Title } = Typography;
 
 interface Props {
   data: DistributionItemDto[];
@@ -56,12 +54,12 @@ export const DistributionChart: React.FC<Props> = ({ data, title }) => {
   ];
 
   return (
-    <Card 
-      title={<Title level={5} style={{ margin: 0, color: '#0f172a' }}>{title}</Title>} 
-      bordered={false}
-      className="dashboard-card"
-      style={{ height: '100%', padding: 0 }}
-    >
+    <div className="dashboard-block" style={{ marginBottom: 24 }}>
+      {title ? (
+        <div style={{ fontSize: 15, fontWeight: 800, color: '#1A2332', marginBottom: 24 }}>
+          {title}
+        </div>
+      ) : null}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '24px' }}>
         {/* Диаграмма */}
         <div style={{ flex: '1 1 300px', minWidth: 300, height: 350 }}>
@@ -106,6 +104,6 @@ export const DistributionChart: React.FC<Props> = ({ data, title }) => {
           />
         </div>
       </div>
-    </Card>
+    </div>
   );
 };

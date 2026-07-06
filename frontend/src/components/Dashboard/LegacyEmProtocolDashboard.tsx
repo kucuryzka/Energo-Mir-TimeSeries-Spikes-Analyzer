@@ -378,12 +378,11 @@ export const LegacyEmProtocolDashboard: React.FC<{ database: string }> = ({ data
                       : distributions[category];
 
                     return (
-                      <div key={category} className="dashboard-block" style={{ marginBottom: 24 }}>
-                        <DistributionChart
-                          data={distData}
-                          title={`Распределение по: ${isEventCode ? 'Код события' : category}`}
-                        />
-                      </div>
+                      <DistributionChart
+                        key={category}
+                        data={distData}
+                        title={`Распределение по: ${isEventCode ? 'Код события' : category}`}
+                      />
                     );
                   })}
                 </>

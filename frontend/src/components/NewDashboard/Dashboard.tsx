@@ -254,16 +254,10 @@ export const Dashboard: React.FC = () => {
               <Title level={4} style={{ marginTop: 24, marginBottom: 16 }}>Распределение</Title>
               <div className="distributions-grid">
                 {objectDistribution.length > 0 && (
-                  <div className="distribution-card dashboard-card">
-                    <Title level={5} className="distribution-title">По объектам / каналам</Title>
-                    <DistributionChart data={objectDistribution} title="" />
-                  </div>
+                  <DistributionChart data={objectDistribution} title="По объектам / каналам" />
                 )}
                 {Object.entries(distributions).map(([category, items]) => (
-                  <div key={category} className="distribution-card dashboard-card">
-                    <Title level={5} className="distribution-title">{category}</Title>
-                    <DistributionChart data={items} title="" />
-                  </div>
+                  <DistributionChart key={category} data={items} title={category} />
                 ))}
               </div>
             </div>

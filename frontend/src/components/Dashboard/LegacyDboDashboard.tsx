@@ -333,20 +333,17 @@ export const LegacyDboDashboard: React.FC<{ database: string }> = ({ database })
               distributionCharts={
                 <>
                   {objectDistribution.length > 0 && (
-                    <div className="dashboard-block" style={{ marginBottom: 24 }}>
-                      <DistributionChart
-                        data={objectDistribution}
-                        title="Распределение по объектам"
-                      />
-                    </div>
+                    <DistributionChart
+                      data={objectDistribution}
+                      title="Распределение по объектам"
+                    />
                   )}
                   {Object.keys(distributions).map(category => (
-                    <div key={category} className="dashboard-block" style={{ marginBottom: 24 }}>
-                      <DistributionChart
-                        data={distributions[category]}
-                        title={`Распределение по: ${category === 'EventCode' ? 'Код события (EventCode)' : category}`}
-                      />
-                    </div>
+                    <DistributionChart
+                      key={category}
+                      data={distributions[category]}
+                      title={`Распределение по: ${category === 'EventCode' ? 'Код события (EventCode)' : category}`}
+                    />
                   ))}
                 </>
               }
