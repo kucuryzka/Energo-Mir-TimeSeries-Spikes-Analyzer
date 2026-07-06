@@ -7,6 +7,7 @@ export interface AnalysisJobApi {
     status: string;
     progress?: number;
     errorMessage?: string;
+    hasResult?: boolean;
     hasPartialResult?: boolean;
   }>;
   getJobResult: (jobId: string) => Promise<SpikeResponse>;
@@ -45,6 +46,12 @@ export async function pollAnalysisJob(
     }
 
     if (status.status === 'Completed') {
+      if (status.hasResult === false) {
+        throw new Error(
+          status.errorMessage
+            || 'Результат анализа недоступен. Возможно, сервер был перезапущен — запустите анализ заново.',
+        );
+      }
       return api.getJobResult(jobId);
     }
 
