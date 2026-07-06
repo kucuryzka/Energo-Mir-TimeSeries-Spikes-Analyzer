@@ -45,7 +45,6 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({ db, schema, ta
   const [confidence, setConfidence] = useState<number>(95);
   const [windowSize, setWindowSize] = useState<number>(30);
 
-  const [minMaxDates, setMinMaxDates] = useState<[string, string] | null>(null);
   const [tablePreview, setTablePreview] = useState<TablePreviewData | null>(null);
   const [loadingPreview, setLoadingPreview] = useState(true);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -62,12 +61,6 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({ db, schema, ta
         const preview = await genericAnalysisApi.getTablePreview(db, schema, table, timeColumn);
         if (!mounted) return;
         setTablePreview(preview);
-        if (preview?.minDate && preview?.maxDate) {
-          setMinMaxDates([preview.minDate, preview.maxDate]);
-          const end = dayjs(preview.maxDate);
-          const start = end.subtract(7, 'day').startOf('day');
-          setDateRange([start.toISOString(), end.toISOString()]);
-        }
       } catch (e) {
         console.error('Failed to fetch table preview', e);
         if (mounted) setTablePreview(null);
@@ -233,10 +226,6 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({ db, schema, ta
                 { label: 'Последние 3 года', value: [dayjs().subtract(3, 'year').startOf('day'), dayjs().endOf('day')] },
               ]}
               value={[dayjs(dateRange[0]), dayjs(dateRange[1])]}
-              disabledDate={(current) => {
-                if (!minMaxDates) return false;
-                return current && (current < dayjs(minMaxDates[0]).startOf('day') || current > dayjs(minMaxDates[1]).endOf('day'));
-              }}
               onChange={(dates) => {
                 if (dates && dates[0] && dates[1]) {
                   setDateRange([dates[0].toISOString(), dates[1].toISOString()]);

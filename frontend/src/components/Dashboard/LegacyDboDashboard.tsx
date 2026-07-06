@@ -66,11 +66,6 @@ export const LegacyDboDashboard: React.FC<{ database: string }> = ({ database })
         const preview = await analyticsApi.dbo.getTablePreview(database);
         if (!mounted) return;
         setTablePreview(preview);
-        if (preview?.minDate && preview?.maxDate) {
-          const end = dayjs(preview.maxDate);
-          const start = end.subtract(7, 'day').startOf('day');
-          setDateRange([start.toISOString(), end.toISOString()]);
-        }
       } catch (e) {
         console.error('Failed to load DBO preview', e);
         if (mounted) setTablePreview(null);

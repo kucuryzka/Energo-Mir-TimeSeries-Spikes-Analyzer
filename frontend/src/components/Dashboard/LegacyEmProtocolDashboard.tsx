@@ -87,11 +87,6 @@ export const LegacyEmProtocolDashboard: React.FC<{ database: string }> = ({ data
         const preview = await analyticsApi.emProtocol.getTablePreview(database);
         if (!mounted) return;
         setTablePreview(preview);
-        if (preview?.minDate && preview?.maxDate) {
-          const end = dayjs(preview.maxDate);
-          const start = end.subtract(7, 'day').startOf('day');
-          setDateRange([start.toISOString(), end.toISOString()]);
-        }
       } catch (e) {
         console.error('Failed to load EmProtocol preview', e);
         if (mounted) setTablePreview(null);

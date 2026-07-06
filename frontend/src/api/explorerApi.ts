@@ -45,11 +45,6 @@ export const genericAnalysisApi = {
     apiCache.set('/GenericAnalysis/point-details', params, undefined, res.data);
     return res.data;
   },
-  getTimeRange: async (database: string, schema: string, table: string, timeColumn: string) => {
-    const params = { database, schema, table, timeColumn };
-    const res = await apiClient.get('/GenericAnalysis/time-range', { params });
-    return res.data;
-  },
   getTablePreview: async (
     database: string,
     schema: string,

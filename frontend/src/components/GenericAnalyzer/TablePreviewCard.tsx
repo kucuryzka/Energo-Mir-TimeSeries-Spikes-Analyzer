@@ -1,15 +1,12 @@
 import React, { useMemo } from 'react';
-import { Table, Tabs, Typography, Spin, Button, Space } from 'antd';
+import { Table, Typography, Spin, Button } from 'antd';
 import dayjs from 'dayjs';
 
 const { Text } = Typography;
 
 export interface TablePreviewData {
-  minDate?: string;
-  maxDate?: string;
   approximateRowCount?: number | null;
-  earliestRows: Record<string, unknown>[];
-  latestRows: Record<string, unknown>[];
+  sampleRows: Record<string, unknown>[];
 }
 
 export interface TablePreviewContentProps {
@@ -42,20 +39,17 @@ function formatCellValue(value: unknown): string {
   return String(value);
 }
 
-function PreviewTable({
-  rows,
+export const TablePreviewContent: React.FC<TablePreviewContentProps> = ({
+  preview,
+  loading,
   timeColumn,
-  onPickDate,
-  pickLabel,
-}: {
-  rows: Record<string, unknown>[];
-  timeColumn: string;
-  onPickDate?: (iso: string) => void;
-  pickLabel: string;
-}) {
+  tableLabel,
+  onUseAsPeriodStart,
+  onUseAsPeriodEnd,
+}) => {
   const columns = useMemo(() => {
-    if (rows.length === 0) return [];
-    return Object.keys(rows[0]).map(key => ({
+    if (!preview?.sampleRows.length) return [];
+    return Object.keys(preview.sampleRows[0]).map(key => ({
       title: key,
       dataIndex: key,
       key,
@@ -69,58 +63,8 @@ function PreviewTable({
         );
       },
     }));
-  }, [rows, timeColumn]);
+  }, [preview, timeColumn]);
 
-  if (rows.length === 0) {
-    return <Text type="secondary">Нет строк для отображения</Text>;
-  }
-
-  return (
-    <div style={{ width: '100%', maxWidth: '100%', overflowX: 'auto' }}>
-      <Table
-        dataSource={rows.map((row, idx) => ({ ...row, _key: idx }))}
-        columns={[
-          ...columns,
-          ...(onPickDate
-            ? [{
-                title: '',
-                key: '_action',
-                width: 120,
-                fixed: 'right' as const,
-                render: (_: unknown, record: Record<string, unknown>) => {
-                  const timeKey = findTimeColumnKey(record, timeColumn);
-                  if (!timeKey || record[timeKey] == null) return null;
-                  return (
-                    <Button
-                      type="link"
-                      size="small"
-                      onClick={() => onPickDate(dayjs(String(record[timeKey])).toISOString())}
-                    >
-                      {pickLabel}
-                    </Button>
-                  );
-                },
-              }]
-            : []),
-        ]}
-        rowKey="_key"
-        size="small"
-        pagination={false}
-        scroll={{ x: 'max-content' }}
-        bordered
-      />
-    </div>
-  );
-}
-
-export const TablePreviewContent: React.FC<TablePreviewContentProps> = ({
-  preview,
-  loading,
-  timeColumn,
-  tableLabel,
-  onUseAsPeriodStart,
-  onUseAsPeriodEnd,
-}) => {
   if (loading) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', padding: 24 }}>
@@ -133,6 +77,8 @@ export const TablePreviewContent: React.FC<TablePreviewContentProps> = ({
     return <Text type="secondary">Не удалось загрузить образец</Text>;
   }
 
+  const showPickActions = onUseAsPeriodStart || onUseAsPeriodEnd;
+
   return (
     <div style={{ width: '100%', minWidth: 0, maxWidth: '100%' }}>
       {tableLabel && (
@@ -140,48 +86,55 @@ export const TablePreviewContent: React.FC<TablePreviewContentProps> = ({
           {tableLabel} · колонка {timeColumn}
         </Text>
       )}
-      <Space wrap style={{ marginBottom: 12 }}>
-        {preview.minDate && preview.maxDate && (
-          <Text>
-            Период:{' '}
-            <Text strong>
-              {dayjs(preview.minDate).format('DD.MM.YYYY HH:mm')} — {dayjs(preview.maxDate).format('DD.MM.YYYY HH:mm')}
-            </Text>
-          </Text>
-        )}
-        <Text type="secondary">
-          Записей (оценка): <Text strong>{formatRowCount(preview.approximateRowCount)}</Text>
-        </Text>
-      </Space>
-      <Tabs
-        size="small"
-        items={[
-          {
-            key: 'earliest',
-            label: 'Самые ранние',
-            children: (
-              <PreviewTable
-                rows={preview.earliestRows}
-                timeColumn={timeColumn}
-                onPickDate={onUseAsPeriodStart}
-                pickLabel="С начала"
-              />
-            ),
-          },
-          {
-            key: 'latest',
-            label: 'Самые поздние',
-            children: (
-              <PreviewTable
-                rows={preview.latestRows}
-                timeColumn={timeColumn}
-                onPickDate={onUseAsPeriodEnd}
-                pickLabel="До даты"
-              />
-            ),
-          },
-        ]}
-      />
+      <Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
+        Записей (оценка): <Text strong>{formatRowCount(preview.approximateRowCount)}</Text>
+        {' · '}
+        Показано строк: <Text strong>{preview.sampleRows.length}</Text>
+      </Text>
+      {preview.sampleRows.length === 0 ? (
+        <Text type="secondary">Нет строк для отображения</Text>
+      ) : (
+        <div style={{ width: '100%', maxWidth: '100%', overflowX: 'auto' }}>
+          <Table
+            dataSource={preview.sampleRows.map((row, idx) => ({ ...row, _key: idx }))}
+            columns={[
+              ...columns,
+              ...(showPickActions
+                ? [{
+                    title: '',
+                    key: '_action',
+                    width: 140,
+                    fixed: 'right' as const,
+                    render: (_: unknown, record: Record<string, unknown>) => {
+                      const timeKey = findTimeColumnKey(record, timeColumn);
+                      if (!timeKey || record[timeKey] == null) return null;
+                      const iso = dayjs(String(record[timeKey])).toISOString();
+                      return (
+                        <span>
+                          {onUseAsPeriodStart && (
+                            <Button type="link" size="small" onClick={() => onUseAsPeriodStart(iso)}>
+                              С начала
+                            </Button>
+                          )}
+                          {onUseAsPeriodEnd && (
+                            <Button type="link" size="small" onClick={() => onUseAsPeriodEnd(iso)}>
+                              До даты
+                            </Button>
+                          )}
+                        </span>
+                      );
+                    },
+                  }]
+                : []),
+            ]}
+            rowKey="_key"
+            size="small"
+            pagination={false}
+            scroll={{ x: 'max-content' }}
+            bordered
+          />
+        </div>
+      )}
     </div>
   );
 };
