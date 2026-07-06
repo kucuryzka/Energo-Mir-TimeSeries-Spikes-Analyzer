@@ -3,6 +3,7 @@ import { Select, Slider, DatePicker, Button, InputNumber, Popover } from 'antd';
 import { SearchOutlined, SettingOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import type { TimeGranularity, ChannelDto, DataSourceDto } from '../../types/analytics.types';
+import { AnalysisActionBar } from '../GenericAnalyzer/AnalysisActionBar';
 
 interface Props {
   sourceId: string;
@@ -24,6 +25,9 @@ interface Props {
   onSearchChannels: (search: string) => void;
   onAnalyze: () => void;
   loading: boolean;
+  previewOpen?: boolean;
+  onPreviewToggle?: () => void;
+  previewContent?: React.ReactNode;
 }
 
 export const ControlsPanel: React.FC<Props> = ({
@@ -44,6 +48,9 @@ export const ControlsPanel: React.FC<Props> = ({
   onSearchChannels,
   onAnalyze,
   loading,
+  previewOpen = false,
+  onPreviewToggle,
+  previewContent,
 }) => {
   return (
     <div style={{ width: '100%' }}>
@@ -182,26 +189,36 @@ export const ControlsPanel: React.FC<Props> = ({
           </Popover>
         </div>
         
-        <div style={{ display: 'flex', alignItems: 'flex-end', flex: '1 1 100%', marginTop: '12px' }}>
-          <Button
-            type="primary"
-            onClick={onAnalyze}
-            loading={loading}
-            size="large"
-            icon={<SearchOutlined />}
-            style={{
-              width: '100%',
-              background: 'linear-gradient(135deg, #2a5298 0%, #1a3a6b 100%)',
-              border: 'none',
-              borderRadius: 8,
-              height: 48,
-              fontSize: 16,
-              fontWeight: 600,
-              boxShadow: '0 4px 12px rgba(42, 82, 152, 0.3)',
-            }}
-          >
-            {loading ? 'Анализируем данные...' : 'Анализировать'}
-          </Button>
+        <div style={{ display: 'flex', alignItems: 'flex-end', flex: '1 1 100%', marginTop: '12px', minWidth: 0, width: '100%' }}>
+          {previewContent && onPreviewToggle ? (
+            <AnalysisActionBar
+              onAnalyze={onAnalyze}
+              loading={loading}
+              previewOpen={previewOpen}
+              onPreviewToggle={onPreviewToggle}
+              previewContent={previewContent}
+            />
+          ) : (
+            <Button
+              type="primary"
+              onClick={onAnalyze}
+              loading={loading}
+              size="large"
+              icon={<SearchOutlined />}
+              style={{
+                width: '100%',
+                background: 'linear-gradient(135deg, #2a5298 0%, #1a3a6b 100%)',
+                border: 'none',
+                borderRadius: 8,
+                height: 48,
+                fontSize: 16,
+                fontWeight: 600,
+                boxShadow: '0 4px 12px rgba(42, 82, 152, 0.3)',
+              }}
+            >
+              {loading ? 'Анализируем данные...' : 'Анализировать'}
+            </Button>
+          )}
         </div>
       </div>
     </div>

@@ -8,8 +8,11 @@ import { SpikeTable } from '../Stats/SpikeTable';
 import { analyticsApi } from '../../api/analyticsApi';
 
 import { enrichSpikeData, getSpikesOnly, getStatistics } from '../../utils/spikeUtils';
-import type { TimeGranularity, ChannelDto, DataSourceDto, DistributionItemDto, SpikePoint } from '../../types/analytics.types';
+import type { TimeGranularity, ChannelDto, DataSourceDto, DistributionItemDto, SpikePoint, ChannelContributionDto } from '../../types/analytics.types';
 import dayjs from 'dayjs';
+import { formatUtcDateTime } from '../../utils/dateTimeUtils';
+import { confirmHeavyAnalysis } from '../../utils/granularityWarning';
+import { TablePreviewContent, type TablePreviewData } from '../GenericAnalyzer/TablePreviewCard';
 import { Button, Space } from 'antd';
 import { DashboardOutlined, HistoryOutlined } from '@ant-design/icons';
 import { API_BASE_URL } from '../../api/index';
@@ -43,23 +46,66 @@ export const LegacyDboDashboard: React.FC<{ database: string }> = ({ database })
 
   const [selectedPoint, setSelectedPoint] = useState<SpikePoint | null>(null);
   const [pointDetails, setPointDetails] = useState<any[]>([]);
+  const [pointChannels, setPointChannels] = useState<ChannelContributionDto[]>([]);
   const [loadingDetails, setLoadingDetails] = useState(false);
 
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyList, setHistoryList] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [tablePreview, setTablePreview] = useState<TablePreviewData | null>(null);
+  const [loadingPreview, setLoadingPreview] = useState(true);
+  const [previewOpen, setPreviewOpen] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    const loadPreview = async () => {
+      setLoadingPreview(true);
+      try {
+        const preview = await analyticsApi.dbo.getTablePreview(database);
+        if (!mounted) return;
+        setTablePreview(preview);
+        if (preview?.minDate && preview?.maxDate) {
+          const end = dayjs(preview.maxDate);
+          const start = end.subtract(7, 'day').startOf('day');
+          setDateRange([start.toISOString(), end.toISOString()]);
+        }
+      } catch (e) {
+        console.error('Failed to load DBO preview', e);
+        if (mounted) setTablePreview(null);
+      } finally {
+        if (mounted) setLoadingPreview(false);
+      }
+    };
+    if (database) loadPreview();
+    return () => { mounted = false; };
+  }, [database]);
 
   useEffect(() => {
     if (selectedPoint) {
       setLoadingDetails(true);
-      analyticsApi.dbo.getPointDetails(
-        database,
-        selectedPoint.timestamp,
-        granularity,
-        granularity === 'Custom' ? customMinutes ?? undefined : undefined,
-        channelId ?? undefined
-      ).then(data => {
-        setPointDetails(data);
+      setPointChannels([]);
+      Promise.all([
+        analyticsApi.dbo.getPointDetails(
+          database,
+          selectedPoint.timestamp,
+          granularity,
+          granularity === 'Custom' ? customMinutes ?? undefined : undefined,
+          channelId ?? undefined
+        ),
+        analyticsApi.dbo.getPointChannels(
+          database,
+          selectedPoint.timestamp,
+          granularity,
+          granularity === 'Custom' ? customMinutes ?? undefined : undefined,
+          channelId ?? undefined
+        )
+      ]).then(([details, breakdown]) => {
+        setPointDetails(details);
+        const nameById = new Map(channels.map(c => [c.id, c.name]));
+        setPointChannels(breakdown.map(c => ({
+          ...c,
+          channelName: c.channelName || nameById.get(c.channelId) || `Объект ${c.channelId}`
+        })));
       }).catch(err => {
         console.error(err);
       }).finally(() => {
@@ -67,10 +113,19 @@ export const LegacyDboDashboard: React.FC<{ database: string }> = ({ database })
       });
     } else {
       setPointDetails([]);
+      setPointChannels([]);
     }
-  }, [selectedPoint, granularity, customMinutes, channelId]);
+  }, [selectedPoint, granularity, customMinutes, channelId, database]);
 
   const fetchData = async () => {
+    const confirmed = await confirmHeavyAnalysis(
+      granularity,
+      dateRange[0],
+      dateRange[1],
+      granularity === 'Custom' ? customMinutes : null,
+    );
+    if (!confirmed) return;
+
     setLoading(true);
     setError(null);
     setData(null);
@@ -167,24 +222,13 @@ export const LegacyDboDashboard: React.FC<{ database: string }> = ({ database })
   const stats = data ? getStatistics(data.series) : null;
 
   const objectDistribution = React.useMemo(() => {
-    if (!data || !data.series) return [];
-    
-    const objCounts: Record<string, number> = {};
-    data.series.forEach((point: any) => {
-      if (point.channelBreakdown) {
-        point.channelBreakdown.forEach((cb: any) => {
-          const match = cb.channelName.match(/^(.*?)\s*\((.*?)\)$/);
-          const source = match ? match[1].trim() : cb.channelName;
-          objCounts[source] = (objCounts[source] || 0) + cb.count;
-        });
-      }
-    });
-
-    return Object.entries(objCounts).map(([category, count]) => ({
-      category,
-      count
-    })).sort((a, b) => b.count - a.count);
-  }, [data]);
+    if (!data?.distribution?.length) return [];
+    const nameById = new Map(channels.map(c => [c.id, c.name]));
+    return data.distribution.map((item: ChannelContributionDto) => ({
+      category: item.channelName || nameById.get(item.channelId) || `Объект ${item.channelId}`,
+      count: item.count
+    })).sort((a: { count: number }, b: { count: number }) => b.count - a.count);
+  }, [data, channels]);
 
   const antIcon = <LoadingOutlined style={{ fontSize: 32, color: '#2a5298' }} spin />;
 
@@ -215,6 +259,18 @@ export const LegacyDboDashboard: React.FC<{ database: string }> = ({ database })
             onSearchChannels={setChannelSearch}
             onAnalyze={fetchData}
             loading={loading}
+            previewOpen={previewOpen}
+            onPreviewToggle={() => setPreviewOpen(v => !v)}
+            previewContent={
+              <TablePreviewContent
+                preview={tablePreview}
+                loading={loadingPreview}
+                timeColumn="TIME_INSERT"
+                tableLabel="dbo.METERINGS"
+                onUseAsPeriodStart={(iso) => setDateRange(([_, end]) => [iso, end])}
+                onUseAsPeriodEnd={(iso) => setDateRange(([start]) => [start, iso])}
+              />
+            }
           />
         </div>
 
@@ -400,7 +456,7 @@ export const LegacyDboDashboard: React.FC<{ database: string }> = ({ database })
                     <Table
                       dataSource={
                         Object.entries(
-                          (selectedPoint.channelBreakdown || []).reduce((acc, curr) => {
+                          pointChannels.reduce((acc, curr) => {
                             const source = curr.channelName;
                             acc[source] = (acc[source] || 0) + curr.count;
                             return acc;
@@ -409,6 +465,7 @@ export const LegacyDboDashboard: React.FC<{ database: string }> = ({ database })
                       }
                       rowKey="name"
                       size="small"
+                      loading={loadingDetails}
                       pagination={{ pageSize: 10, showSizeChanger: true }}
                       columns={[
                         { title: 'Источник', dataIndex: 'name', key: 'name' },
@@ -502,6 +559,12 @@ export const LegacyDboDashboard: React.FC<{ database: string }> = ({ database })
                       <Text strong>{dayjs(job.startDate).format('DD.MM.YY')} - {dayjs(job.endDate).format('DD.MM.YY')}</Text>
                       <br/>
                       <Text type="secondary">Канал: {job.channelId || 'Все'}</Text>
+                      <br/>
+                      <Text type="secondary">
+                        {(job.status === 'Completed' || job.status === 'Failed')
+                          ? `Выполнен: ${formatUtcDateTime(job.completedAt ?? job.createdAt)}`
+                          : `Запущен: ${formatUtcDateTime(job.createdAt)}`}
+                      </Text>
                       <br/>
                       <Text type={job.status === 'Completed' ? 'success' : 'warning'}>{job.status}</Text>
                     </div>

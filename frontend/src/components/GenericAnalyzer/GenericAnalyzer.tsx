@@ -1,11 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { Typography, Card, Space, Button, DatePicker, Select, InputNumber, Spin, message, Drawer, Table, Switch, Popconfirm } from 'antd';
-import { SearchOutlined, DashboardOutlined, HistoryOutlined, DeleteOutlined } from '@ant-design/icons';
+import { DashboardOutlined, HistoryOutlined, DeleteOutlined } from '@ant-design/icons';
 import { API_BASE_URL } from '../../api/index';
 import dayjs from 'dayjs';
+import { formatUtcDateTime } from '../../utils/dateTimeUtils';
+import { confirmHeavyAnalysis } from '../../utils/granularityWarning';
 import { SpikeChart } from '../Chart/SpikeChart';
 import { enrichSpikeData } from '../../utils/spikeUtils';
 import { genericAnalysisApi } from '../../api/explorerApi';
+import { TablePreviewContent, type TablePreviewData } from './TablePreviewCard';
+import { AnalysisActionBar } from './AnalysisActionBar';
 import type { TimeGranularity, SpikePoint } from '../../types/analytics.types';
 import { apiCache } from '../../store/apiCache';
 
@@ -38,33 +42,43 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({ db, schema, ta
   const [windowSize, setWindowSize] = useState<number>(30);
 
   const [minMaxDates, setMinMaxDates] = useState<[string, string] | null>(null);
+  const [tablePreview, setTablePreview] = useState<TablePreviewData | null>(null);
+  const [loadingPreview, setLoadingPreview] = useState(true);
+  const [previewOpen, setPreviewOpen] = useState(false);
   
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyList, setHistoryList] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
-  // Interval Forecasting on mount
   useEffect(() => {
     let mounted = true;
-    const fetchTimeRange = async () => {
+    const loadPreview = async () => {
+      setLoadingPreview(true);
       try {
-        const range = await genericAnalysisApi.getTimeRange(db, schema, table, timeColumn);
-        if (mounted && range && range.minDate && range.maxDate) {
-          setMinMaxDates([range.minDate, range.maxDate]);
-          // Default range to last 7 days of available data if valid
-          const end = dayjs(range.maxDate);
+        const preview = await genericAnalysisApi.getTablePreview(db, schema, table, timeColumn);
+        if (!mounted) return;
+        setTablePreview(preview);
+        if (preview?.minDate && preview?.maxDate) {
+          setMinMaxDates([preview.minDate, preview.maxDate]);
+          const end = dayjs(preview.maxDate);
           const start = end.subtract(7, 'day').startOf('day');
           setDateRange([start.toISOString(), end.toISOString()]);
         }
       } catch (e) {
-        console.error('Failed to fetch time range', e);
+        console.error('Failed to fetch table preview', e);
+        if (mounted) setTablePreview(null);
+      } finally {
+        if (mounted) setLoadingPreview(false);
       }
     };
-    fetchTimeRange();
+    loadPreview();
     return () => { mounted = false; };
   }, [db, schema, table, timeColumn]);
 
   const fetchData = async () => {
+    const confirmed = await confirmHeavyAnalysis(granularity, dateRange[0], dateRange[1], customMinutes);
+    if (!confirmed) return;
+
     setLoading(true);
     setData([]); // clear previous data
     try {
@@ -168,12 +182,6 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({ db, schema, ta
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <Title level={4}>Анализ: {schema}.{table} ({timeColumn})</Title>
       </div>
-      
-      {minMaxDates && (
-        <Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
-          Доступные данные: с {dayjs(minMaxDates[0]).format('DD.MM.YYYY HH:mm')} по {dayjs(minMaxDates[1]).format('DD.MM.YYYY HH:mm')}
-        </Text>
-      )}
 
       <Card style={{ marginBottom: 24, borderRadius: 12 }}>
         <Space wrap size="large">
@@ -237,28 +245,24 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({ db, schema, ta
             <Text type="secondary" style={{ display: 'block', marginBottom: 4 }}>Глубина (точек)</Text>
             <InputNumber value={windowSize} onChange={(val) => setWindowSize(Number(val) || 30)} min={5} max={1000} />
           </div>
-          <div style={{ alignSelf: 'flex-end', marginTop: 12 }}>
-            <Button 
-              type="primary" 
-              onClick={fetchData} 
-              loading={loading}
-              size="large"
-              icon={<SearchOutlined />}
-              style={{
-                background: 'linear-gradient(135deg, #2a5298 0%, #1a3a6b 100%)',
-                border: 'none',
-                borderRadius: 8,
-                height: 48,
-                padding: '0 32px',
-                fontSize: 16,
-                fontWeight: 600,
-                boxShadow: '0 4px 12px rgba(42, 82, 152, 0.3)',
-              }}
-            >
-              {loading ? 'Анализируем данные...' : 'Анализировать'}
-            </Button>
-          </div>
         </Space>
+        <AnalysisActionBar
+          onAnalyze={fetchData}
+          loading={loading}
+          previewOpen={previewOpen}
+          onPreviewToggle={() => setPreviewOpen(v => !v)}
+          style={{ marginTop: 16 }}
+          previewContent={
+            <TablePreviewContent
+              preview={tablePreview}
+              loading={loadingPreview}
+              timeColumn={timeColumn}
+              tableLabel={`${schema}.${table}`}
+              onUseAsPeriodStart={(iso) => setDateRange(([_, end]) => [iso, end])}
+              onUseAsPeriodEnd={(iso) => setDateRange(([start]) => [start, iso])}
+            />
+          }
+        />
       </Card>
 
       {loading ? (
@@ -379,7 +383,11 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({ db, schema, ta
                         {job.status} {job.status === 'Running' ? `(${job.progress}%)` : ''}
                       </Text>
                       <br/>
-                      <Text type="secondary" style={{ fontSize: 12 }}>Создано: {dayjs(job.createdAt).format('DD.MM HH:mm')}</Text>
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        {(job.status === 'Completed' || job.status === 'Failed')
+                          ? `Выполнен: ${formatUtcDateTime(job.completedAt ?? job.createdAt)}`
+                          : `Запущен: ${formatUtcDateTime(job.createdAt)}`}
+                      </Text>
                     </div>
                     <Popconfirm
                       title="Удалить этот результат?"

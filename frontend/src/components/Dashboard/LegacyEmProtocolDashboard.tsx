@@ -8,8 +8,11 @@ import { SpikeTable } from '../Stats/SpikeTable';
 import { analyticsApi } from '../../api/analyticsApi';
 
 import { enrichSpikeData, getSpikesOnly, getStatistics } from '../../utils/spikeUtils';
-import type { TimeGranularity, ChannelDto, DataSourceDto, DistributionItemDto, SpikePoint } from '../../types/analytics.types';
+import type { TimeGranularity, ChannelDto, DataSourceDto, DistributionItemDto, SpikePoint, ChannelContributionDto } from '../../types/analytics.types';
 import dayjs from 'dayjs';
+import { formatUtcDateTime } from '../../utils/dateTimeUtils';
+import { confirmHeavyAnalysis } from '../../utils/granularityWarning';
+import { TablePreviewContent, type TablePreviewData } from '../GenericAnalyzer/TablePreviewCard';
 import { Button, Space } from 'antd';
 import { DashboardOutlined, HistoryOutlined } from '@ant-design/icons';
 import { API_BASE_URL } from '../../api/index';
@@ -42,13 +45,72 @@ export const LegacyEmProtocolDashboard: React.FC<{ database: string }> = ({ data
   const [eventCodeMap, setEventCodeMap] = useState<Record<string, string>>({});
 
   const [selectedPoint, setSelectedPoint] = useState<SpikePoint | null>(null);
+  const [pointChannels, setPointChannels] = useState<ChannelContributionDto[]>([]);
+  const [loadingPointChannels, setLoadingPointChannels] = useState(false);
+
+  useEffect(() => {
+    if (!selectedPoint) {
+      setPointChannels([]);
+      return;
+    }
+    setLoadingPointChannels(true);
+    analyticsApi.emProtocol.getPointChannels(
+      database,
+      selectedPoint.timestamp,
+      granularity,
+      granularity === 'Custom' ? customMinutes ?? undefined : undefined,
+      channelId ?? undefined
+    ).then(breakdown => {
+      const meta = new Map(channels.map(c => [c.id, c]));
+      setPointChannels(breakdown.map(c => ({
+        ...c,
+        channelName: c.channelName || meta.get(c.channelId)?.name || `Канал ${c.channelId}`,
+        eventCode: (meta.get(c.channelId) as any)?.eventCode
+      })));
+    }).catch(console.error).finally(() => setLoadingPointChannels(false));
+  }, [selectedPoint, granularity, customMinutes, channelId, database, channels]);
 
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyList, setHistoryList] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [tablePreview, setTablePreview] = useState<TablePreviewData | null>(null);
+  const [loadingPreview, setLoadingPreview] = useState(true);
+  const [previewOpen, setPreviewOpen] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    const loadPreview = async () => {
+      setLoadingPreview(true);
+      try {
+        const preview = await analyticsApi.emProtocol.getTablePreview(database);
+        if (!mounted) return;
+        setTablePreview(preview);
+        if (preview?.minDate && preview?.maxDate) {
+          const end = dayjs(preview.maxDate);
+          const start = end.subtract(7, 'day').startOf('day');
+          setDateRange([start.toISOString(), end.toISOString()]);
+        }
+      } catch (e) {
+        console.error('Failed to load EmProtocol preview', e);
+        if (mounted) setTablePreview(null);
+      } finally {
+        if (mounted) setLoadingPreview(false);
+      }
+    };
+    if (database) loadPreview();
+    return () => { mounted = false; };
+  }, [database]);
 
   const fetchData = async () => {
     if (!sourceId) return;
+
+    const confirmed = await confirmHeavyAnalysis(
+      granularity,
+      dateRange[0],
+      dateRange[1],
+      granularity === 'Custom' ? customMinutes : null,
+    );
+    if (!confirmed) return;
     
     setLoading(true);
     setError(null);
@@ -236,6 +298,18 @@ export const LegacyEmProtocolDashboard: React.FC<{ database: string }> = ({ data
             onSearchChannels={setChannelSearch}
             onAnalyze={fetchData}
             loading={loading}
+            previewOpen={previewOpen}
+            onPreviewToggle={() => setPreviewOpen(v => !v)}
+            previewContent={
+              <TablePreviewContent
+                preview={tablePreview}
+                loading={loadingPreview}
+                timeColumn="InsertTime"
+                tableLabel="em_protocol.Records"
+                onUseAsPeriodStart={(iso) => setDateRange(([_, end]) => [iso, end])}
+                onUseAsPeriodEnd={(iso) => setDateRange(([start]) => [start, iso])}
+              />
+            }
           />
         </div>
 
@@ -411,8 +485,8 @@ export const LegacyEmProtocolDashboard: React.FC<{ database: string }> = ({ data
                     <Table
                       dataSource={
                         Object.entries(
-                          (selectedPoint.channelBreakdown || []).reduce((acc, curr) => {
-                            const source = curr.channelName;
+                          pointChannels.reduce((acc, curr) => {
+                            const source = curr.channelName || `Канал ${curr.channelId}`;
                             acc[source] = (acc[source] || 0) + curr.count;
                             return acc;
                           }, {} as Record<string, number>)
@@ -420,6 +494,7 @@ export const LegacyEmProtocolDashboard: React.FC<{ database: string }> = ({ data
                       }
                       rowKey="name"
                       size="small"
+                      loading={loadingPointChannels}
                       pagination={{ pageSize: 10, showSizeChanger: true }}
                       columns={[
                         { title: 'Источник', dataIndex: 'name', key: 'name' },
@@ -442,7 +517,7 @@ export const LegacyEmProtocolDashboard: React.FC<{ database: string }> = ({ data
                     <Table
                       dataSource={
                         Object.entries(
-                          (selectedPoint.channelBreakdown || []).reduce((acc, curr) => {
+                          pointChannels.reduce((acc, curr) => {
                             const rawCode = curr.eventCode ? String(curr.eventCode) : 'Неизвестный код';
                             const code = eventCodeMap[rawCode] || rawCode;
                             acc[code] = (acc[code] || 0) + curr.count;
@@ -452,6 +527,7 @@ export const LegacyEmProtocolDashboard: React.FC<{ database: string }> = ({ data
                       }
                       rowKey="code"
                       size="small"
+                      loading={loadingPointChannels}
                       pagination={{ pageSize: 10, showSizeChanger: true }}
                       columns={[
                         { title: 'Код', dataIndex: 'code', key: 'code' },
@@ -528,6 +604,12 @@ export const LegacyEmProtocolDashboard: React.FC<{ database: string }> = ({ data
                       <Text strong>{dayjs(job.startDate).format('DD.MM.YY')} - {dayjs(job.endDate).format('DD.MM.YY')}</Text>
                       <br/>
                       <Text type="secondary">Канал: {job.channelId || 'Все'}</Text>
+                      <br/>
+                      <Text type="secondary">
+                        {(job.status === 'Completed' || job.status === 'Failed')
+                          ? `Выполнен: ${formatUtcDateTime(job.completedAt ?? job.createdAt)}`
+                          : `Запущен: ${formatUtcDateTime(job.createdAt)}`}
+                      </Text>
                       <br/>
                       <Text type={job.status === 'Completed' ? 'success' : 'warning'}>{job.status}</Text>
                     </div>

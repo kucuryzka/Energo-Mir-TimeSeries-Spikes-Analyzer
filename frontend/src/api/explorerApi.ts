@@ -48,6 +48,17 @@ export const genericAnalysisApi = {
     const res = await apiClient.get('/GenericAnalysis/time-range', { params });
     return res.data;
   },
+  getTablePreview: async (
+    database: string,
+    schema: string,
+    table: string,
+    timeColumn: string,
+    limit = 15,
+  ) => {
+    const params = { database, schema, table, timeColumn, limit };
+    const res = await apiClient.get('/GenericAnalysis/preview', { params });
+    return res.data;
+  },
   enqueueAnalysis: async (data: any) => {
     const res = await apiClient.post('/GenericAnalysis/enqueue', data);
     return res.data;

@@ -1,9 +1,28 @@
 import { apiClient } from './index';
-import type { DetectSpikesRequest, SpikeResponse, ChannelDto, DataSourceDto, DistributionItemDto } from '../types/analytics.types';
+import type { DetectSpikesRequest, SpikeResponse, ChannelDto, DataSourceDto, DistributionItemDto, ChannelContributionDto } from '../types/analytics.types';
 import { apiCache } from '../store/apiCache';
 
-// 👇 Переключатель: true = используем мок-данные, false = реальный бэкенд
 const USE_MOCK = false;
+
+async function pollJobResult(
+  getStatus: (jobId: string) => Promise<any>,
+  getResult: (jobId: string) => Promise<SpikeResponse>,
+  jobId: string,
+  onProgress?: (progress: number) => void
+): Promise<SpikeResponse> {
+  while (true) {
+    await new Promise(r => setTimeout(r, 2000));
+    const status = await getStatus(jobId);
+    if (onProgress) onProgress(status.progress ?? 0);
+
+    if (status.status === 'Completed') {
+      return getResult(jobId);
+    }
+    if (status.status === 'Failed') {
+      throw new Error(status.errorMessage || 'Analysis job failed');
+    }
+  }
+}
 
 export const analyticsApi = {
   getSources: async (): Promise<DataSourceDto[]> => {
@@ -25,18 +44,20 @@ export const analyticsApi = {
       });
       return response.data;
     },
-    detectSpikes: async (request: DetectSpikesRequest): Promise<SpikeResponse> => {
-      // Legacy synchronous call fallback if needed, but we now use enqueue.
-      const response = await apiClient.post<SpikeResponse>('/em-protocol/detect-spikes', request, {
-        headers: { 'Content-Type': 'application/json' }
-      });
-      return response.data;
-    },
     enqueueAnalysis: async (request: DetectSpikesRequest): Promise<{ jobId: string }> => {
       const response = await apiClient.post<{ jobId: string }>('/em-protocol/enqueue', request, {
         headers: { 'Content-Type': 'application/json' }
       });
       return response.data;
+    },
+    runAnalysis: async (request: DetectSpikesRequest, onProgress?: (progress: number) => void): Promise<SpikeResponse> => {
+      const { jobId } = await analyticsApi.emProtocol.enqueueAnalysis(request);
+      return pollJobResult(
+        analyticsApi.emProtocol.getJobStatus,
+        analyticsApi.emProtocol.getJobResult,
+        jobId,
+        onProgress
+      );
     },
     getJobStatus: async (jobId: string): Promise<any> => {
       const response = await apiClient.get<any>(`/em-protocol/status/${jobId}`);
@@ -52,21 +73,39 @@ export const analyticsApi = {
     },
     deleteHistoryItem: async (jobId: string): Promise<void> => {
       await apiClient.delete(`/em-protocol/history/${jobId}`);
+    },
+    getTablePreview: async (database: string, limit = 15): Promise<any> => {
+      const response = await apiClient.get('/em-protocol/preview', { params: { database, limit } });
+      return response.data;
+    },
+    getPointChannels: async (
+      database: string,
+      timestamp: string,
+      granularity: string,
+      customMinutes?: number,
+      channelId?: number
+    ): Promise<ChannelContributionDto[]> => {
+      const params = { database, timestamp, granularity, customMinutes, channelId };
+      const response = await apiClient.get<ChannelContributionDto[]>('/em-protocol/point-channels', { params });
+      return response.data;
     }
   },
 
   dbo: {
-    detectSpikes: async (request: DetectSpikesRequest): Promise<SpikeResponse> => {
-      const response = await apiClient.post<SpikeResponse>('/dbo/detect-spikes', request, {
-        headers: { 'Content-Type': 'application/json' }
-      });
-      return response.data;
-    },
     enqueueAnalysis: async (request: DetectSpikesRequest): Promise<{ jobId: string }> => {
       const response = await apiClient.post<{ jobId: string }>('/dbo/enqueue', request, {
         headers: { 'Content-Type': 'application/json' }
       });
       return response.data;
+    },
+    runAnalysis: async (request: DetectSpikesRequest, onProgress?: (progress: number) => void): Promise<SpikeResponse> => {
+      const { jobId } = await analyticsApi.dbo.enqueueAnalysis(request);
+      return pollJobResult(
+        analyticsApi.dbo.getJobStatus,
+        analyticsApi.dbo.getJobResult,
+        jobId,
+        onProgress
+      );
     },
     getJobStatus: async (jobId: string): Promise<any> => {
       const response = await apiClient.get<any>(`/dbo/status/${jobId}`);
@@ -89,12 +128,27 @@ export const analyticsApi = {
       });
       return response.data;
     },
+    getTablePreview: async (database: string, limit = 15): Promise<any> => {
+      const response = await apiClient.get('/dbo/preview', { params: { database, limit } });
+      return response.data;
+    },
     getPointDetails: async (database: string, timestamp: string, granularity: string, customMinutes?: number, channelId?: number): Promise<any[]> => {
       const params = { database, timestamp, granularity, customMinutes, channelId };
       const cached = apiCache.get('/dbo/point-details', params, undefined);
       if (cached) return cached;
       const response = await apiClient.get<any[]>('/dbo/point-details', { params });
       apiCache.set('/dbo/point-details', params, undefined, response.data);
+      return response.data;
+    },
+    getPointChannels: async (
+      database: string,
+      timestamp: string,
+      granularity: string,
+      customMinutes?: number,
+      channelId?: number
+    ): Promise<ChannelContributionDto[]> => {
+      const params = { database, timestamp, granularity, customMinutes, channelId };
+      const response = await apiClient.get<ChannelContributionDto[]>('/dbo/point-channels', { params });
       return response.data;
     }
   }
