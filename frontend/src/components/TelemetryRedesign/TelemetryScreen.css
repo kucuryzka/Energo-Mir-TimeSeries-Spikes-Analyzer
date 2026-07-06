@@ -21,7 +21,7 @@
 .shell { display:flex; gap:16px; height:100%; position:relative; z-index:1; }
 
 .sidebar { width:96px; flex:none; background:#fff; border-radius:24px; display:flex; flex-direction:column; align-items:center; padding:24px 0; gap:16px; box-shadow:0 10px 30px rgba(30,60,150,.08); }
-.logo { width:38px; height:38px; border-radius:12px; background:linear-gradient(135deg,#5b81ea,#2b47b8); display:flex; align-items:center; justify-content:center; color:#fff; font:800 16px 'Manrope',sans-serif; }
+.logo { width:38px; height:38px; border-radius:12px; background:linear-gradient(135deg,#5b81ea,#2b47b8); display:flex; align-items:center; justify-content:center; color:#fff; font:800 16px 'Manrope',sans-serif; overflow:hidden; }
 .nav-item { width:44px; height:44px; border-radius:14px; display:flex; align-items:center; justify-content:center; color:#9aa3b5; transition: background .15s, color .15s; }
 .nav-item.active { background:linear-gradient(135deg,#5b81ea,#2b47b8); box-shadow:0 8px 18px rgba(61,99,221,.4); color:#fff; }
 .nav-item:not(.active):hover { background:#f2f5fc; color:#5b6a99; }
@@ -63,6 +63,14 @@
 .filters-field { display:flex; flex-direction:column; gap:6px; }
 .filters-field label { font:600 11px 'Manrope',sans-serif; color:#9aa3b5; text-transform:uppercase; letter-spacing:.03em; }
 
+.period-picker.ant-picker {
+  background:#eef2fb; border:none; border-radius:999px; padding:10px 16px;
+  font:600 13px 'Manrope',sans-serif;
+}
+.period-picker.ant-picker .ant-picker-input input { font:600 13px 'Manrope',sans-serif; color:#2c3958; }
+.period-picker.ant-picker .ant-picker-separator,
+.period-picker.ant-picker .ant-picker-suffix { color:#2c3958; }
+
 .kpi-row { display:flex; gap:12px; flex-wrap:wrap; }
 .kpi { flex:1; min-width:130px; border-radius:18px; padding:16px 18px; display:flex; flex-direction:column; gap:10px; transition: transform .18s, box-shadow .18s; }
 .kpi:hover { transform: translateY(-3px); box-shadow: 0 14px 28px rgba(61,99,221,.16); }
@@ -86,6 +94,9 @@
 .legend-chip.crit { border:1px solid rgba(214,73,51,.32); background:rgba(214,73,51,.08); color:#8a2f20; }
 .legend-chip.warn { border:1px solid rgba(226,163,57,.4); background:rgba(226,163,57,.1); color:#8a6519; }
 .legend-chip.off { opacity:.4; }
+.line-legend { display:inline-flex; align-items:center; gap:12px; margin-left:4px; }
+.line-legend-item { display:inline-flex; align-items:center; gap:5px; font:500 11px 'Manrope',sans-serif; color:#b7bfd6; }
+.line-swatch { width:12px; height:0; border-top:2px dashed currentColor; display:inline-block; }
 .dot7 { width:7px; height:7px; border-radius:50%; }
 .switch-track { width:36px; height:20px; border-radius:999px; border:none; position:relative; padding:2px; cursor:pointer; transition: background .15s; }
 .switch-knob { display:block; width:16px; height:16px; border-radius:50%; background:#fff; transition: transform .15s; }

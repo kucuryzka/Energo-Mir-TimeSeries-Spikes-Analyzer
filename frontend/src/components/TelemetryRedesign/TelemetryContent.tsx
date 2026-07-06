@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dayjs from 'dayjs';
-import { Select, DatePicker, message, Drawer, Table, Tabs, Typography, Popconfirm, Button, Space, Spin } from 'antd';
-import { DeleteOutlined, HistoryOutlined } from '@ant-design/icons';
+import { Select, DatePicker, Slider, message, Drawer, Table, Tabs, Typography, Popconfirm, Button, Space, Spin } from 'antd';
+import { DeleteOutlined } from '@ant-design/icons';
 import { analyticsApi } from '../../api/analyticsApi';
 import { enrichSpikeData } from '../../utils/spikeUtils';
 import { exportSpikesToExcel } from '../../utils/exportUtils';
@@ -33,6 +33,7 @@ const GRANULARITY_LABEL: Record<'Hour' | 'Day' | 'Week', string> = {
 
 export const TelemetryContent: React.FC<TelemetryContentProps> = ({ database, activeTab, onActiveTabChange }) => {
   const [granularity, setGranularity] = useState<'Hour' | 'Day' | 'Week'>('Hour');
+  const [confidence, setConfidence] = useState(95);
   const [channelId, setChannelId] = useState<number | null>(null);
   const [channels, setChannels] = useState<ChannelDto[]>([]);
   const [channelSearch, setChannelSearch] = useState('');
@@ -147,7 +148,7 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({ database, ac
         channelId,
         granularity: granularity as TimeGranularity,
         customMinutes: null,
-        confidence: 95,
+        confidence,
         windowSize: 30,
         startDate: dateRange[0],
         endDate: dateRange[1],
@@ -304,6 +305,16 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({ database, ac
             <button type="button" className={`tab-btn ${activeTab === 'em' ? 'active' : ''}`} onClick={() => onActiveTabChange('em')}>EM Protocol</button>
           </div>
 
+          <RangePicker
+            className="period-picker"
+            value={[dayjs(dateRange[0]), dayjs(dateRange[1])]}
+            onChange={(dates) => {
+              if (dates && dates[0] && dates[1]) {
+                setDateRange([dates[0].toISOString(), dates[1].toISOString()]);
+              }
+            }}
+          />
+
           <div style={{ position: 'relative' }} ref={filtersRef}>
             <button type="button" className="filter-btn" onClick={() => setFiltersOpen(v => !v)}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
@@ -320,19 +331,6 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({ database, ac
             {filtersOpen && (
               <div className="filters-popover">
                 <div className="filters-field">
-                  <label>Детализация</label>
-                  <Select
-                    value={granularity}
-                    onChange={setGranularity}
-                    style={{ width: '100%' }}
-                    options={[
-                      { value: 'Hour', label: 'Почасово' },
-                      { value: 'Day', label: 'День' },
-                      { value: 'Week', label: 'Неделя' },
-                    ]}
-                  />
-                </div>
-                <div className="filters-field">
                   <label>Объект</label>
                   <Select
                     allowClear
@@ -347,25 +345,18 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({ database, ac
                   />
                 </div>
                 <div className="filters-field">
-                  <label>Период</label>
-                  <RangePicker
-                    style={{ width: '100%' }}
-                    value={[dayjs(dateRange[0]), dayjs(dateRange[1])]}
-                    onChange={(dates) => {
-                      if (dates && dates[0] && dates[1]) {
-                        setDateRange([dates[0].toISOString(), dates[1].toISOString()]);
-                      }
-                    }}
+                  <label>Чувствительность: {confidence}%</label>
+                  <Slider
+                    min={1}
+                    max={100}
+                    value={confidence}
+                    onChange={setConfidence}
+                    tooltip={{ formatter: (v) => `${v}%` }}
                   />
                 </div>
               </div>
             )}
           </div>
-
-          <button type="button" className="filter-btn" onClick={openHistory} title="История анализов">
-            <HistoryOutlined />
-            История
-          </button>
 
           <button type="button" className="btn-primary" onClick={fetchData} disabled={loading}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><circle cx="12" cy="12" r="9" /><path d="M10 8l6 4-6 4z" fill="currentColor" stroke="none" /></svg>

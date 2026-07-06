@@ -134,6 +134,10 @@ export const TelemetryChart: React.FC<TelemetryChartProps> = ({
           <button type="button" className={`legend-chip warn ${!showWarning ? 'off' : ''}`} onClick={onToggleWarning}>
             <span className="dot7" style={{ background: '#e2a339' }} />Предупреждение
           </button>
+          <span className="line-legend">
+            <span className="line-legend-item"><span className="line-swatch" style={{ borderTopColor: '#c3cadb' }} />Среднее</span>
+            <span className="line-legend-item"><span className="line-swatch" style={{ borderTopColor: '#e79b90' }} />Максимум</span>
+          </span>
           <button
             type="button"
             className="switch-track"
@@ -163,7 +167,7 @@ export const TelemetryChart: React.FC<TelemetryChartProps> = ({
             </filter>
           </defs>
 
-          <line x1="0" y1={yForValue(stats.avg)} x2={VIEW_W} y2={yForValue(stats.avg)} stroke="#d7dceb" strokeWidth="1" strokeDasharray="4 4" />
+          <line x1="0" y1={yForValue(stats.avg)} x2={VIEW_W} y2={yForValue(stats.avg)} stroke="#d7dceb" strokeWidth="1" strokeOpacity="0.6" strokeDasharray="4 4" />
           <line x1="0" y1={yForValue(stats.max)} x2={VIEW_W} y2={yForValue(stats.max)} stroke="#f0c9c2" strokeWidth="1" strokeDasharray="4 4" />
 
           {areaPath && <path d={areaPath} fill="url(#areaGrad)" stroke="none" />}

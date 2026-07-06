@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { Drawer, Badge } from 'antd';
-import { DashboardOutlined, ApiOutlined } from '@ant-design/icons';
+import { HistoryOutlined, DashboardOutlined, ApiOutlined } from '@ant-design/icons';
 import { DatabaseTreeSidebar } from '../Explorer/DatabaseTreeSidebar';
 import { GenericAnalyzer } from '../GenericAnalyzer/GenericAnalyzer';
 import { TelemetryContent, type TabKey } from './TelemetryContent';
 import { isMockMode } from '../../mocks/mockMode';
+import { useShellRail } from '../../context/ShellRailContext';
 import { useQueryTracker } from '../QueryTracker/QueryTracker';
 import { API_BASE_URL } from '../../api/index';
 import './TelemetryScreen.css';
@@ -26,6 +27,7 @@ export const TelemetryScreen: React.FC<TelemetryScreenProps> = ({ onLogout }) =>
   const [dbDrawerOpen, setDbDrawerOpen] = useState(false);
   const [genericConfig, setGenericConfig] = useState<GenericConfig | null>(null);
 
+  const { actions } = useShellRail();
   const { open: openQueryTracker, activeCount } = useQueryTracker();
 
   const handleSelectStandardSchema = (db: string, schema: string) => {
@@ -47,21 +49,25 @@ export const TelemetryScreen: React.FC<TelemetryScreenProps> = ({ onLogout }) =>
         <div className="blob2" />
         <div className="shell">
           <div className="sidebar">
-            <div className="logo">М</div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, marginTop: 6 }}>
-              <div
-                className={`nav-item ${!genericConfig ? 'active' : ''}`}
-                title="Дашборд"
-                onClick={() => setGenericConfig(null)}
-                style={{ cursor: 'pointer' }}
-              >
-                <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-                  <rect x="3" y="3" width="8" height="8" rx="2" /><rect x="13" y="3" width="8" height="8" rx="2" />
-                  <rect x="3" y="13" width="8" height="8" rx="2" /><rect x="13" y="13" width="8" height="8" rx="2" />
-                </svg>
-              </div>
-              <div className="nav-dot" />
+            <div className="logo" title="Дашборд" onClick={() => setGenericConfig(null)} style={{ cursor: 'pointer' }}>
+              <span
+                role="img"
+                aria-label="Logo"
+                style={{
+                  display: 'block',
+                  width: '70%',
+                  height: '70%',
+                  backgroundColor: '#fff',
+                  WebkitMaskImage: 'url(/favicon.png)',
+                  maskImage: 'url(/favicon.png)',
+                  WebkitMaskSize: 'contain',
+                  maskSize: 'contain',
+                  WebkitMaskRepeat: 'no-repeat',
+                  maskRepeat: 'no-repeat',
+                  WebkitMaskPosition: 'center',
+                  maskPosition: 'center',
+                }}
+              />
             </div>
 
             <div className="nav-item" title="Источники данных" onClick={() => setDbDrawerOpen(true)} style={{ cursor: 'pointer' }}>
@@ -74,6 +80,14 @@ export const TelemetryScreen: React.FC<TelemetryScreenProps> = ({ onLogout }) =>
 
             <div style={{ flex: 1 }} />
 
+            <div
+              className={`nav-item ${actions.onOpenHistory ? '' : 'disabled'}`}
+              title="История анализов"
+              onClick={() => actions.onOpenHistory?.()}
+              style={{ cursor: actions.onOpenHistory ? 'pointer' : 'default', opacity: actions.onOpenHistory ? 1 : 0.4 }}
+            >
+              <HistoryOutlined style={{ fontSize: 19 }} />
+            </div>
             <div
               className="nav-item"
               title="Панель Hangfire"
