@@ -6,6 +6,7 @@ using API.Data;
 using API.DataSources;
 using API.Models;
 using Core.Interfaces;
+using Core.Models;
 using Hangfire;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -79,6 +80,9 @@ public class AnalysisJobProcessor
         try
         {
             await SetRunningAsync(job);
+            _resultService.DeletePartialFile(job.Id);
+
+            var onBatchAggregated = CreateBatchAggregator(job.Id);
 
             API.DTOs.SpikeResponse response;
             if (string.IsNullOrEmpty(sourceId))
@@ -103,7 +107,8 @@ public class AnalysisJobProcessor
                     connectionString,
                     provider,
                     job.Database,
-                    CreateProgressReporter(job.Id));
+                    CreateProgressReporter(job.Id),
+                    onBatchAggregated);
             }
             else
             {
@@ -132,7 +137,8 @@ public class AnalysisJobProcessor
                     _spikeDetectionService,
                     connectionString,
                     provider,
-                    CreateProgressReporter(job.Id));
+                    CreateProgressReporter(job.Id),
+                    onBatchAggregated);
             }
 
             await CompleteJobAsync(job, response);
@@ -184,9 +190,32 @@ public class AnalysisJobProcessor
         });
     }
 
+    private Action<IReadOnlyList<DataPoint>> CreateBatchAggregator(string jobId)
+    {
+        var lastSavedCount = -1;
+
+        return points =>
+        {
+            if (points.Count == 0 || points.Count == lastSavedCount)
+                return;
+
+            lastSavedCount = points.Count;
+
+            try
+            {
+                _resultService.SavePartialSeriesAsync(jobId, points).GetAwaiter().GetResult();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to persist partial series for job {JobId}", jobId);
+            }
+        };
+    }
+
     private async Task CompleteJobAsync(AnalysisJob job, API.DTOs.SpikeResponse response)
     {
         await _resultService.SaveAsync(job, response);
+        _resultService.DeletePartialFile(job.Id);
         job.Status = "Completed";
         job.Progress = 100;
         job.CompletedAt = DateTime.UtcNow;

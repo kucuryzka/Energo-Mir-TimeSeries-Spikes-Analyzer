@@ -187,8 +187,23 @@ public class EmProtocolController : ControllerBase
             job.Progress, 
             job.ErrorMessage,
             HasResult = _resultService.HasResult(job),
+            HasPartialResult = _resultService.HasPartialResult(job.Id),
             SeriesPointCount = job.SeriesPointCount
         });
+    }
+
+    [HttpGet("partial-result/{id}")]
+    public async Task<IActionResult> GetPartialJobResult(string id)
+    {
+        var job = await _internalDb.AnalysisJobs.FindAsync(id);
+        if (job == null) return NotFound();
+        if (job.Status is not ("Running" or "Completed"))
+            return BadRequest("Partial result is not available.");
+
+        var partial = await _resultService.TryLoadPartialAsync(id);
+        if (partial == null) return NotFound();
+
+        return Ok(partial);
     }
 
     [HttpGet("result/{id}")]

@@ -88,10 +88,70 @@ public class AnalysisResultService
 
     public void DeleteResultFiles(AnalysisJob job)
     {
-        if (string.IsNullOrEmpty(job.ResultFilePath))
-            return;
+        if (!string.IsNullOrEmpty(job.ResultFilePath))
+        {
+            var fullPath = Path.Combine(_resultsRoot, job.ResultFilePath);
+            if (File.Exists(fullPath))
+                File.Delete(fullPath);
 
-        var fullPath = Path.Combine(_resultsRoot, job.ResultFilePath);
+            var tempPath = fullPath + ".tmp";
+            if (File.Exists(tempPath))
+                File.Delete(tempPath);
+        }
+
+        DeletePartialFile(job.Id);
+    }
+
+    public bool HasPartialResult(string jobId) =>
+        File.Exists(GetPartialFilePath(jobId));
+
+    public async Task SavePartialSeriesAsync(string jobId, IEnumerable<Core.Models.DataPoint> series, CancellationToken cancellationToken = default)
+    {
+        var fullPath = GetPartialFilePath(jobId);
+        var tempPath = fullPath + ".tmp";
+
+        try
+        {
+            await using (var stream = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None))
+            await using (var writer = new StreamWriter(stream))
+            {
+                foreach (var point in series.OrderBy(p => p.Timestamp))
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var dto = new AnomalyResultDto
+                    {
+                        Timestamp = point.Timestamp,
+                        Value = point.Value,
+                        IsSpike = false,
+                        PValue = 1.0
+                    };
+                    await writer.WriteLineAsync(JsonSerializer.Serialize(dto, _jsonOptions));
+                }
+            }
+
+            File.Move(tempPath, fullPath, overwrite: true);
+        }
+        catch
+        {
+            if (File.Exists(tempPath))
+                File.Delete(tempPath);
+            throw;
+        }
+    }
+
+    public async Task<SpikeResponse?> TryLoadPartialAsync(string jobId, CancellationToken cancellationToken = default)
+    {
+        var fileName = GetPartialFileName(jobId);
+        if (!File.Exists(Path.Combine(_resultsRoot, fileName)))
+            return null;
+
+        var series = await LoadSeriesFromFileAsync(fileName, cancellationToken);
+        return new SpikeResponse { Series = series };
+    }
+
+    public void DeletePartialFile(string jobId)
+    {
+        var fullPath = GetPartialFilePath(jobId);
         if (File.Exists(fullPath))
             File.Delete(fullPath);
 
@@ -99,6 +159,11 @@ public class AnalysisResultService
         if (File.Exists(tempPath))
             File.Delete(tempPath);
     }
+
+    private static string GetPartialFileName(string jobId) => $"{jobId}.partial.jsonl";
+
+    private string GetPartialFilePath(string jobId) =>
+        Path.Combine(_resultsRoot, GetPartialFileName(jobId));
 
     private async Task<List<AnomalyResultDto>> LoadSeriesFromFileAsync(
         string fileName,

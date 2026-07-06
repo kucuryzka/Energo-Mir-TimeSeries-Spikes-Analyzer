@@ -7,6 +7,7 @@ using API.Services;
 using API.Sql;
 using Core.Enums;
 using Core.Interfaces;
+using Core.Models;
 using Microsoft.EntityFrameworkCore;
 
 namespace API.DataSources;
@@ -61,7 +62,8 @@ public class EmProtocolDataSource : IDataSourceStrategy, ISupportsChannels, ISup
         ISpikeDetectionService spikeDetectionService,
         string connectionString,
         string provider,
-        IProgress<int>? progress = null)
+        IProgress<int>? progress = null,
+        Action<IReadOnlyList<DataPoint>>? onBatchAggregated = null)
     {
         return _pipeline.ExecuteAsync(
             BuildTableSpec(),
@@ -76,7 +78,8 @@ public class EmProtocolDataSource : IDataSourceStrategy, ISupportsChannels, ISup
             connectionString,
             provider,
             request.Database,
-            progress);
+            progress,
+            onBatchAggregated);
     }
 
     public Task<List<ChannelContributionDto>> GetPointChannelBreakdownAsync(

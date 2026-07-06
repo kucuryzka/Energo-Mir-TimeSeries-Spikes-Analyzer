@@ -39,7 +39,8 @@ public class AnalysisPipelineService
         string connectionString,
         string provider,
         string database,
-        IProgress<int>? progress = null)
+        IProgress<int>? progress = null,
+        Action<IReadOnlyList<Core.Models.DataPoint>>? onBatchAggregated = null)
     {
         var dialect = _dialectProvider.GetDialect(provider);
         using var context = _contextFactory.Create(connectionString, provider, database);
@@ -83,6 +84,8 @@ public class AnalysisPipelineService
 
             daysProcessed += (currentEnd - currentStart).TotalDays;
             progress?.Report(Math.Min(99, (int)(daysProcessed / totalDays * 100)));
+
+            onBatchAggregated?.Invoke(seriesDict.Values.OrderBy(p => p.Timestamp).ToList());
 
             currentStart = currentEnd;
         }

@@ -7,6 +7,7 @@ using API.Services;
 using API.Sql;
 using Core.Enums;
 using Core.Interfaces;
+using Core.Models;
 using Microsoft.EntityFrameworkCore;
 
 namespace API.DataSources;
@@ -63,7 +64,8 @@ public class DboDataSource : IDataSourceStrategy, ISupportsPointChannels
         ISpikeDetectionService spikeDetectionService,
         string connectionString,
         string provider,
-        IProgress<int>? progress = null)
+        IProgress<int>? progress = null,
+        Action<IReadOnlyList<DataPoint>>? onBatchAggregated = null)
     {
         var dialect = _dialectProvider.GetDialect(provider);
         var spec = BuildTableSpec(dialect);
@@ -80,7 +82,8 @@ public class DboDataSource : IDataSourceStrategy, ISupportsPointChannels
             connectionString,
             provider,
             request.Database,
-            progress);
+            progress,
+            onBatchAggregated);
     }
 
     public Task<List<ChannelContributionDto>> GetPointChannelBreakdownAsync(
