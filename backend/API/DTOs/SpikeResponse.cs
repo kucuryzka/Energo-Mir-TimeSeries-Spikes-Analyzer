@@ -5,7 +5,8 @@ namespace API.DTOs;
 
 public class SpikeResponse
 {
-    public List<AnomalyResultDto> Series { get; set; } = new();
+  public List<AnomalyResultDto> Series { get; set; } = new();
+  public List<ChannelContributionDto> Distribution { get; set; } = new();
 }
 
 public class AnomalyResultDto

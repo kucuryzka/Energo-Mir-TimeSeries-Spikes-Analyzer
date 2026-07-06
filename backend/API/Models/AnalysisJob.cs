@@ -29,9 +29,11 @@ public class AnalysisJob
     public DateTime? CompletedAt { get; set; }
     public string? ErrorMessage { get; set; }
 
-    // Lightweight result: just Timestamp and Value
     public string? ResultJson { get; set; }
 
-    // Hangfire Job Id reference
+    public string? ResultFilePath { get; set; }
+
+    public int SeriesPointCount { get; set; }
+
     public string? BackgroundJobId { get; set; }
 }
