@@ -1,29 +1,52 @@
-import React, { useEffect, useState } from 'react';
-import { Badge, Button, Drawer, List, Tag, Typography } from 'antd';
-import { ApiOutlined, CheckCircleOutlined, CloseCircleOutlined, LoadingOutlined } from '@ant-design/icons';
+import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { Drawer, List, Tag, Typography } from 'antd';
+import { CheckCircleOutlined, CloseCircleOutlined, LoadingOutlined } from '@ant-design/icons';
 import { requestTracker, type RequestRecord } from '../../store/requestTracker';
 import dayjs from 'dayjs';
 
 const { Text } = Typography;
 
-export const QueryTracker: React.FC = () => {
+interface QueryTrackerContextValue {
+  open: () => void;
+  activeCount: number;
+}
+
+const QueryTrackerContext = createContext<QueryTrackerContextValue | null>(null);
+
+export const useQueryTracker = () => {
+  const ctx = useContext(QueryTrackerContext);
+  if (!ctx) {
+    throw new Error('useQueryTracker must be used within QueryTrackerProvider');
+  }
+  return ctx;
+};
+
+export const QueryTrackerProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [open, setOpen] = useState(false);
   const [requests, setRequests] = useState<RequestRecord[]>([]);
   const [activeCount, setActiveCount] = useState(0);
 
   useEffect(() => {
-    // Initial sync
     setRequests(requestTracker.getRequests());
     setActiveCount(requestTracker.getActiveCount());
 
-    // Subscribe to updates
     const unsubscribe = requestTracker.subscribe(() => {
       setRequests(requestTracker.getRequests());
       setActiveCount(requestTracker.getActiveCount());
     });
 
-    return () => { unsubscribe(); };
+    return () => {
+      unsubscribe();
+    };
   }, []);
+
+  const value = useMemo(
+    () => ({
+      open: () => setOpen(true),
+      activeCount,
+    }),
+    [activeCount],
+  );
 
   const getStatusTag = (req: RequestRecord) => {
     switch (req.status) {
@@ -45,23 +68,8 @@ export const QueryTracker: React.FC = () => {
   };
 
   return (
-    <>
-      <div style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 1000 }}>
-        <Badge count={activeCount} size="small" offset={[-5, 5]}>
-          <Button 
-            type="primary" 
-            shape="circle" 
-            icon={<ApiOutlined />} 
-            size="large" 
-            onClick={() => setOpen(true)} 
-            style={{ 
-              boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-              background: activeCount > 0 ? '#1890ff' : '#6b7a8f'
-            }}
-          />
-        </Badge>
-      </div>
-
+    <QueryTrackerContext.Provider value={value}>
+      {children}
       <Drawer
         title="Запросы к БД (Сетевые)"
         placement="right"
@@ -106,6 +114,9 @@ export const QueryTracker: React.FC = () => {
           </div>
         )}
       </Drawer>
-    </>
+    </QueryTrackerContext.Provider>
   );
 };
+
+/** @deprecated Use QueryTrackerProvider + useQueryTracker instead */
+export const QueryTracker: React.FC = () => null;
