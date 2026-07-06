@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { Form, Input, InputNumber, Button, Select, Card, Typography, message } from 'antd';
+import { Form, Input, InputNumber, Button, Select, Card, Typography, message, Divider } from 'antd';
 import { authApi } from '../../api/explorerApi';
+import { enableMockMode } from '../../mocks/mockMode';
 
-const { Title } = Typography;
+const { Title, Text } = Typography;
 
 interface ConnectionSetupProps {
   onConnected: () => void;
@@ -63,6 +64,22 @@ export const ConnectionSetup: React.FC<ConnectionSetupProps> = ({ onConnected })
             </Button>
           </Form.Item>
         </Form>
+
+        <Divider style={{ margin: '4px 0 16px' }}>
+          <Text type="secondary" style={{ fontSize: 12 }}>или</Text>
+        </Divider>
+
+        <Button
+          block
+          size="large"
+          onClick={() => {
+            enableMockMode();
+            message.success('Включён режим демо-данных (без подключения к БД)');
+            onConnected();
+          }}
+        >
+          Пропустить БД (демо-данные)
+        </Button>
       </Card>
     </div>
   );

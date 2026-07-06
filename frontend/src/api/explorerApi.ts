@@ -2,6 +2,10 @@ import { apiClient } from './index';
 import { apiCache } from '../store/apiCache';
 import { pollAnalysisJob } from '../utils/jobPolling';
 import type { SpikeResponse } from '../types/analytics.types';
+import { isMockMode } from '../mocks/mockMode';
+import { mockDatabases, mockSchemas, mockTables, mockColumns } from '../mocks/mockData';
+
+const mockDelay = (ms: number = 300) => new Promise(resolve => setTimeout(resolve, ms));
 
 export const authApi = {
   connect: async (data: any) => {
@@ -12,18 +16,22 @@ export const authApi = {
 
 export const explorerApi = {
   getDatabases: async () => {
+    if (isMockMode()) { await mockDelay(); return mockDatabases; }
     const res = await apiClient.get('/explorer/databases');
     return res.data;
   },
   getSchemas: async (db: string) => {
+    if (isMockMode()) { await mockDelay(); return mockSchemas[db] ?? ['dbo']; }
     const res = await apiClient.get('/explorer/schemas', { params: { database: db } });
     return res.data;
   },
   getTables: async (db: string, schema: string) => {
+    if (isMockMode()) { await mockDelay(); return mockTables; }
     const res = await apiClient.get('/explorer/tables', { params: { database: db, schema } });
     return res.data;
   },
   getColumns: async (db: string, schema: string, table: string) => {
+    if (isMockMode()) { await mockDelay(); return mockColumns; }
     const res = await apiClient.get('/explorer/columns', { params: { database: db, schema, table } });
     return res.data;
   }
