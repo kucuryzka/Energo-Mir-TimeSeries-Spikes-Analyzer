@@ -100,6 +100,24 @@ body {
   box-shadow: 0px 8px 24px rgba(112, 144, 176, 0.03);
 }
 
+.dashboard-anomalies-row {
+  align-items: stretch;
+}
+
+.dashboard-anomalies-row > .ant-col {
+  display: flex;
+}
+
+.dashboard-anomalies-row .dashboard-block {
+  flex: 1;
+  width: 100%;
+  min-height: 460px;
+  margin-bottom: 0;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+
 .app-shell-rail {
   background: #FFFFFF;
   border-radius: 20px;

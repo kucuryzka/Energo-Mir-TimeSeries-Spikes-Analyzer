@@ -54,13 +54,9 @@ export const CriticalityDonut: React.FC<CriticalityDonutProps> = ({ criticalCoun
     <div
       className="dashboard-block"
       style={{
-        minHeight: 460,
         display: 'flex',
         flexDirection: 'column',
         justifyContent: 'space-between',
-        padding: 24,
-        background: '#FFF',
-        borderRadius: 16,
         boxSizing: 'border-box',
       }}
     >

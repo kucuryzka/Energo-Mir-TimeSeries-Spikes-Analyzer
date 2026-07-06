@@ -73,20 +73,20 @@ export const DashboardResultsSection: React.FC<DashboardResultsSectionProps> = (
         />
       </div>
 
+      {distributionCharts}
+
       {spikesOnly.length > 0 && (
-        <Row gutter={[24, 24]} style={{ marginBottom: 24 }}>
+        <Row gutter={[24, 24]} className="dashboard-anomalies-row" style={{ marginBottom: 24 }}>
           <Col xs={24} lg={8}>
             <CriticalityDonut criticalCount={stats.criticalSpikes} warningCount={warningCount} />
           </Col>
           <Col xs={24} lg={16}>
-            <div className="dashboard-block" style={{ minHeight: 460, padding: 24 }}>
+            <div className="dashboard-block">
               <SpikeTable spikes={spikesOnly} entityLabel={entityLabel} />
             </div>
           </Col>
         </Row>
       )}
-
-      {distributionCharts}
     </>
   );
 };

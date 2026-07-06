@@ -28,8 +28,8 @@ export const SpikeTable: React.FC<Props> = ({ spikes, style, entityLabel = 'Ка
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', justifyContent: 'space-between', ...style }}>
-      <div>
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, height: '100%', justifyContent: 'space-between', ...style }}>
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, paddingBottom: 12 }}>
           <h3 style={{ fontSize: 16, fontWeight: 700, color: '#1A2332', margin: 0 }}>
             Аномалии{' '}
