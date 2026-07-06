@@ -56,7 +56,14 @@ public class DboDataSource : IDataSourceStrategy, ISupportsPointChannels
         TimeColumn = "TIME_INSERT",
         ChannelColumn = "IDOBJECT",
         FromClause = $"{dialect.QualifyTable("dbo", "METERINGS")} m",
-        TableAlias = "m"
+        TableAlias = "m",
+        ChannelLookup = new ChannelLookupSpec
+        {
+            Schema = "dbo",
+            Table = "OBJECTS",
+            IdColumn = "IDOBJECT",
+            NameColumn = "OBJECT_NAME",
+        }
     };
 
     public Task<SpikeResponse> ExecuteAnalysisAsync(

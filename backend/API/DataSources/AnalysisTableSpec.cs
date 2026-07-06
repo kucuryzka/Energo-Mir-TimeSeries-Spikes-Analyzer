@@ -8,4 +8,5 @@ public class AnalysisTableSpec
     public string? ChannelColumn { get; init; }
     public string? FromClause { get; init; }
     public string? TableAlias { get; init; }
+    public ChannelLookupSpec? ChannelLookup { get; init; }
 }

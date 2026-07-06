@@ -51,6 +51,7 @@ public class AnalysisPipelineService
 
         var seriesDict = new Dictionary<DateTime, DataPoint>();
         var distributionDict = new Dictionary<int, int>();
+        var distributionNames = new Dictionary<int, string>();
 
         var seriesSql = BuildSeriesSql(dialect, fromClause, timeExpr, timeCol, spec, channelId);
         var distributionSql = spec.ChannelColumn != null && !channelId.HasValue
@@ -79,7 +80,7 @@ public class AnalysisPipelineService
                 var batchDist = await context.Database
                     .SqlQueryRaw<AggregatedResult>(distributionSql, parameters.ToArray())
                     .ToListAsync();
-                MergeDistributionBatch(distributionDict, batchDist);
+                MergeDistributionBatch(distributionDict, distributionNames, batchDist);
             }
 
             daysProcessed += (currentEnd - currentStart).TotalDays;
@@ -107,7 +108,8 @@ public class AnalysisPipelineService
                 .Select(kv => new ChannelContributionDto
                 {
                     ChannelId = kv.Key,
-                    Count = kv.Value
+                    Count = kv.Value,
+                    ChannelName = distributionNames.GetValueOrDefault(kv.Key, string.Empty),
                 })
                 .ToList()
         };
@@ -135,11 +137,17 @@ public class AnalysisPipelineService
         var endDate = GetBucketEnd(timestamp, granularity, customMinutes);
 
         var channelFilter = channelId.HasValue ? $" AND {channelCol} = @p2" : "";
+        var lookup = BuildChannelLookupJoin(dialect, spec, channelCol);
+        var nameSelect = lookup != null
+            ? $", {lookup.NameExpression} AS ChannelName"
+            : ", NULL AS ChannelName";
+        var nameGroupBy = lookup != null ? $", {lookup.NameExpression}" : "";
+
         var sql = $@"
-            SELECT {dialect.NullTimestampExpression} AS Timestamp, {dialect.CountAggregateExpression} AS Value, {channelCol} AS ChannelId
-            FROM {fromClause}
+            SELECT {dialect.NullTimestampExpression} AS Timestamp, {dialect.CountAggregateExpression} AS Value, {channelCol} AS ChannelId{nameSelect}
+            FROM {fromClause}{lookup?.JoinClause ?? string.Empty}
             WHERE {timeCol} >= @p0 AND {timeCol} < @p1{channelFilter}
-            GROUP BY {channelCol}
+            GROUP BY {channelCol}{nameGroupBy}
             ORDER BY Value DESC";
 
         var parameters = BuildBatchParameters(timestamp, endDate, channelId);
@@ -150,7 +158,8 @@ public class AnalysisPipelineService
             .Select(r => new ChannelContributionDto
             {
                 ChannelId = r.ChannelId!.Value,
-                Count = r.Value
+                Count = r.Value,
+                ChannelName = r.ChannelName ?? string.Empty,
             })
             .ToList();
     }
@@ -171,7 +180,7 @@ public class AnalysisPipelineService
         }
 
         return $@"
-            SELECT {timeExpr} AS Timestamp, {dialect.CountAggregateExpression} AS Value, 0 AS ChannelId
+            SELECT {timeExpr} AS Timestamp, {dialect.CountAggregateExpression} AS Value, 0 AS ChannelId, NULL AS ChannelName
             FROM {fromClause}
             WHERE {timeCol} >= @p0 AND {timeCol} < @p1{channelFilter}
             GROUP BY {timeExpr}
@@ -185,11 +194,37 @@ public class AnalysisPipelineService
         AnalysisTableSpec spec)
     {
         var channelCol = dialect.QualifyColumn(spec.TableAlias, spec.ChannelColumn!);
+        var lookup = BuildChannelLookupJoin(dialect, spec, channelCol);
+        var nameSelect = lookup != null
+            ? $", {lookup.NameExpression} AS ChannelName"
+            : ", NULL AS ChannelName";
+        var nameGroupBy = lookup != null ? $", {lookup.NameExpression}" : "";
+
         return $@"
-            SELECT {dialect.NullTimestampExpression} AS Timestamp, {dialect.CountAggregateExpression} AS Value, {channelCol} AS ChannelId
-            FROM {fromClause}
+            SELECT {dialect.NullTimestampExpression} AS Timestamp, {dialect.CountAggregateExpression} AS Value, {channelCol} AS ChannelId{nameSelect}
+            FROM {fromClause}{lookup?.JoinClause ?? string.Empty}
             WHERE {timeCol} >= @p0 AND {timeCol} < @p1
-            GROUP BY {channelCol}";
+            GROUP BY {channelCol}{nameGroupBy}";
+    }
+
+    private sealed record ChannelLookupJoin(string JoinClause, string NameExpression);
+
+    private static ChannelLookupJoin? BuildChannelLookupJoin(
+        IDatabaseDialect dialect,
+        AnalysisTableSpec spec,
+        string channelCol)
+    {
+        if (spec.ChannelLookup == null)
+            return null;
+
+        const string lookupAlias = "ch";
+        var lookupTable = dialect.QualifyTable(spec.ChannelLookup.Schema, spec.ChannelLookup.Table);
+        var lookupId = $"{lookupAlias}.{dialect.QuoteIdentifier(spec.ChannelLookup.IdColumn)}";
+        var lookupName = $"{lookupAlias}.{dialect.QuoteIdentifier(spec.ChannelLookup.NameColumn)}";
+
+        return new ChannelLookupJoin(
+            $" LEFT JOIN {lookupTable} {lookupAlias} ON {channelCol} = {lookupId}",
+            lookupName);
     }
 
     private static List<object> BuildBatchParameters(DateTime start, DateTime end, int? channelId)
@@ -210,7 +245,10 @@ public class AnalysisPipelineService
         }
     }
 
-    private static void MergeDistributionBatch(Dictionary<int, int> dict, List<AggregatedResult> batch)
+    private static void MergeDistributionBatch(
+        Dictionary<int, int> dict,
+        Dictionary<int, string> names,
+        List<AggregatedResult> batch)
     {
         foreach (var row in batch)
         {
@@ -219,6 +257,9 @@ public class AnalysisPipelineService
                 dict[row.ChannelId.Value] = existing + row.Value;
             else
                 dict[row.ChannelId.Value] = row.Value;
+
+            if (!string.IsNullOrWhiteSpace(row.ChannelName))
+                names[row.ChannelId.Value] = row.ChannelName;
         }
     }
 
