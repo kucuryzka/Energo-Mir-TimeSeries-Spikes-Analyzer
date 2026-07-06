@@ -2,251 +2,169 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using Microsoft.EntityFrameworkCore;
-using API.Data;
 using API.DTOs;
+using API.Services;
+using API.Sql;
 using Core.Enums;
-using Core.Models;
 using Core.Interfaces;
+using Microsoft.EntityFrameworkCore;
 
 namespace API.DataSources;
 
-public class EmProtocolDataSource : IDataSourceStrategy, ISupportsChannels, ISupportsDistribution
+public class EmProtocolDataSource : IDataSourceStrategy, ISupportsChannels, ISupportsDistribution, ISupportsPointChannels
 {
-    private readonly API.Services.IConnectionManagerService _connectionManager;
-    private readonly Microsoft.AspNetCore.Http.IHttpContextAccessor _httpContextAccessor;
+    private readonly IConnectionManagerService _connectionManager;
+    private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly AnalysisPipelineService _pipeline;
+    private readonly IDatabaseContextFactory _contextFactory;
+    private readonly ISqlDialectProvider _dialectProvider;
 
-    public EmProtocolDataSource(API.Services.IConnectionManagerService connectionManager, Microsoft.AspNetCore.Http.IHttpContextAccessor httpContextAccessor)
+    public EmProtocolDataSource(
+        IConnectionManagerService connectionManager,
+        IHttpContextAccessor httpContextAccessor,
+        AnalysisPipelineService pipeline,
+        IDatabaseContextFactory contextFactory,
+        ISqlDialectProvider dialectProvider)
     {
         _connectionManager = connectionManager;
         _httpContextAccessor = httpContextAccessor;
+        _pipeline = pipeline;
+        _contextFactory = contextFactory;
+        _dialectProvider = dialectProvider;
     }
 
     public string Id => "em_protocol";
     public string Name => "em_protocol";
     public string[] SupportedDistributions => new[] { "EventCode" };
 
-    private AppDbContext GetContext(string database, string? connectionString = null, string? provider = null)
+    private (string ConnectionString, string Provider) ResolveConnection(string? connectionString, string? provider)
     {
-        if (connectionString == null || provider == null)
-        {
-            var token = _httpContextAccessor.HttpContext?.Request.Headers["X-Session-Token"].ToString();
-            var info = _connectionManager.GetConnectionInfo(token ?? "");
-            if (info == null) throw new Exception("Invalid or missing session token");
-            connectionString = info.ConnectionString;
-            provider = info.Provider;
-        }
+        if (connectionString != null && provider != null)
+            return (connectionString, provider);
 
-        var connStrBuilder = new System.Data.Common.DbConnectionStringBuilder { ConnectionString = connectionString };
-        if (!string.IsNullOrEmpty(database)) connStrBuilder["Database"] = database;
-        var targetConnStr = connStrBuilder.ConnectionString;
+        var token = _httpContextAccessor.HttpContext?.Request.Headers["X-Session-Token"].ToString();
+        var info = _connectionManager.GetConnectionInfo(token ?? "");
+        if (info == null) throw new InvalidOperationException("Invalid or missing session token");
+        return (info.ConnectionString, info.Provider);
+    }
 
-        var optionsBuilder = new DbContextOptionsBuilder<AppDbContext>();
-        if (provider == "pgsql")
-            optionsBuilder.UseNpgsql(targetConnStr, opts => opts.CommandTimeout(3600));
-        else
-            optionsBuilder.UseSqlServer(targetConnStr, opts => opts.CommandTimeout(3600));
+    private AnalysisTableSpec BuildTableSpec() => new()
+    {
+        Schema = "em_protocol",
+        Table = "Records",
+        TimeColumn = "InsertTime",
+        ChannelColumn = "ChannelId"
+    };
 
-        return new AppDbContext(optionsBuilder.Options);
+    public Task<SpikeResponse> ExecuteAnalysisAsync(
+        DetectSpikesRequest request,
+        ISpikeDetectionService spikeDetectionService,
+        string connectionString,
+        string provider,
+        IProgress<int>? progress = null)
+    {
+        return _pipeline.ExecuteAsync(
+            BuildTableSpec(),
+            request.StartDate,
+            request.EndDate,
+            request.Granularity,
+            request.CustomMinutes,
+            request.ChannelId,
+            request.Confidence,
+            request.WindowSize,
+            spikeDetectionService,
+            connectionString,
+            provider,
+            request.Database,
+            progress);
+    }
+
+    public Task<List<ChannelContributionDto>> GetPointChannelBreakdownAsync(
+        string database,
+        DateTime timestamp,
+        TimeGranularity granularity,
+        int? customMinutes,
+        int? channelId,
+        string? connectionString = null,
+        string? provider = null)
+    {
+        var (conn, prov) = ResolveConnection(connectionString, provider);
+        return _pipeline.GetPointChannelBreakdownAsync(
+            BuildTableSpec(),
+            timestamp,
+            granularity,
+            customMinutes,
+            channelId,
+            conn,
+            prov,
+            database);
     }
 
     public async Task<List<ChannelDto>> GetChannelsAsync(string database, string? search, int page = 1, int pageSize = 50)
     {
-        try
+        var (conn, prov) = ResolveConnection(null, null);
+        var dialect = _dialectProvider.GetDialect(prov);
+        using var context = _contextFactory.Create(conn, prov, database);
+
+        var channels = dialect.QualifyTable("em_protocol", "Channels");
+        var objects = dialect.QualifyTable("dbo", "OBJECTS");
+        var nameExpr = dialect.Concat(
+            $"o.{dialect.QuoteIdentifier("OBJECT_NAME")}",
+            "' ('",
+            dialect.ProviderId == "pgsql"
+                ? $"c.{dialect.QuoteIdentifier("EventCode")}::text"
+                : $"CAST(c.{dialect.QuoteIdentifier("EventCode")} AS NVARCHAR(100))",
+            "')'");
+
+        var sql = $@"
+            SELECT c.{dialect.QuoteIdentifier("Id")} AS Id,
+                   {nameExpr} AS Name,
+                   {(dialect.ProviderId == "pgsql"
+                       ? $"c.{dialect.QuoteIdentifier("EventCode")}::text"
+                       : $"CAST(c.{dialect.QuoteIdentifier("EventCode")} AS NVARCHAR(100))")} AS EventCode
+            FROM {channels} c
+            JOIN {objects} o ON c.{dialect.QuoteIdentifier("ObjectId")} = o.{dialect.QuoteIdentifier("IDGLOBAL")}";
+
+        var parameters = new List<object>();
+        if (!string.IsNullOrWhiteSpace(search))
         {
-            var sql = @"
-                SELECT c.Id, CONCAT(o.OBJECT_NAME, ' (', c.EventCode, ')') as Name, CAST(c.EventCode as NVARCHAR(100)) as EventCode
-                FROM em_protocol.Channels c
-                JOIN dbo.OBJECTS o ON c.ObjectId = o.IDGLOBAL";
-            
-            var parameters = new List<object>();
-
-            if (!string.IsNullOrWhiteSpace(search))
-            {
-                sql += " WHERE o.OBJECT_NAME LIKE {0} OR CAST(c.EventCode as NVARCHAR) LIKE {0}";
-                parameters.Add($"%{search}%");
-            }
-
-            sql += $" ORDER BY o.OBJECT_NAME OFFSET {(page - 1) * pageSize} ROWS FETCH NEXT {pageSize} ROWS ONLY";
-
-            using var _context = GetContext(database);
-            return await _context.Database.SqlQueryRaw<ChannelDto>(sql, parameters.ToArray()).ToListAsync();
+            sql += $" WHERE o.{dialect.QuoteIdentifier("OBJECT_NAME")} LIKE {{0}} OR {(dialect.ProviderId == "pgsql" ? $"c.{dialect.QuoteIdentifier("EventCode")}::text" : $"CAST(c.{dialect.QuoteIdentifier("EventCode")} AS NVARCHAR(100))")} LIKE {{0}}";
+            parameters.Add($"%{search}%");
         }
-        catch (Microsoft.Data.SqlClient.SqlException)
-        {
-            return new List<ChannelDto>();
-        }
-    }
 
-    public async Task<SpikeResponse> ExecuteAnalysisAsync(DetectSpikesRequest request, ISpikeDetectionService spikeDetectionService, string connectionString, string provider, IProgress<int>? progress = null)
-    {
-        try
-        {
-            var dateAddExpr = request.Granularity switch
-            {
-                TimeGranularity.Minute => "DATEADD(minute, DATEDIFF(minute, 0, InsertTime), 0)",
-                TimeGranularity.Hour => "DATEADD(hour, DATEDIFF(hour, 0, InsertTime), 0)",
-                TimeGranularity.Day => "DATEADD(day, DATEDIFF(day, 0, InsertTime), 0)",
-                TimeGranularity.Week => "DATEADD(week, DATEDIFF(week, 0, InsertTime), 0)",
-                TimeGranularity.Month => "DATEADD(month, DATEDIFF(month, 0, InsertTime), 0)",
-                TimeGranularity.Custom => $"DATEADD(minute, (DATEDIFF(minute, 0, InsertTime) / {(request.CustomMinutes ?? 60)}) * {(request.CustomMinutes ?? 60)}, 0)",
-                _ => "DATEADD(hour, DATEDIFF(hour, 0, InsertTime), 0)"
-            };
+        sql = dialect.Paginate(
+            sql + $" ORDER BY o.{dialect.QuoteIdentifier("OBJECT_NAME")}",
+            (page - 1) * pageSize,
+            pageSize);
 
-            var channelFilter = (request.ChannelId.HasValue && request.ChannelId.Value > 0) 
-                ? $"AND ChannelId = {request.ChannelId.Value}" 
-                : "";
-
-            var sqlAggregate = $@"
-                SELECT 
-                    {dateAddExpr} as Timestamp,
-                    COUNT(*) as Value,
-                    ChannelId
-                FROM em_protocol.Records
-                WHERE InsertTime >= @p0 AND InsertTime <= @p1 {channelFilter}
-                GROUP BY {dateAddExpr}, ChannelId
-                ORDER BY Timestamp";
-
-            var groupedSeriesDict = new Dictionary<DateTime, DataPoint>();
-            var currentStart = request.StartDate;
-
-            using var _context = GetContext(request.Database, connectionString, provider);
-            _context.Database.SetCommandTimeout(3600);
-
-            while (currentStart < request.EndDate)
-            {
-                var currentEnd = currentStart.AddMonths(1);
-                if (currentEnd > request.EndDate) currentEnd = request.EndDate;
-
-                var batchAggregates = await _context.Database
-                    .SqlQueryRaw<AggregatedResult>(sqlAggregate, currentStart, currentEnd)
-                    .ToListAsync();
-
-                var batchGrouped = batchAggregates
-                    .GroupBy(a => a.Timestamp)
-                    .Select(g => new DataPoint
-                    {
-                        Timestamp = g.Key,
-                        Value = g.Sum(x => x.Value),
-                        ChannelBreakdown = g.Where(x => x.ChannelId.HasValue).ToDictionary(x => x.ChannelId!.Value, x => x.Value)
-                    });
-
-                foreach (var dp in batchGrouped)
-                {
-                    if (groupedSeriesDict.TryGetValue(dp.Timestamp, out var existing))
-                    {
-                        existing.Value += dp.Value;
-                        foreach (var kvp in dp.ChannelBreakdown)
-                        {
-                            if (existing.ChannelBreakdown.ContainsKey(kvp.Key))
-                                existing.ChannelBreakdown[kvp.Key] += kvp.Value;
-                            else
-                                existing.ChannelBreakdown[kvp.Key] = kvp.Value;
-                        }
-                    }
-                    else
-                    {
-                        groupedSeriesDict[dp.Timestamp] = dp;
-                    }
-                }
-
-                currentStart = currentEnd;
-
-                if (progress != null)
-                {
-                    var totalDays = (request.EndDate - request.StartDate).TotalDays;
-                    var processedDays = (currentStart - request.StartDate).TotalDays;
-                    var percent = (int)(processedDays / totalDays * 100);
-                    if (percent > 99) percent = 99;
-                    progress.Report(percent);
-                }
-            }
-
-            var groupedSeries = groupedSeriesDict.Values.OrderBy(p => p.Timestamp).ToList();
-
-            var anomalyResults = spikeDetectionService.DetectSpikes(
-                groupedSeries,
-                request.Confidence,
-                request.WindowSize);
-
-            var channelIds = anomalyResults
-                .SelectMany(r => r.ChannelBreakdown.Keys)
-                .Distinct()
-                .ToList();
-
-            var channelInfos = new Dictionary<int, ChannelDto>();
-            if (channelIds.Any())
-            {
-                var chunkSize = 1000;
-                for (int i = 0; i < channelIds.Count; i += chunkSize)
-                {
-                    var chunk = channelIds.Skip(i).Take(chunkSize);
-                    var idsString = string.Join(",", chunk);
-                    var sql = $@"
-                        SELECT c.Id, o.OBJECT_NAME as Name, CAST(c.EventCode as NVARCHAR(100)) as EventCode
-                        FROM em_protocol.Channels c
-                        JOIN dbo.OBJECTS o ON c.ObjectId = o.IDGLOBAL
-                        WHERE c.Id IN ({idsString})";
-                    
-                    var dbChannels = await _context.Database.SqlQueryRaw<ChannelDto>(sql).ToListAsync();
-                    foreach (var c in dbChannels)
-                    {
-                        channelInfos[c.Id] = c;
-                    }
-                }
-            }
-
-            return new SpikeResponse
-            {
-                Series = anomalyResults.Select(r => new AnomalyResultDto
-                {
-                    Timestamp = r.Timestamp,
-                    Value = r.Value,
-                    IsSpike = r.IsSpike,
-                    PValue = r.PValue,
-                    ChannelBreakdown = r.ChannelBreakdown
-                        .Select(kvp => 
-                        {
-                            var info = channelInfos.GetValueOrDefault(kvp.Key);
-                            return new ChannelContributionDto
-                            {
-                                ChannelId = kvp.Key,
-                                ChannelName = info?.Name ?? "Неизвестный канал",
-                                EventCode = info?.EventCode,
-                                Count = kvp.Value
-                            };
-                        })
-                        .OrderByDescending(c => c.Count)
-                        .ToList()
-                }).ToList()
-            };
-        }
-        catch (Microsoft.Data.SqlClient.SqlException)
-        {
-            return new SpikeResponse { Series = new List<AnomalyResultDto>() };
-        }
+        return await context.Database.SqlQueryRaw<ChannelDto>(sql, parameters.ToArray()).ToListAsync();
     }
 
     public async Task<List<DistributionItemDto>> GetDistributionAsync(string database, DateTime start, DateTime end, string categoryName)
     {
         if (categoryName != "EventCode")
-        {
             return new List<DistributionItemDto>();
-        }
 
-        var sql = @"
-            SELECT CAST(c.EventCode as NVARCHAR(100)) as Category, COUNT_BIG(*) as Count
-            FROM em_protocol.Records r
-            JOIN em_protocol.Channels c ON r.ChannelId = c.Id
-            WHERE r.InsertTime >= @p0 AND r.InsertTime <= @p1
-            GROUP BY c.EventCode
+        var (conn, prov) = ResolveConnection(null, null);
+        var dialect = _dialectProvider.GetDialect(prov);
+        using var context = _contextFactory.Create(conn, prov, database);
+
+        var records = dialect.QualifyTable("em_protocol", "Records");
+        var channels = dialect.QualifyTable("em_protocol", "Channels");
+        var eventCodeExpr = dialect.ProviderId == "pgsql"
+            ? $"c.{dialect.QuoteIdentifier("EventCode")}::text"
+            : $"CAST(c.{dialect.QuoteIdentifier("EventCode")} AS NVARCHAR(100))";
+
+        var countExpr = dialect.ProviderId == "pgsql" ? "COUNT(*)" : "COUNT_BIG(*)";
+
+        var sql = $@"
+            SELECT {eventCodeExpr} AS Category, {countExpr} AS Count
+            FROM {records} r
+            JOIN {channels} c ON r.{dialect.QuoteIdentifier("ChannelId")} = c.{dialect.QuoteIdentifier("Id")}
+            WHERE r.{dialect.QuoteIdentifier("InsertTime")} >= @p0 AND r.{dialect.QuoteIdentifier("InsertTime")} <= @p1
+            GROUP BY {eventCodeExpr}
             ORDER BY Count DESC";
 
-        using var _context = GetContext(database);
-        var result = await _context.Database
-            .SqlQueryRaw<DistributionItemDto>(sql, start, end)
-            .ToListAsync();
-
-        return result;
+        return await context.Database.SqlQueryRaw<DistributionItemDto>(sql, start, end).ToListAsync();
     }
 }

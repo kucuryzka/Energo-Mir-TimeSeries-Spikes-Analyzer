@@ -2,207 +2,146 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using Microsoft.EntityFrameworkCore;
-using API.Data;
 using API.DTOs;
+using API.Services;
+using API.Sql;
 using Core.Enums;
-using Core.Models;
 using Core.Interfaces;
+using Microsoft.EntityFrameworkCore;
 
 namespace API.DataSources;
 
-public class DboDataSource : IDataSourceStrategy
+public class DboDataSource : IDataSourceStrategy, ISupportsPointChannels
 {
-    private readonly API.Services.IConnectionManagerService _connectionManager;
-    private readonly Microsoft.AspNetCore.Http.IHttpContextAccessor _httpContextAccessor;
+    private readonly IConnectionManagerService _connectionManager;
+    private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly AnalysisPipelineService _pipeline;
+    private readonly IDatabaseContextFactory _contextFactory;
+    private readonly ISqlDialectProvider _dialectProvider;
 
-    public DboDataSource(API.Services.IConnectionManagerService connectionManager, Microsoft.AspNetCore.Http.IHttpContextAccessor httpContextAccessor)
+    public DboDataSource(
+        IConnectionManagerService connectionManager,
+        IHttpContextAccessor httpContextAccessor,
+        AnalysisPipelineService pipeline,
+        IDatabaseContextFactory contextFactory,
+        ISqlDialectProvider dialectProvider)
     {
         _connectionManager = connectionManager;
         _httpContextAccessor = httpContextAccessor;
+        _pipeline = pipeline;
+        _contextFactory = contextFactory;
+        _dialectProvider = dialectProvider;
     }
 
     public string Id => "Dbo";
     public string Name => "dbo";
-    public string[] SupportedDistributions => new string[] { };
+    public string[] SupportedDistributions => Array.Empty<string>();
 
-    private AppDbContext GetContext(string database, string? connectionString = null, string? provider = null)
+    private (string ConnectionString, string Provider) ResolveConnection(string? connectionString, string? provider)
     {
-        if (connectionString == null || provider == null)
-        {
-            var token = _httpContextAccessor.HttpContext?.Request.Headers["X-Session-Token"].ToString();
-            var info = _connectionManager.GetConnectionInfo(token ?? "");
-            if (info == null) throw new Exception("Invalid or missing session token");
-            connectionString = info.ConnectionString;
-            provider = info.Provider;
-        }
+        if (connectionString != null && provider != null)
+            return (connectionString, provider);
 
-        var connStrBuilder = new System.Data.Common.DbConnectionStringBuilder { ConnectionString = connectionString };
-        if (!string.IsNullOrEmpty(database)) connStrBuilder["Database"] = database;
-        var targetConnStr = connStrBuilder.ConnectionString;
-
-        var optionsBuilder = new DbContextOptionsBuilder<AppDbContext>();
-        if (provider == "pgsql")
-            optionsBuilder.UseNpgsql(targetConnStr, opts => opts.CommandTimeout(3600));
-        else
-            optionsBuilder.UseSqlServer(targetConnStr, opts => opts.CommandTimeout(3600));
-
-        return new AppDbContext(optionsBuilder.Options);
+        var token = _httpContextAccessor.HttpContext?.Request.Headers["X-Session-Token"].ToString();
+        var info = _connectionManager.GetConnectionInfo(token ?? "");
+        if (info == null) throw new InvalidOperationException("Invalid or missing session token");
+        return (info.ConnectionString, info.Provider);
     }
 
-    public async Task<SpikeResponse> ExecuteAnalysisAsync(DetectSpikesRequest request, ISpikeDetectionService spikeDetectionService, string connectionString, string provider, IProgress<int>? progress = null)
+    private AnalysisTableSpec BuildTableSpec(IDatabaseDialect dialect) => new()
     {
-        var dateAddExpr = request.Granularity switch
-        {
-            TimeGranularity.Minute => "DATEADD(minute, DATEDIFF(minute, 0, TIME_INSERT), 0)",
-            TimeGranularity.Hour => "DATEADD(hour, DATEDIFF(hour, 0, TIME_INSERT), 0)",
-            TimeGranularity.Day => "DATEADD(day, DATEDIFF(day, 0, TIME_INSERT), 0)",
-            TimeGranularity.Week => "DATEADD(week, DATEDIFF(week, 0, TIME_INSERT), 0)",
-            TimeGranularity.Month => "DATEADD(month, DATEDIFF(month, 0, TIME_INSERT), 0)",
-            TimeGranularity.Custom => $"DATEADD(minute, (DATEDIFF(minute, 0, TIME_INSERT) / {(request.CustomMinutes ?? 60)}) * {(request.CustomMinutes ?? 60)}, 0)",
-            _ => "DATEADD(hour, DATEDIFF(hour, 0, TIME_INSERT), 0)"
-        };
+        Schema = "dbo",
+        Table = "METERINGS",
+        TimeColumn = "TIME_INSERT",
+        ChannelColumn = "IDOBJECT",
+        FromClause = $"{dialect.QualifyTable("dbo", "METERINGS")} m",
+        TableAlias = "m"
+    };
 
-        var sqlAggregate = $@"
-            SELECT 
-                {dateAddExpr} as Timestamp,
-                COUNT(*) as Value,
-                m.IDOBJECT as ChannelId
-            FROM dbo.METERINGS m
-            WHERE m.TIME_INSERT >= @p0 AND m.TIME_INSERT < @p1
-            {(request.ChannelId.HasValue ? "AND m.IDOBJECT = @p2" : "")}
-            GROUP BY {dateAddExpr}, m.IDOBJECT
-            ORDER BY Timestamp";
-
-        var groupedSeriesDict = new Dictionary<DateTime, DataPoint>();
-        var currentStart = request.StartDate;
-
-        using var _context = GetContext(request.Database, connectionString, provider);
-        _context.Database.SetCommandTimeout(3600);
-
-        while (currentStart < request.EndDate)
-        {
-            var currentEnd = currentStart.AddMonths(1);
-            if (currentEnd > request.EndDate) currentEnd = request.EndDate;
-
-            var parameters = new List<object> { currentStart, currentEnd };
-            if (request.ChannelId.HasValue) parameters.Add(request.ChannelId.Value);
-
-            var batchAggregates = await _context.Database
-                .SqlQueryRaw<AggregatedResult>(sqlAggregate, parameters.ToArray())
-                .ToListAsync();
-
-            var batchGrouped = batchAggregates
-                .GroupBy(a => a.Timestamp)
-                .Select(g => new DataPoint
-                {
-                    Timestamp = g.Key,
-                    Value = g.Sum(x => x.Value),
-                    ChannelBreakdown = g.Where(x => x.ChannelId.HasValue && x.ChannelId.Value != 0).GroupBy(x => x.ChannelId!.Value).ToDictionary(x => x.Key, x => x.Sum(y => y.Value))
-                });
-
-            foreach (var dp in batchGrouped)
-            {
-                if (groupedSeriesDict.TryGetValue(dp.Timestamp, out var existing))
-                {
-                    existing.Value += dp.Value;
-                    foreach (var kvp in dp.ChannelBreakdown)
-                    {
-                        if (existing.ChannelBreakdown.ContainsKey(kvp.Key))
-                            existing.ChannelBreakdown[kvp.Key] += kvp.Value;
-                        else
-                            existing.ChannelBreakdown[kvp.Key] = kvp.Value;
-                    }
-                }
-                else
-                {
-                    groupedSeriesDict[dp.Timestamp] = dp;
-                }
-            }
-
-            currentStart = currentEnd;
-
-            if (progress != null)
-            {
-                var totalDays = (request.EndDate - request.StartDate).TotalDays;
-                var processedDays = (currentStart - request.StartDate).TotalDays;
-                var percent = (int)(processedDays / totalDays * 100);
-                if (percent > 99) percent = 99; // reserve 100 for completion
-                progress.Report(percent);
-            }
-        }
-
-        var groupedSeries = groupedSeriesDict.Values.OrderBy(p => p.Timestamp).ToList();
-
-        var anomalyResults = spikeDetectionService.DetectSpikes(
-            groupedSeries,
+    public Task<SpikeResponse> ExecuteAnalysisAsync(
+        DetectSpikesRequest request,
+        ISpikeDetectionService spikeDetectionService,
+        string connectionString,
+        string provider,
+        IProgress<int>? progress = null)
+    {
+        var dialect = _dialectProvider.GetDialect(provider);
+        var spec = BuildTableSpec(dialect);
+        return _pipeline.ExecuteAsync(
+            spec,
+            request.StartDate,
+            request.EndDate,
+            request.Granularity,
+            request.CustomMinutes,
+            request.ChannelId,
             request.Confidence,
-            request.WindowSize);
+            request.WindowSize,
+            spikeDetectionService,
+            connectionString,
+            provider,
+            request.Database,
+            progress);
+    }
 
-        var channelIds = anomalyResults
-            .SelectMany(r => r.ChannelBreakdown.Keys)
-            .Distinct()
-            .ToList();
-
-        var channelNames = new Dictionary<int, string>();
-        if (channelIds.Any())
-        {
-            var chunkSize = 1000;
-            for (int i = 0; i < channelIds.Count; i += chunkSize)
-            {
-                var chunk = channelIds.Skip(i).Take(chunkSize);
-                var idsString = string.Join(",", chunk);
-                var sql = $@"
-                    SELECT IDOBJECT as Id, OBJECT_NAME as Name, NULL as EventCode 
-                    FROM dbo.OBJECTS 
-                    WHERE IDOBJECT IN ({idsString})";
-                
-                var dbChannels = await _context.Database.SqlQueryRaw<ChannelDto>(sql).ToListAsync();
-                foreach (var c in dbChannels)
-                {
-                    channelNames[c.Id] = c.Name;
-                }
-            }
-        }
-
-        return new SpikeResponse
-        {
-            Series = anomalyResults.Select(r => new AnomalyResultDto
-            {
-                Timestamp = r.Timestamp,
-                Value = r.Value,
-                IsSpike = r.IsSpike,
-                PValue = r.PValue,
-                ChannelBreakdown = r.ChannelBreakdown.Select(cb => new ChannelContributionDto
-                {
-                    ChannelId = cb.Key,
-                    ChannelName = channelNames.TryGetValue(cb.Key, out var name) ? name : $"Объект {cb.Key}",
-                    Count = cb.Value
-                }).ToList()
-            }).ToList()
-        };
+    public Task<List<ChannelContributionDto>> GetPointChannelBreakdownAsync(
+        string database,
+        DateTime timestamp,
+        TimeGranularity granularity,
+        int? customMinutes,
+        int? channelId,
+        string? connectionString = null,
+        string? provider = null)
+    {
+        var (conn, prov) = ResolveConnection(connectionString, provider);
+        var dialect = _dialectProvider.GetDialect(prov);
+        return _pipeline.GetPointChannelBreakdownAsync(
+            BuildTableSpec(dialect),
+            timestamp,
+            granularity,
+            customMinutes,
+            channelId,
+            conn,
+            prov,
+            database);
     }
 
     public async Task<List<ObjectDto>> GetObjectsAsync(string database, string? search, int page = 1, int pageSize = 50)
     {
-        using var _context = GetContext(database);
-        var query = _context.Database.SqlQueryRaw<ObjectDto>(
-            "SELECT IDOBJECT as Id, OBJECT_NAME as Name FROM dbo.OBJECTS"
-        );
-        
-        var list = await query.ToListAsync();
-        
-        if (!string.IsNullOrEmpty(search))
+        var (conn, prov) = ResolveConnection(null, null);
+        var dialect = _dialectProvider.GetDialect(prov);
+        using var context = _contextFactory.Create(conn, prov, database);
+
+        var table = dialect.QualifyTable("dbo", "OBJECTS");
+        var sql = $"SELECT {dialect.QualifyColumn(null, "IDOBJECT")} AS Id, {dialect.QualifyColumn(null, "OBJECT_NAME")} AS Name FROM {table}";
+        var parameters = new List<object>();
+
+        if (!string.IsNullOrWhiteSpace(search))
         {
-            var searchLower = search.ToLower();
-            list = list.Where(c => c.Name.ToLower().Contains(searchLower)).ToList();
+            sql += $" WHERE {dialect.QualifyColumn(null, "OBJECT_NAME")} LIKE {{0}}";
+            parameters.Add($"%{search}%");
         }
 
-        return list.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+        sql = dialect.Paginate(
+            sql + $" ORDER BY {dialect.QualifyColumn(null, "OBJECT_NAME")}",
+            (page - 1) * pageSize,
+            pageSize);
+
+        return await context.Database.SqlQueryRaw<ObjectDto>(sql, parameters.ToArray()).ToListAsync();
     }
 
-    public async Task<List<MeteringInfoDto>> GetPointDetailsAsync(string database, DateTime timestamp, TimeGranularity granularity, int? customMinutes, int? channelId)
+    public async Task<List<MeteringInfoDto>> GetPointDetailsAsync(
+        string database,
+        DateTime timestamp,
+        TimeGranularity granularity,
+        int? customMinutes,
+        int? channelId,
+        string? connectionString = null,
+        string? provider = null)
     {
+        var (conn, prov) = ResolveConnection(connectionString, provider);
+        var dialect = _dialectProvider.GetDialect(prov);
+        using var context = _contextFactory.Create(conn, prov, database);
+
         var endDate = granularity switch
         {
             TimeGranularity.Minute => timestamp.AddMinutes(1),
@@ -214,28 +153,48 @@ public class DboDataSource : IDataSourceStrategy
             _ => timestamp.AddHours(1)
         };
 
-        var sql = $@"
-            SELECT TOP 1000
-                m.IDOBJECT_AGGREGATE as IdObjectAggregate, 
-                m.IDOBJECT_AVERAGE as IdObjectAverage, 
-                m.QUALITY as Quality, 
-                m.QUALITY_SOURCE as QualitySource, 
-                m.[SOURCE] as Source, 
-                m.VALUE_METERING as ValueMetering,
-                m.IDOBJECT as IdObject,
-                o.OBJECT_NAME as ObjectName
-            FROM dbo.METERINGS m
-            LEFT JOIN dbo.OBJECTS o ON m.IDOBJECT = o.IDOBJECT
-            WHERE m.TIME_INSERT >= @p0 AND m.TIME_INSERT < @p1
-            {(channelId.HasValue ? "AND m.IDOBJECT = @p2" : "")}
-        ";
+        var meterings = dialect.QualifyTable("dbo", "METERINGS");
+        var objects = dialect.QualifyTable("dbo", "OBJECTS");
+        var channelFilter = channelId.HasValue ? $" AND m.{dialect.QuoteIdentifier("IDOBJECT")} = @p2" : "";
+
+        string sql;
+        if (dialect.ProviderId == "pgsql")
+        {
+            sql = $@"
+                SELECT
+                    m.{dialect.QuoteIdentifier("IDOBJECT_AGGREGATE")} AS IdObjectAggregate,
+                    m.{dialect.QuoteIdentifier("IDOBJECT_AVERAGE")} AS IdObjectAverage,
+                    m.{dialect.QuoteIdentifier("QUALITY")} AS Quality,
+                    m.{dialect.QuoteIdentifier("QUALITY_SOURCE")} AS QualitySource,
+                    m.{dialect.QuoteIdentifier("SOURCE")} AS Source,
+                    m.{dialect.QuoteIdentifier("VALUE_METERING")} AS ValueMetering,
+                    m.{dialect.QuoteIdentifier("IDOBJECT")} AS IdObject,
+                    o.{dialect.QuoteIdentifier("OBJECT_NAME")} AS ObjectName
+                FROM {meterings} m
+                LEFT JOIN {objects} o ON m.{dialect.QuoteIdentifier("IDOBJECT")} = o.{dialect.QuoteIdentifier("IDOBJECT")}
+                WHERE m.{dialect.QuoteIdentifier("TIME_INSERT")} >= @p0 AND m.{dialect.QuoteIdentifier("TIME_INSERT")} < @p1{channelFilter}
+                {dialect.LimitClause(1000)}";
+        }
+        else
+        {
+            sql = $@"
+                SELECT {dialect.LimitClause(1000)}
+                    m.{dialect.QuoteIdentifier("IDOBJECT_AGGREGATE")} AS IdObjectAggregate,
+                    m.{dialect.QuoteIdentifier("IDOBJECT_AVERAGE")} AS IdObjectAverage,
+                    m.{dialect.QuoteIdentifier("QUALITY")} AS Quality,
+                    m.{dialect.QuoteIdentifier("QUALITY_SOURCE")} AS QualitySource,
+                    m.{dialect.QuoteIdentifier("SOURCE")} AS Source,
+                    m.{dialect.QuoteIdentifier("VALUE_METERING")} AS ValueMetering,
+                    m.{dialect.QuoteIdentifier("IDOBJECT")} AS IdObject,
+                    o.{dialect.QuoteIdentifier("OBJECT_NAME")} AS ObjectName
+                FROM {meterings} m
+                LEFT JOIN {objects} o ON m.{dialect.QuoteIdentifier("IDOBJECT")} = o.{dialect.QuoteIdentifier("IDOBJECT")}
+                WHERE m.{dialect.QuoteIdentifier("TIME_INSERT")} >= @p0 AND m.{dialect.QuoteIdentifier("TIME_INSERT")} < @p1{channelFilter}";
+        }
 
         var parameters = new List<object> { timestamp, endDate };
         if (channelId.HasValue) parameters.Add(channelId.Value);
 
-        using var _context = GetContext(database);
-        return await _context.Database
-            .SqlQueryRaw<MeteringInfoDto>(sql, parameters.ToArray())
-            .ToListAsync();
+        return await context.Database.SqlQueryRaw<MeteringInfoDto>(sql, parameters.ToArray()).ToListAsync();
     }
 }

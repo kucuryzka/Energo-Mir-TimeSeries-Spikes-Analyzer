@@ -1,0 +1,233 @@
+using API.Configuration;
+using API.DataSources;
+using API.DTOs;
+using API.Sql;
+using Core.Enums;
+using Core.Interfaces;
+using Core.Models;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+
+namespace API.Services;
+
+public class AnalysisPipelineService
+{
+    private readonly IDatabaseContextFactory _contextFactory;
+    private readonly ISqlDialectProvider _dialectProvider;
+    private readonly AnalysisSettings _settings;
+
+    public AnalysisPipelineService(
+        IDatabaseContextFactory contextFactory,
+        ISqlDialectProvider dialectProvider,
+        IOptions<AnalysisSettings> settings)
+    {
+        _contextFactory = contextFactory;
+        _dialectProvider = dialectProvider;
+        _settings = settings.Value;
+    }
+
+    public async Task<SpikeResponse> ExecuteAsync(
+        AnalysisTableSpec spec,
+        DateTime startDate,
+        DateTime endDate,
+        TimeGranularity granularity,
+        int? customMinutes,
+        int? channelId,
+        double confidence,
+        int windowSize,
+        ISpikeDetectionService spikeDetectionService,
+        string connectionString,
+        string provider,
+        string database,
+        IProgress<int>? progress = null)
+    {
+        var dialect = _dialectProvider.GetDialect(provider);
+        using var context = _contextFactory.Create(connectionString, provider, database);
+
+        var fromClause = spec.FromClause ?? dialect.QualifyTable(spec.Schema, spec.Table);
+        var timeCol = dialect.QualifyColumn(spec.TableAlias, spec.TimeColumn);
+        var timeExpr = dialect.GetTimeBucketExpression(timeCol, granularity, customMinutes);
+
+        var seriesDict = new Dictionary<DateTime, DataPoint>();
+        var distributionDict = new Dictionary<int, int>();
+
+        var seriesSql = BuildSeriesSql(dialect, fromClause, timeExpr, timeCol, spec, channelId);
+        var distributionSql = spec.ChannelColumn != null && !channelId.HasValue
+            ? BuildDistributionSql(dialect, fromClause, timeCol, spec)
+            : null;
+
+        var currentStart = startDate;
+        var totalDays = Math.Max((endDate - startDate).TotalDays, 1);
+        var daysProcessed = 0.0;
+        var batchDays = Math.Max(_settings.BatchIntervalDays, 1);
+
+        while (currentStart < endDate)
+        {
+            var currentEnd = currentStart.AddDays(batchDays);
+            if (currentEnd > endDate) currentEnd = endDate;
+
+            var parameters = BuildBatchParameters(currentStart, currentEnd, channelId);
+            var batchSeries = await context.Database
+                .SqlQueryRaw<AggregatedResult>(seriesSql, parameters.ToArray())
+                .ToListAsync();
+
+            MergeSeriesBatch(seriesDict, batchSeries);
+
+            if (distributionSql != null)
+            {
+                var batchDist = await context.Database
+                    .SqlQueryRaw<AggregatedResult>(distributionSql, parameters.ToArray())
+                    .ToListAsync();
+                MergeDistributionBatch(distributionDict, batchDist);
+            }
+
+            daysProcessed += (currentEnd - currentStart).TotalDays;
+            progress?.Report(Math.Min(99, (int)(daysProcessed / totalDays * 100)));
+
+            currentStart = currentEnd;
+        }
+
+        var groupedSeries = seriesDict.Values.OrderBy(p => p.Timestamp).ToList();
+        var anomalyResults = spikeDetectionService.DetectSpikes(groupedSeries, confidence, windowSize);
+
+        return new SpikeResponse
+        {
+            Series = anomalyResults.Select(r => new AnomalyResultDto
+            {
+                Timestamp = r.Timestamp,
+                Value = r.Value,
+                IsSpike = r.IsSpike,
+                PValue = r.PValue
+            }).ToList(),
+            Distribution = distributionDict
+                .OrderByDescending(kv => kv.Value)
+                .Select(kv => new ChannelContributionDto
+                {
+                    ChannelId = kv.Key,
+                    Count = kv.Value
+                })
+                .ToList()
+        };
+    }
+
+    public async Task<List<ChannelContributionDto>> GetPointChannelBreakdownAsync(
+        AnalysisTableSpec spec,
+        DateTime timestamp,
+        TimeGranularity granularity,
+        int? customMinutes,
+        int? channelId,
+        string connectionString,
+        string provider,
+        string database)
+    {
+        if (spec.ChannelColumn == null)
+            return new List<ChannelContributionDto>();
+
+        var dialect = _dialectProvider.GetDialect(provider);
+        using var context = _contextFactory.Create(connectionString, provider, database);
+
+        var fromClause = spec.FromClause ?? dialect.QualifyTable(spec.Schema, spec.Table);
+        var timeCol = dialect.QualifyColumn(spec.TableAlias, spec.TimeColumn);
+        var channelCol = dialect.QualifyColumn(spec.TableAlias, spec.ChannelColumn);
+        var endDate = GetBucketEnd(timestamp, granularity, customMinutes);
+
+        var channelFilter = channelId.HasValue ? $" AND {channelCol} = @p2" : "";
+        var sql = $@"
+            SELECT {dialect.NullTimestampExpression} AS Timestamp, {dialect.CountAggregateExpression} AS Value, {channelCol} AS ChannelId
+            FROM {fromClause}
+            WHERE {timeCol} >= @p0 AND {timeCol} < @p1{channelFilter}
+            GROUP BY {channelCol}
+            ORDER BY Value DESC";
+
+        var parameters = BuildBatchParameters(timestamp, endDate, channelId);
+        var rows = await context.Database.SqlQueryRaw<AggregatedResult>(sql, parameters.ToArray()).ToListAsync();
+
+        return rows
+            .Where(r => r.ChannelId.HasValue)
+            .Select(r => new ChannelContributionDto
+            {
+                ChannelId = r.ChannelId!.Value,
+                Count = r.Value
+            })
+            .ToList();
+    }
+
+    private static string BuildSeriesSql(
+        IDatabaseDialect dialect,
+        string fromClause,
+        string timeExpr,
+        string timeCol,
+        AnalysisTableSpec spec,
+        int? channelId)
+    {
+        var channelFilter = "";
+        if (channelId.HasValue && spec.ChannelColumn != null)
+        {
+            var channelCol = dialect.QualifyColumn(spec.TableAlias, spec.ChannelColumn);
+            channelFilter = $" AND {channelCol} = @p2";
+        }
+
+        return $@"
+            SELECT {timeExpr} AS Timestamp, {dialect.CountAggregateExpression} AS Value, 0 AS ChannelId
+            FROM {fromClause}
+            WHERE {timeCol} >= @p0 AND {timeCol} < @p1{channelFilter}
+            GROUP BY {timeExpr}
+            ORDER BY Timestamp";
+    }
+
+    private static string BuildDistributionSql(
+        IDatabaseDialect dialect,
+        string fromClause,
+        string timeCol,
+        AnalysisTableSpec spec)
+    {
+        var channelCol = dialect.QualifyColumn(spec.TableAlias, spec.ChannelColumn!);
+        return $@"
+            SELECT {dialect.NullTimestampExpression} AS Timestamp, {dialect.CountAggregateExpression} AS Value, {channelCol} AS ChannelId
+            FROM {fromClause}
+            WHERE {timeCol} >= @p0 AND {timeCol} < @p1
+            GROUP BY {channelCol}";
+    }
+
+    private static List<object> BuildBatchParameters(DateTime start, DateTime end, int? channelId)
+    {
+        var parameters = new List<object> { start, end };
+        if (channelId.HasValue) parameters.Add(channelId.Value);
+        return parameters;
+    }
+
+    private static void MergeSeriesBatch(Dictionary<DateTime, DataPoint> dict, List<AggregatedResult> batch)
+    {
+        foreach (var row in batch)
+        {
+            if (dict.TryGetValue(row.Timestamp, out var existing))
+                existing.Value += row.Value;
+            else
+                dict[row.Timestamp] = new DataPoint { Timestamp = row.Timestamp, Value = row.Value };
+        }
+    }
+
+    private static void MergeDistributionBatch(Dictionary<int, int> dict, List<AggregatedResult> batch)
+    {
+        foreach (var row in batch)
+        {
+            if (!row.ChannelId.HasValue || row.ChannelId.Value == 0) continue;
+            if (dict.TryGetValue(row.ChannelId.Value, out var existing))
+                dict[row.ChannelId.Value] = existing + row.Value;
+            else
+                dict[row.ChannelId.Value] = row.Value;
+        }
+    }
+
+    private static DateTime GetBucketEnd(DateTime timestamp, TimeGranularity granularity, int? customMinutes) =>
+        granularity switch
+        {
+            TimeGranularity.Minute => timestamp.AddMinutes(1),
+            TimeGranularity.Hour => timestamp.AddHours(1),
+            TimeGranularity.Day => timestamp.AddDays(1),
+            TimeGranularity.Week => timestamp.AddDays(7),
+            TimeGranularity.Month => timestamp.AddMonths(1),
+            TimeGranularity.Custom => timestamp.AddMinutes(customMinutes ?? 60),
+            _ => timestamp.AddHours(1)
+        };
+}
