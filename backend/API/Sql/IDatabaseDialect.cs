@@ -24,7 +24,7 @@ public interface IDatabaseDialect
 
     string Concat(params string[] parts);
 
-    string BuildOrderedSampleSql(string qualifiedTable, string qualifiedTimeColumn, bool ascending, int limit);
+    string BuildSampleSql(string qualifiedTable, int limit);
 
     string BuildApproximateRowCountSql(string schema, string table);
 }

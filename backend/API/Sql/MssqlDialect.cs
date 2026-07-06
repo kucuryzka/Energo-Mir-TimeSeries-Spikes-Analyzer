@@ -44,11 +44,8 @@ public class MssqlDialect : IDatabaseDialect
     public string Concat(params string[] parts) =>
         $"CONCAT({string.Join(", ", parts)})";
 
-    public string BuildOrderedSampleSql(string qualifiedTable, string qualifiedTimeColumn, bool ascending, int limit)
-    {
-        var order = ascending ? "ASC" : "DESC";
-        return $"SELECT {LimitClause(limit)} * FROM {qualifiedTable} ORDER BY {qualifiedTimeColumn} {order}";
-    }
+    public string BuildSampleSql(string qualifiedTable, int limit) =>
+        $"SELECT {LimitClause(limit)} * FROM {qualifiedTable} WITH (NOLOCK)";
 
     public string BuildApproximateRowCountSql(string schema, string table) => $@"
         SELECT CAST(SUM(p.rows) AS BIGINT) AS [RowCount]

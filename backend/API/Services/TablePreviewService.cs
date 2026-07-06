@@ -1,18 +1,26 @@
+using System.Data;
 using System.Data.Common;
+using API.Configuration;
 using API.DTOs;
 using API.Sql;
 using Dapper;
+using Microsoft.Extensions.Options;
 
 namespace API.Services;
 
 public class TablePreviewService
 {
     private readonly ISqlDialectProvider _dialectProvider;
+    private readonly AnalysisSettings _settings;
     private readonly ILogger<TablePreviewService> _logger;
 
-    public TablePreviewService(ISqlDialectProvider dialectProvider, ILogger<TablePreviewService> logger)
+    public TablePreviewService(
+        ISqlDialectProvider dialectProvider,
+        IOptions<AnalysisSettings> settings,
+        ILogger<TablePreviewService> logger)
     {
         _dialectProvider = dialectProvider;
+        _settings = settings.Value;
         _logger = logger;
     }
 
@@ -28,8 +36,8 @@ public class TablePreviewService
         var dialect = _dialectProvider.GetDialect(DatabaseProvider.Normalize(provider));
         var targetConnStr = BuildTargetConnectionString(connectionString, database);
         var qualifiedTable = dialect.QualifyTable(schema, table);
-        var qualifiedTime = dialect.QualifyColumn(null, timeColumn);
-        limit = Math.Clamp(limit, 5, 50);
+        limit = Math.Clamp(limit, 1, 50);
+        var commandTimeout = Math.Clamp(_settings.PreviewCommandTimeoutSeconds, 5, 600);
 
         using var connection = DatabaseProvider.OpenConnection(provider, targetConnStr);
         await connection.OpenAsync();
@@ -38,46 +46,9 @@ public class TablePreviewService
 
         try
         {
-            var rangeSql = $"SELECT MIN({qualifiedTime}) AS MinDate, MAX({qualifiedTime}) AS MaxDate FROM {qualifiedTable}";
-            var range = await connection.QueryFirstOrDefaultAsync(rangeSql);
-            response.MinDate = ReadDateTime(GetColumnValue(range, "MinDate"));
-            response.MaxDate = ReadDateTime(GetColumnValue(range, "MaxDate"));
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Table preview MIN/MAX failed for {Schema}.{Table}", schema, table);
-        }
-
-        try
-        {
-            var earliestSql = dialect.BuildOrderedSampleSql(qualifiedTable, qualifiedTime, ascending: true, limit);
-            var earliest = await connection.QueryAsync(earliestSql);
-            response.EarliestRows = ToRowDictionaries(earliest);
-            if (response.MinDate == null && response.EarliestRows.Count > 0)
-                response.MinDate = ReadDateTime(GetColumnValue(response.EarliestRows[0], timeColumn));
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Table preview earliest rows failed for {Schema}.{Table}", schema, table);
-        }
-
-        try
-        {
-            var latestSql = dialect.BuildOrderedSampleSql(qualifiedTable, qualifiedTime, ascending: false, limit);
-            var latest = await connection.QueryAsync(latestSql);
-            response.LatestRows = ToRowDictionaries(latest);
-            if (response.MaxDate == null && response.LatestRows.Count > 0)
-                response.MaxDate = ReadDateTime(GetColumnValue(response.LatestRows[0], timeColumn));
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Table preview latest rows failed for {Schema}.{Table}", schema, table);
-        }
-
-        try
-        {
             var countSql = dialect.BuildApproximateRowCountSql(schema, table);
-            var countRow = await connection.QueryFirstOrDefaultAsync(countSql);
+            var countRow = await connection.QueryFirstOrDefaultAsync(
+                new CommandDefinition(countSql, commandTimeout: commandTimeout));
             var rc = GetColumnValue(countRow, "RowCount");
             if (rc is not null and not DBNull)
                 response.ApproximateRowCount = Convert.ToInt64(rc);
@@ -87,8 +58,13 @@ public class TablePreviewService
             _logger.LogWarning(ex, "Table preview row count failed for {Schema}.{Table}", schema, table);
         }
 
-        if (response.EarliestRows.Count == 0 && response.LatestRows.Count == 0 && response.MinDate == null && response.MaxDate == null)
-            throw new InvalidOperationException("Could not load any preview data for the table.");
+        var sampleSql = dialect.BuildSampleSql(qualifiedTable, limit);
+        var rows = await connection.QueryAsync(
+            new CommandDefinition(sampleSql, commandTimeout: commandTimeout));
+        response.SampleRows = ToRowDictionaries(rows);
+
+        if (response.SampleRows.Count == 0)
+            throw new InvalidOperationException("Could not load any preview rows for the table.");
 
         return response;
     }
@@ -121,14 +97,6 @@ public class TablePreviewService
         return null;
     }
 
-    private static DateTime? ReadDateTime(object? value)
-    {
-        if (value is null or DBNull) return null;
-        if (value is DateTime dt) return dt;
-        if (value is DateTimeOffset dto) return dto.UtcDateTime;
-        return DateTime.TryParse(value.ToString(), out var parsed) ? parsed : null;
-    }
-
     private static object? NormalizeCellValue(object? value)
     {
         if (value is null or DBNull) return null;
@@ -145,10 +113,4 @@ public class TablePreviewService
         connStrBuilder["Database"] = database;
         return connStrBuilder.ConnectionString;
     }
-
-    private static DbConnection OpenConnection(string provider, string connectionString) =>
-        DatabaseProvider.OpenConnection(provider, connectionString);
-
-    private static bool IsPostgres(string provider) =>
-        DatabaseProvider.IsPostgres(provider);
 }

@@ -45,11 +45,8 @@ public class PostgresDialect : IDatabaseDialect
     public string Concat(params string[] parts) =>
         $"concat({string.Join(", ", parts)})";
 
-    public string BuildOrderedSampleSql(string qualifiedTable, string qualifiedTimeColumn, bool ascending, int limit)
-    {
-        var order = ascending ? "ASC" : "DESC";
-        return $"SELECT * FROM {qualifiedTable} ORDER BY {qualifiedTimeColumn} {order} {LimitClause(limit)}";
-    }
+    public string BuildSampleSql(string qualifiedTable, int limit) =>
+        $"SELECT * FROM {qualifiedTable} {LimitClause(limit)}";
 
     public string BuildApproximateRowCountSql(string schema, string table) => $@"
         SELECT CAST(c.reltuples AS BIGINT) AS RowCount

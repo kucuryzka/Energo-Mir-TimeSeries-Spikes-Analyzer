@@ -21,4 +21,7 @@ public class AnalysisSettings
     public int MaxSeriesPoints { get; set; } = 500_000;
 
     public int ProgressSaveIntervalSeconds { get; set; } = 5;
+
+    /// <summary>Timeout for lightweight table preview queries (seconds).</summary>
+    public int PreviewCommandTimeoutSeconds { get; set; } = 120;
 }

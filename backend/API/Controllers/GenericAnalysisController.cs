@@ -64,24 +64,6 @@ public class GenericAnalysisController : ControllerBase
         _requestValidator = requestValidator;
     }
 
-    [HttpGet("time-range")]
-    public async Task<IActionResult> GetTimeRange([FromQuery] string database, [FromQuery] string schema, [FromQuery] string table, [FromQuery] string timeColumn)
-    {
-        try
-        {
-            var preview = await LoadTablePreviewAsync(database, schema, table, timeColumn, 1);
-            return Ok(new { minDate = preview.MinDate, maxDate = preview.MaxDate });
-        }
-        catch (UnauthorizedAccessException ex)
-        {
-            return Unauthorized(ex.Message);
-        }
-        catch (Exception ex)
-        {
-            return StatusCode(500, new { message = "Error fetching time range", details = ex.Message });
-        }
-    }
-
     [HttpGet("preview")]
     public async Task<IActionResult> GetTablePreview(
         [FromQuery] string database,
