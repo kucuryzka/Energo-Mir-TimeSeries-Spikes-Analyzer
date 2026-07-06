@@ -25,10 +25,35 @@ public class AnalysisResultService
 
     public bool HasResult(AnalysisJob job)
     {
-        if (job.Status != "Completed" || string.IsNullOrEmpty(job.ResultFilePath))
+        if (job.Status != "Completed")
             return false;
 
-        return File.Exists(Path.Combine(_resultsRoot, job.ResultFilePath));
+        if (HasResultFile(job))
+            return true;
+
+        return HasLegacyInlineResult(job);
+    }
+
+    private bool HasResultFile(AnalysisJob job) =>
+        !string.IsNullOrEmpty(job.ResultFilePath)
+        && File.Exists(Path.Combine(_resultsRoot, job.ResultFilePath));
+
+    private static bool HasLegacyInlineResult(AnalysisJob job)
+    {
+        if (string.IsNullOrWhiteSpace(job.ResultJson))
+            return false;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(job.ResultJson);
+            return doc.RootElement.TryGetProperty("series", out var series)
+                && series.ValueKind == JsonValueKind.Array
+                && series.GetArrayLength() > 0;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
     }
 
     public async Task SaveAsync(AnalysisJob job, SpikeResponse response, CancellationToken cancellationToken = default)
@@ -67,17 +92,30 @@ public class AnalysisResultService
 
     public async Task<SpikeResponse> LoadAsync(AnalysisJob job, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrEmpty(job.ResultFilePath))
-            throw new InvalidOperationException("Analysis result file is not available.");
-
-        var series = await LoadSeriesFromFileAsync(job.ResultFilePath, cancellationToken);
-        var metadata = DeserializeMetadata(job.ResultJson);
-
-        return new SpikeResponse
+        if (HasResultFile(job))
         {
-            Series = series,
-            Distribution = metadata.Distribution
-        };
+            var series = await LoadSeriesFromFileAsync(job.ResultFilePath!, cancellationToken);
+            var metadata = DeserializeMetadata(job.ResultJson);
+            return new SpikeResponse
+            {
+                Series = series,
+                Distribution = metadata.Distribution
+            };
+        }
+
+        var legacy = TryLoadLegacyResponse(job);
+        if (legacy != null)
+            return legacy;
+
+        throw new InvalidOperationException("Analysis result is not available.");
+    }
+
+    private SpikeResponse? TryLoadLegacyResponse(AnalysisJob job)
+    {
+        if (!HasLegacyInlineResult(job))
+            return null;
+
+        return JsonSerializer.Deserialize<SpikeResponse>(job.ResultJson!, _jsonOptions);
     }
 
     public async Task<string> SerializeToJsonAsync(AnalysisJob job, CancellationToken cancellationToken = default)
