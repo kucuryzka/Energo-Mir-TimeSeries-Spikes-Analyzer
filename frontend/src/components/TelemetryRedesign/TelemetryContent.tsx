@@ -295,7 +295,6 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({ database, ac
             <span className="subtitle">
               {periodLabel} · {objectLabel} · {GRANULARITY_LABEL[granularity]} детализация
             </span>
-            <span className="live-badge"><span className="live-dot" />{loading ? 'Анализ выполняется…' : 'Обновлено только что'}</span>
           </div>
         </div>
 

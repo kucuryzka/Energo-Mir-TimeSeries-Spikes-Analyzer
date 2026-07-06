@@ -1,11 +1,10 @@
 import React, { useState } from 'react';
 import { Drawer, Badge } from 'antd';
-import { HistoryOutlined, DashboardOutlined, ApiOutlined } from '@ant-design/icons';
+import { DashboardOutlined, ApiOutlined } from '@ant-design/icons';
 import { DatabaseTreeSidebar } from '../Explorer/DatabaseTreeSidebar';
 import { GenericAnalyzer } from '../GenericAnalyzer/GenericAnalyzer';
 import { TelemetryContent, type TabKey } from './TelemetryContent';
 import { isMockMode } from '../../mocks/mockMode';
-import { useShellRail } from '../../context/ShellRailContext';
 import { useQueryTracker } from '../QueryTracker/QueryTracker';
 import { API_BASE_URL } from '../../api/index';
 import './TelemetryScreen.css';
@@ -27,7 +26,6 @@ export const TelemetryScreen: React.FC<TelemetryScreenProps> = ({ onLogout }) =>
   const [dbDrawerOpen, setDbDrawerOpen] = useState(false);
   const [genericConfig, setGenericConfig] = useState<GenericConfig | null>(null);
 
-  const { actions } = useShellRail();
   const { open: openQueryTracker, activeCount } = useQueryTracker();
 
   const handleSelectStandardSchema = (db: string, schema: string) => {
@@ -77,14 +75,6 @@ export const TelemetryScreen: React.FC<TelemetryScreenProps> = ({ onLogout }) =>
             <div style={{ flex: 1 }} />
 
             <div
-              className={`nav-item ${actions.onOpenHistory ? '' : 'disabled'}`}
-              title="История анализов"
-              onClick={() => actions.onOpenHistory?.()}
-              style={{ cursor: actions.onOpenHistory ? 'pointer' : 'default', opacity: actions.onOpenHistory ? 1 : 0.4 }}
-            >
-              <HistoryOutlined style={{ fontSize: 19 }} />
-            </div>
-            <div
               className="nav-item"
               title="Панель Hangfire"
               onClick={() => window.open(`${API_BASE_URL}/hangfire`, '_blank')}
@@ -98,11 +88,6 @@ export const TelemetryScreen: React.FC<TelemetryScreenProps> = ({ onLogout }) =>
               </Badge>
             </div>
 
-            <div className="nav-item" title="Профиль">
-              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-                <circle cx="12" cy="8" r="4" /><path d="M4 20c0-4.4 3.6-7 8-7s8 2.6 8 7" />
-              </svg>
-            </div>
             <div className="nav-item" title="Настройки">
               <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
                 <circle cx="12" cy="12" r="3.2" />
