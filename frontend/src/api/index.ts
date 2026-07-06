@@ -1,25 +1,31 @@
 import axios from 'axios';
 import { requestTracker } from '../store/requestTracker';
 
-// Используем HTTP, порт 5090 (из launchSettings.json)
-export const API_BASE_URL = 'http://localhost:5090';
+/** Префикс API за nginx: /api/dist/... → backend /api/... */
+export const API_BASE_PATH = import.meta.env.VITE_API_BASE_PATH ?? '/api/dist';
+
+/** Hangfire на backend в /hangfire, за nginx — /api/dist/hangfire */
+export const HANGFIRE_PATH = import.meta.env.VITE_HANGFIRE_PATH ?? '/api/dist/hangfire/';
 
 export const apiClient = axios.create({
-  baseURL: API_BASE_URL + '/api',
+  baseURL: API_BASE_PATH,
 });
 
-// Generate a simple unique ID
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
 apiClient.interceptors.request.use(config => {
+  // Относительные пути без ведущего /, иначе axios игнорирует baseURL
+  if (config.url?.startsWith('/')) {
+    config.url = config.url.slice(1);
+  }
+
   const token = localStorage.getItem('dbToken');
   if (token) {
     config.headers['X-Session-Token'] = token;
   }
-  
-  // Create an ID for the request
+
   const requestId = generateId();
-  (config as any).requestId = requestId;
+  (config as { requestId?: string }).requestId = requestId;
   requestTracker.startRequest(requestId, config.url || '', config.method || 'get');
 
   return config;
@@ -27,14 +33,14 @@ apiClient.interceptors.request.use(config => {
 
 apiClient.interceptors.response.use(
   response => {
-    const requestId = (response.config as any).requestId;
+    const requestId = (response.config as { requestId?: string }).requestId;
     if (requestId) {
       requestTracker.endRequest(requestId, 'success');
     }
     return response;
   },
   error => {
-    const requestId = (error.config as any)?.requestId;
+    const requestId = (error.config as { requestId?: string })?.requestId;
     if (requestId) {
       requestTracker.endRequest(requestId, 'error', error.message || 'Unknown error');
     }

@@ -9,7 +9,7 @@ import { DatabaseTreeSidebar } from './components/Explorer/DatabaseTreeSidebar';
 import { GenericAnalyzer } from './components/GenericAnalyzer/GenericAnalyzer';
 import { QueryTrackerProvider, useQueryTracker } from './components/QueryTracker/QueryTracker';
 import { ShellRailProvider, useShellRail } from './context/ShellRailContext';
-import { API_BASE_URL } from './api/index';
+import { HANGFIRE_PATH } from './api/index';
 import logoImg from './assets/logo.png';
 import databaseIcon from './assets/database_svg.svg';
 import './App.css';
@@ -75,7 +75,7 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
           <button
             type="button"
             className="app-shell-rail-btn app-shell-rail-btn--hangfire"
-            onClick={() => window.open(`${API_BASE_URL}/hangfire`, '_blank')}
+            onClick={() => window.open(HANGFIRE_PATH, '_blank')}
             title="Панель Hangfire"
           >
             <DashboardOutlined style={{ fontSize: 20, color: '#52c41a' }} />
