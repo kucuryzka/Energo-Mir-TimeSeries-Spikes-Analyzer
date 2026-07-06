@@ -165,8 +165,11 @@ public class AnalysisJobProcessor
         return new Progress<int>(percent =>
         {
             var clamped = Math.Clamp(percent, 0, 99);
+            if (clamped <= lastSavedProgress)
+                return;
+
             var now = Environment.TickCount64;
-            if (clamped <= lastSavedProgress && now - lastSaveTicks < _progressSaveIntervalMs)
+            if (now - lastSaveTicks < _progressSaveIntervalMs && clamped < 99)
                 return;
 
             lastSavedProgress = clamped;
@@ -176,12 +179,9 @@ public class AnalysisJobProcessor
             {
                 using var scope = _scopeFactory.CreateScope();
                 var db = scope.ServiceProvider.GetRequiredService<InternalDbContext>();
-                var tracked = db.AnalysisJobs.Find(jobId);
-                if (tracked == null || tracked.Status != "Running")
-                    return;
-
-                tracked.Progress = clamped;
-                db.SaveChanges();
+                db.AnalysisJobs
+                    .Where(j => j.Id == jobId && j.Status == "Running")
+                    .ExecuteUpdate(s => s.SetProperty(j => j.Progress, clamped));
             }
             catch (Exception ex)
             {
@@ -193,13 +193,19 @@ public class AnalysisJobProcessor
     private Action<IReadOnlyList<DataPoint>> CreateBatchAggregator(string jobId)
     {
         var lastSavedCount = -1;
+        var lastSaveTicks = 0L;
 
         return points =>
         {
             if (points.Count == 0 || points.Count == lastSavedCount)
                 return;
 
+            var now = Environment.TickCount64;
+            if (lastSaveTicks > 0 && now - lastSaveTicks < _progressSaveIntervalMs)
+                return;
+
             lastSavedCount = points.Count;
+            lastSaveTicks = now;
 
             try
             {

@@ -146,11 +146,11 @@ public class AnalysisResultService
     public async Task SavePartialSeriesAsync(string jobId, IEnumerable<Core.Models.DataPoint> series, CancellationToken cancellationToken = default)
     {
         var fullPath = GetPartialFilePath(jobId);
-        var tempPath = fullPath + ".tmp";
 
         try
         {
-            await using (var stream = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None))
+            // Write in place with FileShare.Read so polling can read while we replace (no Move — avoids Windows lock on overwrite).
+            await using (var stream = new FileStream(fullPath, FileMode.Create, FileAccess.Write, FileShare.Read))
             await using (var writer = new StreamWriter(stream))
             {
                 foreach (var point in series.OrderBy(p => p.Timestamp))
@@ -166,13 +166,13 @@ public class AnalysisResultService
                     await writer.WriteLineAsync(JsonSerializer.Serialize(dto, _jsonOptions));
                 }
             }
-
-            File.Move(tempPath, fullPath, overwrite: true);
         }
         catch
         {
-            if (File.Exists(tempPath))
-                File.Delete(tempPath);
+            if (File.Exists(fullPath))
+            {
+                try { File.Delete(fullPath); } catch { /* best effort */ }
+            }
             throw;
         }
     }
@@ -212,8 +212,15 @@ public class AnalysisResultService
             throw new FileNotFoundException("Analysis result file was not found.", fullPath);
 
         var series = new List<AnomalyResultDto>();
-        await foreach (var line in File.ReadLinesAsync(fullPath, cancellationToken))
+        await using var stream = new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        using var reader = new StreamReader(stream);
+        while (true)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+            var line = await reader.ReadLineAsync(cancellationToken);
+            if (line is null)
+                break;
+
             if (string.IsNullOrWhiteSpace(line))
                 continue;
 
