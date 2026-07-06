@@ -101,7 +101,7 @@ export const LegacyDboDashboard: React.FC<{ database: string }> = ({ database })
         const nameById = new Map(channels.map(c => [c.id, c.name]));
         setPointChannels(breakdown.map(c => ({
           ...c,
-          channelName: c.channelName || nameById.get(c.channelId) || `Объект ${c.channelId}`
+          channelName: c.channelName || nameById.get(c.channelId) || `ID ${c.channelId}`
         })));
       }).catch(err => {
         console.error(err);
@@ -184,7 +184,7 @@ export const LegacyDboDashboard: React.FC<{ database: string }> = ({ database })
       const data = await analyticsApi.dbo.getObjects(database, search);
       setChannels(data);
     } catch (err) {
-      console.error('Ошибка при загрузке каналов', err);
+      console.error('Ошибка при загрузке объектов', err);
     }
   };
 
@@ -246,8 +246,10 @@ export const LegacyDboDashboard: React.FC<{ database: string }> = ({ database })
     if (!data?.distribution?.length) return [];
     const nameById = new Map(channels.map(c => [c.id, c.name]));
     return data.distribution.map((item: ChannelContributionDto) => ({
-      category: item.channelName || nameById.get(item.channelId) || `Объект ${item.channelId}`,
-      count: item.count
+      category: item.channelName?.trim()
+        || nameById.get(item.channelId)
+        || `ID ${item.channelId}`,
+      count: item.count,
     })).sort((a: { count: number }, b: { count: number }) => b.count - a.count);
   }, [data, channels]);
 
@@ -495,7 +497,7 @@ export const LegacyDboDashboard: React.FC<{ database: string }> = ({ database })
                     <div>
                       <Text strong>{dayjs(job.startDate).format('DD.MM.YY')} - {dayjs(job.endDate).format('DD.MM.YY')}</Text>
                       <br/>
-                      <Text type="secondary">Канал: {job.channelId || 'Все'}</Text>
+                      <Text type="secondary">Объект: {job.channelId || 'Все'}</Text>
                       <br/>
                       <Text type="secondary">
                         {(job.status === 'Completed' || job.status === 'Failed')

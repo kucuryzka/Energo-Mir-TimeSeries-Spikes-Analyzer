@@ -98,12 +98,12 @@ export const ControlsPanel: React.FC<Props> = ({
         {channels.length > 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <label style={{ fontSize: 13, fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              Канал
+              Объект
             </label>
             <Select
               showSearch
               allowClear
-              placeholder="Все каналы"
+              placeholder="Все объекты"
               value={channelId}
               onChange={onChannelChange}
               onSearch={onSearchChannels}
