@@ -129,7 +129,28 @@ export const TelemetryScreen: React.FC<TelemetryScreenProps> = ({ onLogout, uiTh
           </div>
 
           <div className="content">
-            {genericConfig ? (
+            {selectedDb && (
+              <>
+                <div
+                  className="content-view"
+                  style={{ display: genericConfig || activeTab !== 'dbo' ? 'none' : 'contents' }}
+                >
+                  <TelemetryContent database={selectedDb} activeTab="dbo" visible={!genericConfig && activeTab === 'dbo'} />
+                </div>
+                <div
+                  className="content-view"
+                  style={{ display: genericConfig || activeTab !== 'em' ? 'none' : 'contents' }}
+                >
+                  <TelemetryContent database={selectedDb} activeTab="em" visible={!genericConfig && activeTab === 'em'} />
+                </div>
+              </>
+            )}
+            {!selectedDb && !genericConfig && (
+              <div className="telemetry-empty" style={{ margin: 'auto' }}>
+                Откройте панель источников данных слева и выберите базу/схему для анализа.
+              </div>
+            )}
+            {genericConfig && (
               <GenericAnalyzer
                 db={genericConfig.db}
                 schema={genericConfig.schema}
@@ -137,12 +158,6 @@ export const TelemetryScreen: React.FC<TelemetryScreenProps> = ({ onLogout, uiTh
                 timeColumn={genericConfig.timeColumn}
                 onBack={() => setGenericConfig(null)}
               />
-            ) : selectedDb ? (
-              <TelemetryContent database={selectedDb} activeTab={activeTab} />
-            ) : (
-              <div className="telemetry-empty" style={{ margin: 'auto' }}>
-                Откройте панель источников данных слева и выберите базу/схему для анализа.
-              </div>
             )}
           </div>
         </div>

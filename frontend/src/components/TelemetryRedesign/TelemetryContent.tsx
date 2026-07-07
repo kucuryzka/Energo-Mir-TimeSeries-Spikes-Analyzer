@@ -11,13 +11,14 @@ import { useRegisterShellRailActions } from '../../context/ShellRailContext';
 import { AnalysisJobProgress } from '../Dashboard/AnalysisJobProgress';
 import { DistributionChart } from '../Chart/DistributionChart';
 import { TelemetryControls } from './TelemetryControls';
-import type { ChannelDto, SpikeResponse, TimeGranularity, SpikePoint, ChannelContributionDto, DataSourceDto, DistributionItemDto } from '../../types/analytics.types';
+import type { ChannelDto, TimeGranularity, SpikePoint, ChannelContributionDto, DataSourceDto, DistributionItemDto } from '../../types/analytics.types';
 import { SpikeChart } from '../Chart/SpikeChart';
 import { AnomalyDonut } from './AnomalyDonut';
 import { AnomalyList } from './AnomalyList';
 import { KpiRow } from './KpiRow';
 import { loadEventCodeMap } from '../../utils/eventCodeMap';
 import { TablePreviewContent, type TablePreviewData } from '../GenericAnalyzer/TablePreviewCard';
+import { runAnalysisSessionJob, updateAnalysisSession, useAnalysisSession } from '../../store/analysisSessionStore';
 
 const { Text } = Typography;
 
@@ -26,6 +27,7 @@ export type TabKey = 'dbo' | 'em';
 interface TelemetryContentProps {
   database: string;
   activeTab: TabKey;
+  visible?: boolean;
 }
 
 const GRANULARITY_LABEL: Record<string, string> = {
@@ -42,7 +44,7 @@ const TABLE_PREVIEW_CONFIG: Record<TabKey, { timeColumn: string; tableLabel: str
   em: { timeColumn: 'InsertTime', tableLabel: 'em_protocol.Records' },
 };
 
-export const TelemetryContent: React.FC<TelemetryContentProps> = ({ database, activeTab }) => {
+export const TelemetryContent: React.FC<TelemetryContentProps> = ({ database, activeTab, visible = true }) => {
   const [granularity, setGranularity] = useState<TimeGranularity>('Hour');
   const [customMinutes, setCustomMinutes] = useState<number | null>(null);
   const [windowSize, setWindowSize] = useState<number>(30);
@@ -60,11 +62,15 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({ database, ac
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
 
-  const [data, setData] = useState<SpikeResponse | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [analysisProgress, setAnalysisProgress] = useState(0);
-  const [isPartialResult, setIsPartialResult] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const sessionKey = useMemo(() => `telemetry:${activeTab}:${database}`, [activeTab, database]);
+  const {
+    loading,
+    progress: analysisProgress,
+    data,
+    isPartialResult,
+    error,
+  } = useAnalysisSession(sessionKey);
+
   const [, setSources] = useState<DataSourceDto[]>([]);
   const sourcesRef = useRef<DataSourceDto[]>([]);
   const emSourceIdRef = useRef<string>('em_protocol');
@@ -129,7 +135,6 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({ database, ac
   useEffect(() => {
     setChannelId(null);
     setChannels([]);
-    setData(null);
     setDistributions({});
     fetchChannels();
 
@@ -141,7 +146,7 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({ database, ac
       }).catch(() => {});
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, database]);
+  }, [database]);
 
   useEffect(() => {
     const timer = setTimeout(() => fetchChannels(channelSearch), 400);
@@ -182,11 +187,6 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({ database, ac
     );
     if (!confirmed) return;
 
-    setLoading(true);
-    setError(null);
-    setData(null);
-    setIsPartialResult(false);
-    setAnalysisProgress(0);
     setDistributions({});
 
     try {
@@ -205,21 +205,23 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({ database, ac
       message.loading({ content: 'Задача поставлена в очередь...', key: 'jobProgress' });
 
       const api = activeTab === 'dbo' ? analyticsApi.dbo : analyticsApi.emProtocol;
-      const result = await api.runAnalysis(
-        requestPayload,
-        (progress) => {
-          setAnalysisProgress(progress);
-          message.loading({ content: `Анализ выполняется... (${progress}%)`, key: 'jobProgress' });
+      const { jobId } = await api.enqueueAnalysis(requestPayload);
+
+      const result = await runAnalysisSessionJob(
+        sessionKey,
+        jobId,
+        {
+          getJobStatus: api.getJobStatus,
+          getJobResult: api.getJobResult,
+          getJobPartialResult: api.getJobPartialResult,
         },
-        (partial) => {
-          setIsPartialResult(true);
-          setData(partial);
+        {
+          onProgress: (progress) => {
+            message.loading({ content: `Анализ выполняется... (${progress}%)`, key: 'jobProgress' });
+          },
         },
       );
 
-      setIsPartialResult(false);
-      setAnalysisProgress(100);
-      setData(result);
       message.success({ content: 'Анализ завершен!', key: 'jobProgress', duration: 2.5 });
       await fetchDistributions();
 
@@ -229,11 +231,8 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({ database, ac
       }
     } catch (err: any) {
       const errorText = err?.response?.data?.message || err?.message || String(err);
-      setError(`Ошибка при загрузке данных: ${errorText}`);
+      updateAnalysisSession(sessionKey, { loading: false, error: `Ошибка при загрузке данных: ${errorText}` });
       message.error({ content: 'Сбой при запуске задачи', key: 'jobProgress', duration: 4 });
-    } finally {
-      setLoading(false);
-      setAnalysisProgress(0);
     }
   };
 
@@ -283,15 +282,20 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({ database, ac
     }
   }, [activeTab, database]);
 
-  useRegisterShellRailActions({ onOpenHistory: openHistory });
+  useRegisterShellRailActions({ onOpenHistory: openHistory }, visible);
 
   const loadHistoryItem = async (job: any) => {
     try {
       message.loading({ content: 'Загрузка результата...', key: 'loadResult' });
       const api = activeTab === 'dbo' ? analyticsApi.dbo : analyticsApi.emProtocol;
       const result = await api.getJobResult(job.id);
-      setIsPartialResult(false);
-      setData(result);
+      updateAnalysisSession(sessionKey, {
+        data: result,
+        loading: false,
+        isPartialResult: false,
+        progress: 100,
+        error: null,
+      });
       setDateRange([job.startDate, job.endDate]);
       setChannelId(job.channelId ? parseInt(job.channelId, 10) : null);
       setGranularity(job.granularity);

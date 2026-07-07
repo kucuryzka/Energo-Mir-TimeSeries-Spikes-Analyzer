@@ -14,9 +14,9 @@ import { TelemetryControls } from '../TelemetryRedesign/TelemetryControls';
 import { KpiRow } from '../TelemetryRedesign/KpiRow';
 import { AnomalyDonut } from '../TelemetryRedesign/AnomalyDonut';
 import { AnomalyList } from '../TelemetryRedesign/AnomalyList';
-import type { TimeGranularity, SpikePoint, SpikeResponse } from '../../types/analytics.types';
-import { apiCache } from '../../store/apiCache';
+import type { TimeGranularity, SpikePoint } from '../../types/analytics.types';
 import { useRegisterShellRailActions } from '../../context/ShellRailContext';
+import { runAnalysisSessionJob, updateAnalysisSession, useAnalysisSession } from '../../store/analysisSessionStore';
 
 const { Text } = Typography;
 
@@ -38,10 +38,18 @@ interface GenericAnalyzerProps {
 }
 
 export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({ db, schema, table, timeColumn }) => {
-  const [data, setData] = useState<SpikeResponse | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [analysisProgress, setAnalysisProgress] = useState(0);
-  const [isPartialResult, setIsPartialResult] = useState(false);
+  const sessionKey = useMemo(
+    () => `generic:${db}:${schema}:${table}:${timeColumn}`,
+    [db, schema, table, timeColumn],
+  );
+  const {
+    loading,
+    progress: analysisProgress,
+    data,
+    isPartialResult,
+    error,
+  } = useAnalysisSession(sessionKey);
+
   const [selectedPoint, setSelectedPoint] = useState<SpikePoint | null>(null);
   const [pointDetails, setPointDetails] = useState<any[]>([]);
   const [loadingDetails, setLoadingDetails] = useState(false);
@@ -91,10 +99,6 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({ db, schema, ta
     const confirmed = await confirmHeavyAnalysis(granularity, dateRange[0], dateRange[1], customMinutes);
     if (!confirmed) return;
 
-    setLoading(true);
-    setData(null);
-    setIsPartialResult(false);
-    setAnalysisProgress(0);
     try {
       const requestData = {
         database: db,
@@ -111,49 +115,35 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({ db, schema, ta
 
       message.loading({ content: 'Задача поставлена в очередь...', key: 'jobProgress' });
 
-      const result = await genericAnalysisApi.runAnalysis(
-        requestData,
-        (progress) => {
-          setAnalysisProgress(progress);
-          message.loading({ content: `Анализ выполняется... (${progress}%)`, key: 'jobProgress' });
+      const { jobId } = await genericAnalysisApi.enqueueAnalysis(requestData);
+
+      const result = await runAnalysisSessionJob(
+        sessionKey,
+        jobId,
+        {
+          getJobStatus: genericAnalysisApi.getJobStatus,
+          getJobResult: genericAnalysisApi.getJobResult,
+          getJobPartialResult: genericAnalysisApi.getJobPartialResult,
         },
-        (partial) => {
-          setIsPartialResult(true);
-          setData(partial);
+        {
+          onProgress: (progress) => {
+            message.loading({ content: `Анализ выполняется... (${progress}%)`, key: 'jobProgress' });
+          },
         },
       );
 
-      setIsPartialResult(false);
-      setAnalysisProgress(100);
-      setData(result);
       message.success({ content: 'Анализ завершен!', key: 'jobProgress', duration: 2.5 });
+
+      const spikes = result.series.filter(s => s.isSpike);
+      if (spikes.length > 0) {
+        message.warning(`Обнаружено ${spikes.length} аномалий`);
+      }
     } catch (e: any) {
       const errorText = e.response?.data?.message || e.response?.data || e.message || String(e);
+      updateAnalysisSession(sessionKey, { loading: false, error: String(errorText) });
       message.error({ content: `Ошибка при запуске задачи: ${errorText}`, key: 'jobProgress', duration: 4 });
-    } finally {
-      setLoading(false);
-      setAnalysisProgress(0);
     }
   };
-
-  useEffect(() => {
-    const dataPayload = {
-      database: db,
-      schema,
-      table,
-      timeColumn,
-      startDate: dateRange[0],
-      endDate: dateRange[1],
-      granularity,
-      customMinutes,
-      confidence,
-      windowSize,
-    };
-    const cached = apiCache.get('/GenericAnalysis/analyze', undefined, dataPayload);
-    if (!cached) {
-      setData(null);
-    }
-  }, [db, schema, table, timeColumn]);
 
   const handleExport = () => {
     if (!data?.series?.length) {
@@ -209,8 +199,13 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({ db, schema, ta
     try {
       message.loading({ content: 'Загрузка результата...', key: 'loadResult' });
       const res = await genericAnalysisApi.getJobResult(job.id);
-      setIsPartialResult(false);
-      setData(res);
+      updateAnalysisSession(sessionKey, {
+        data: res,
+        loading: false,
+        isPartialResult: false,
+        progress: 100,
+        error: null,
+      });
       setDateRange([job.startDate, job.endDate]);
       message.success({ content: 'Результат загружен', key: 'loadResult', duration: 2.5 });
       setHistoryOpen(false);
@@ -297,6 +292,8 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({ db, schema, ta
           />
         </div>
       )}
+
+      {error && <div className="telemetry-error">{error}</div>}
 
       <div className="telemetry-progress">
         <AnalysisJobProgress

@@ -31,11 +31,12 @@ export const useShellRail = () => {
   return ctx;
 };
 
-export const useRegisterShellRailActions = (actions: ShellRailActions) => {
+export const useRegisterShellRailActions = (actions: ShellRailActions, enabled = true) => {
   const { registerActions } = useShellRail();
 
   React.useEffect(() => {
+    if (!enabled) return;
     registerActions(actions);
     return () => registerActions({});
-  }, [registerActions, actions.onOpenHistory]);
+  }, [registerActions, actions.onOpenHistory, enabled]);
 };
