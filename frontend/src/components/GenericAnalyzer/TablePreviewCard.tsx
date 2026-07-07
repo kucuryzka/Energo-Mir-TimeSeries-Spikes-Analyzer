@@ -53,6 +53,8 @@ export const TablePreviewContent: React.FC<TablePreviewContentProps> = ({
       title: key,
       dataIndex: key,
       key,
+      width: 140,
+      minWidth: 120,
       ellipsis: true,
       render: (value: unknown) => {
         const isTime = key.toLowerCase() === timeColumn.toLowerCase();
@@ -64,6 +66,13 @@ export const TablePreviewContent: React.FC<TablePreviewContentProps> = ({
       },
     }));
   }, [preview, timeColumn]);
+
+  const showPickActions = Boolean(onUseAsPeriodStart || onUseAsPeriodEnd);
+
+  const tableScrollX = useMemo(() => {
+    const dataCols = preview?.sampleRows[0] ? Object.keys(preview.sampleRows[0]).length : 0;
+    return dataCols * 140 + (showPickActions ? 140 : 0);
+  }, [preview, showPickActions]);
 
   if (loading) {
     return (
@@ -77,16 +86,14 @@ export const TablePreviewContent: React.FC<TablePreviewContentProps> = ({
     return <Text type="secondary">Не удалось загрузить образец</Text>;
   }
 
-  const showPickActions = onUseAsPeriodStart || onUseAsPeriodEnd;
-
   return (
-    <div style={{ width: '100%', minWidth: 0, maxWidth: '100%' }}>
+    <div className="table-preview-content">
       {tableLabel && (
-        <Text type="secondary" style={{ display: 'block', fontSize: 12, marginBottom: 8 }}>
+        <Text type="secondary" style={{ display: 'block', fontSize: 12 }}>
           {tableLabel} · колонка {timeColumn}
         </Text>
       )}
-      <Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
+      <Text type="secondary" style={{ display: 'block' }}>
         Записей (оценка): <Text strong>{formatRowCount(preview.approximateRowCount)}</Text>
         {' · '}
         Показано строк: <Text strong>{preview.sampleRows.length}</Text>
@@ -94,7 +101,7 @@ export const TablePreviewContent: React.FC<TablePreviewContentProps> = ({
       {preview.sampleRows.length === 0 ? (
         <Text type="secondary">Нет строк для отображения</Text>
       ) : (
-        <div style={{ width: '100%', maxWidth: '100%', overflowX: 'auto' }}>
+        <div className="table-preview-scroll">
           <Table
             dataSource={preview.sampleRows.map((row, idx) => ({ ...row, _key: idx }))}
             columns={[
@@ -130,7 +137,7 @@ export const TablePreviewContent: React.FC<TablePreviewContentProps> = ({
             rowKey="_key"
             size="small"
             pagination={false}
-            scroll={{ x: 'max-content' }}
+            scroll={{ x: tableScrollX, y: 300 }}
             bordered
           />
         </div>

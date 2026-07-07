@@ -10,6 +10,7 @@ const GRANULARITY_OPTIONS: { value: TimeGranularity; label: string }[] = [
   { value: 'Hour', label: 'Почасово' },
   { value: 'Day', label: 'Посуточно' },
   { value: 'Week', label: 'По неделям' },
+  { value: 'Month', label: 'Помесячно' },
   { value: 'Custom', label: 'Свой интервал' },
 ];
 
@@ -47,6 +48,8 @@ export interface TelemetryControlsProps {
   loading: boolean;
   onExport: () => void;
   exportDisabled: boolean;
+  previewOpen?: boolean;
+  onPreviewToggle?: () => void;
 }
 
 export const TelemetryControls: React.FC<TelemetryControlsProps> = ({
@@ -71,6 +74,8 @@ export const TelemetryControls: React.FC<TelemetryControlsProps> = ({
   loading,
   onExport,
   exportDisabled,
+  previewOpen,
+  onPreviewToggle,
 }) => {
   const filtersRef = useRef<HTMLDivElement>(null);
   const entityLabel = activeTab === 'dbo' ? 'Объект' : 'Канал';
@@ -190,6 +195,20 @@ export const TelemetryControls: React.FC<TelemetryControlsProps> = ({
         </svg>
         Excel
       </button>
+      {onPreviewToggle && (
+        <button
+          type="button"
+          className={`btn-secondary${previewOpen ? ' active' : ''}`}
+          onClick={onPreviewToggle}
+          title="Предпросмотр таблицы"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="4" width="18" height="16" rx="2" />
+            <path d="M3 10h18" /><path d="M9 4v16" />
+          </svg>
+          Превью
+        </button>
+      )}
     </div>
   );
 };

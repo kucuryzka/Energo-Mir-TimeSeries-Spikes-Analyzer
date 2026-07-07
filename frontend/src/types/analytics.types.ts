@@ -1,4 +1,4 @@
-export type TimeGranularity = 'Minute' | 'Hour' | 'Day' | 'Week' | 'Custom';
+export type TimeGranularity = 'Minute' | 'Hour' | 'Day' | 'Week' | 'Month' | 'Custom';
 
 export interface DataSourceDto {
   id: string;
@@ -26,6 +26,7 @@ export interface DetectSpikesRequest {
 export interface ChannelDto {
   id: number;
   name: string;
+  eventCode?: string;
 }
 
 export interface AnomalyResultDto {

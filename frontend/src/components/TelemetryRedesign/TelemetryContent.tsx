@@ -16,6 +16,8 @@ import { SpikeChart } from '../Chart/SpikeChart';
 import { AnomalyDonut } from './AnomalyDonut';
 import { AnomalyList } from './AnomalyList';
 import { KpiRow } from './KpiRow';
+import { loadEventCodeMap } from '../../utils/eventCodeMap';
+import { TablePreviewContent, type TablePreviewData } from '../GenericAnalyzer/TablePreviewCard';
 
 const { Text } = Typography;
 
@@ -33,6 +35,11 @@ const GRANULARITY_LABEL: Record<string, string> = {
   Week: 'Недельная',
   Month: 'Месячная',
   Custom: 'Свой интервал',
+};
+
+const TABLE_PREVIEW_CONFIG: Record<TabKey, { timeColumn: string; tableLabel: string }> = {
+  dbo: { timeColumn: 'TIME_INSERT', tableLabel: 'dbo.METERINGS' },
+  em: { timeColumn: 'InsertTime', tableLabel: 'em_protocol.Records' },
 };
 
 export const TelemetryContent: React.FC<TelemetryContentProps> = ({ database, activeTab }) => {
@@ -63,6 +70,7 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({ database, ac
   const emSourceIdRef = useRef<string>('em_protocol');
 
   const [distributions, setDistributions] = useState<Record<string, DistributionItemDto[]>>({});
+  const [eventCodeMap, setEventCodeMap] = useState<Record<string, string>>({});
 
   const [selectedPoint, setSelectedPoint] = useState<SpikePoint | null>(null);
   const [pointDetails, setPointDetails] = useState<any[]>([]);
@@ -72,6 +80,10 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({ database, ac
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyList, setHistoryList] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
+
+  const [tablePreview, setTablePreview] = useState<TablePreviewData | null>(null);
+  const [loadingPreview, setLoadingPreview] = useState(true);
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   const fetchChannels = async (search: string = '') => {
     try {
@@ -83,6 +95,36 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({ database, ac
       console.error('Failed to load channels', e);
     }
   };
+
+  useEffect(() => {
+    let mounted = true;
+    loadEventCodeMap()
+      .then(map => { if (mounted) setEventCodeMap(map); })
+      .catch(() => console.warn('event_codes.csv not found or failed to parse'));
+    return () => { mounted = false; };
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    const loadPreview = async () => {
+      setLoadingPreview(true);
+      setPreviewOpen(false);
+      try {
+        const preview = activeTab === 'dbo'
+          ? await analyticsApi.dbo.getTablePreview(database)
+          : await analyticsApi.emProtocol.getTablePreview(database);
+        if (!mounted) return;
+        setTablePreview(preview);
+      } catch (e) {
+        console.error('Failed to load table preview', e);
+        if (mounted) setTablePreview(null);
+      } finally {
+        if (mounted) setLoadingPreview(false);
+      }
+    };
+    if (database) loadPreview();
+    return () => { mounted = false; };
+  }, [database, activeTab]);
 
   useEffect(() => {
     setChannelId(null);
@@ -214,16 +256,18 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({ database, ac
 
     Promise.all(tasks).then(([details, breakdown]) => {
       setPointDetails(details);
-      const nameById = new Map(channels.map(c => [c.id, c.name]));
+      const meta = new Map(channels.map(c => [c.id, c]));
+      const fallbackLabel = activeTab === 'dbo' ? 'Объект' : 'Канал';
       setPointChannels((breakdown as ChannelContributionDto[]).map(c => ({
         ...c,
-        channelName: c.channelName || nameById.get(c.channelId) || `Объект ${c.channelId}`,
+        channelName: c.channelName || meta.get(c.channelId)?.name || `${fallbackLabel} ${c.channelId}`,
+        eventCode: activeTab === 'em' ? meta.get(c.channelId)?.eventCode : c.eventCode,
       })));
     }).catch(err => {
       console.error(err);
     }).finally(() => setLoadingDetails(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedPoint, granularity, channelId, database, activeTab]);
+  }, [selectedPoint, granularity, channelId, database, activeTab, channels]);
 
   const openHistory = useCallback(async () => {
     setHistoryOpen(true);
@@ -300,6 +344,7 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({ database, ac
     : (channelId ? channels.find(c => c.id === channelId)?.name ?? 'Канал' : 'Все каналы');
   const periodLabel = `${dayjs(dateRange[0]).format('D MMM HH:mm')} – ${dayjs(dateRange[1]).format('D MMM YYYY HH:mm')}`;
   const granularityLabel = GRANULARITY_LABEL[granularity] ?? granularity;
+  const previewConfig = TABLE_PREVIEW_CONFIG[activeTab];
 
   return (
     <>
@@ -335,8 +380,23 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({ database, ac
           loading={loading}
           onExport={handleExport}
           exportDisabled={!data?.series?.length}
+          previewOpen={previewOpen}
+          onPreviewToggle={() => setPreviewOpen(v => !v)}
         />
       </div>
+
+      {previewOpen && (
+        <div className="table-preview-panel">
+          <TablePreviewContent
+            preview={tablePreview}
+            loading={loadingPreview}
+            timeColumn={previewConfig.timeColumn}
+            tableLabel={previewConfig.tableLabel}
+            onUseAsPeriodStart={(iso) => setDateRange(([_, end]) => [iso, end])}
+            onUseAsPeriodEnd={(iso) => setDateRange(([start]) => [start, iso])}
+          />
+        </div>
+      )}
 
       {error && <div className="telemetry-error">{error}</div>}
 
@@ -415,7 +475,7 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({ database, ac
                 />
               </div>
 
-              {objectDistribution.length > 0 && (
+              {activeTab === 'dbo' && objectDistribution.length > 0 && (
                 <div className="distributions-section">
                   <div className="chart-title" style={{ marginBottom: 4 }}>Распределение</div>
                   <div className="distribution-card">
@@ -427,11 +487,16 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({ database, ac
               {Object.keys(distributions).length > 0 && (
                 <div className="distributions-section">
                   <div className="chart-title" style={{ marginBottom: 4 }}>Распределение</div>
-                  {Object.entries(distributions).map(([category, items]) => (
-                    <div key={category} className="distribution-card">
-                      <DistributionChart data={items} title={`По категории: ${category}`} />
-                    </div>
-                  ))}
+                  {Object.entries(distributions).map(([category, items]) => {
+                    const chartData = category === 'EventCode'
+                      ? items.map(d => ({ ...d, category: eventCodeMap[d.category] || d.category }))
+                      : items;
+                    return (
+                      <div key={category} className="distribution-card">
+                        <DistributionChart data={chartData} title={`По категории: ${category}`} />
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </>
@@ -529,7 +594,8 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({ database, ac
                     <Table
                       dataSource={Object.entries(
                         pointChannels.reduce((acc, curr) => {
-                          const code = curr.eventCode ? String(curr.eventCode) : 'Неизвестный код';
+                          const rawCode = curr.eventCode ? String(curr.eventCode) : 'Неизвестный код';
+                          const code = eventCodeMap[rawCode] || rawCode;
                           acc[code] = (acc[code] || 0) + curr.count;
                           return acc;
                         }, {} as Record<string, number>)

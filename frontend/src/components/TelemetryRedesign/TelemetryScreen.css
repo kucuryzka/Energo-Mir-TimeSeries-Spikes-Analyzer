@@ -220,6 +220,54 @@
 .btn-secondary { display:inline-flex; align-items:center; gap:8px; background:var(--btn-secondary-bg); color:var(--btn-secondary-color); border:1.5px solid var(--btn-secondary-border); border-radius:999px; padding:12px 20px; font:700 13px 'Manrope',sans-serif; cursor:pointer; transition: transform .15s; }
 .btn-secondary:hover:not(:disabled) { transform: translateY(-1px); }
 .btn-secondary:disabled { opacity:.5; cursor:default; }
+.btn-secondary.active { border-color: #3D63DD; color: #3D63DD; background: rgba(61,99,221,.08); }
+
+.table-preview-panel {
+  padding: 16px;
+  background: var(--chart-card-bg);
+  border-radius: 16px;
+  border: 1px solid var(--border-subtle);
+  min-width: 0;
+}
+
+.table-preview-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.table-preview-scroll {
+  min-width: 0;
+  max-width: 100%;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--content-bg);
+}
+
+.table-preview-scroll .ant-table-wrapper {
+  min-width: 0;
+}
+
+.table-preview-scroll .ant-table-body {
+  overflow: auto !important;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(120, 130, 160, 0.55) transparent;
+}
+
+.table-preview-scroll .ant-table-body::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.table-preview-scroll .ant-table-body::-webkit-scrollbar-thumb {
+  background: rgba(120, 130, 160, 0.55);
+  border-radius: 999px;
+}
+
+.table-preview-scroll .ant-table-body::-webkit-scrollbar-track {
+  background: transparent;
+}
 
 .filters-popover {
   position:absolute; top:calc(100% + 8px); right:0; z-index:20;

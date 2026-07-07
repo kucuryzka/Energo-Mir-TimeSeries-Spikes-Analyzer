@@ -1,22 +1,33 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Typography, Card, Space, Button, DatePicker, Select, InputNumber, Spin, message, Drawer, Table, Popconfirm } from 'antd';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { Typography, Button, message, Drawer, Table, Popconfirm, Space, Spin } from 'antd';
 import { DeleteOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { formatUtcDateTime } from '../../utils/dateTimeUtils';
 import { confirmHeavyAnalysis } from '../../utils/granularityWarning';
 import { SpikeChart } from '../Chart/SpikeChart';
-import { enrichSpikeData } from '../../utils/spikeUtils';
+import { enrichSpikeData, getStatistics } from '../../utils/spikeUtils';
 import { exportSpikesToExcel } from '../../utils/exportUtils';
 import { genericAnalysisApi } from '../../api/explorerApi';
 import { TablePreviewContent, type TablePreviewData } from './TablePreviewCard';
-import { AnalysisActionBar } from './AnalysisActionBar';
 import { AnalysisJobProgress } from '../Dashboard/AnalysisJobProgress';
+import { TelemetryControls } from '../TelemetryRedesign/TelemetryControls';
+import { KpiRow } from '../TelemetryRedesign/KpiRow';
+import { AnomalyDonut } from '../TelemetryRedesign/AnomalyDonut';
+import { AnomalyList } from '../TelemetryRedesign/AnomalyList';
 import type { TimeGranularity, SpikePoint, SpikeResponse } from '../../types/analytics.types';
 import { apiCache } from '../../store/apiCache';
 import { useRegisterShellRailActions } from '../../context/ShellRailContext';
 
-const { Title, Text } = Typography;
-const { RangePicker } = DatePicker;
+const { Text } = Typography;
+
+const GRANULARITY_LABEL: Record<string, string> = {
+  Minute: 'Поминутная',
+  Hour: 'Почасовая',
+  Day: 'Дневная',
+  Week: 'Недельная',
+  Month: 'Месячная',
+  Custom: 'Свой интервал',
+};
 
 interface GenericAnalyzerProps {
   db: string;
@@ -26,7 +37,7 @@ interface GenericAnalyzerProps {
   onBack: () => void;
 }
 
-export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({ db, schema, table, timeColumn, onBack: _onBack }) => {
+export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({ db, schema, table, timeColumn }) => {
   const [data, setData] = useState<SpikeResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [analysisProgress, setAnalysisProgress] = useState(0);
@@ -35,6 +46,10 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({ db, schema, ta
   const [pointDetails, setPointDetails] = useState<any[]>([]);
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [showMarkers, setShowMarkers] = useState(true);
+  const [showCritical, setShowCritical] = useState(true);
+  const [showWarning, setShowWarning] = useState(true);
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   const [dateRange, setDateRange] = useState<[string, string]>([
     dayjs().subtract(7, 'day').startOf('day').toISOString(),
@@ -48,7 +63,7 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({ db, schema, ta
   const [tablePreview, setTablePreview] = useState<TablePreviewData | null>(null);
   const [loadingPreview, setLoadingPreview] = useState(true);
   const [previewOpen, setPreviewOpen] = useState(false);
-  
+
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyList, setHistoryList] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
@@ -91,7 +106,7 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({ db, schema, ta
         granularity,
         customMinutes,
         confidence,
-        windowSize
+        windowSize,
       };
 
       message.loading({ content: 'Задача поставлена в очередь...', key: 'jobProgress' });
@@ -111,17 +126,17 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({ db, schema, ta
       setIsPartialResult(false);
       setAnalysisProgress(100);
       setData(result);
-      message.success({ content: 'Анализ завершен!', key: 'jobProgress' });
+      message.success({ content: 'Анализ завершен!', key: 'jobProgress', duration: 2.5 });
     } catch (e: any) {
       const errorText = e.response?.data?.message || e.response?.data || e.message || String(e);
-      message.error({ content: `Ошибка при запуске задачи: ${errorText}`, key: 'jobProgress' });
+      message.error({ content: `Ошибка при запуске задачи: ${errorText}`, key: 'jobProgress', duration: 4 });
     } finally {
       setLoading(false);
+      setAnalysisProgress(0);
     }
   };
 
   useEffect(() => {
-    // Check if we already have cached data for these parameters
     const dataPayload = {
       database: db,
       schema,
@@ -132,15 +147,10 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({ db, schema, ta
       granularity,
       customMinutes,
       confidence,
-      windowSize
+      windowSize,
     };
     const cached = apiCache.get('/GenericAnalysis/analyze', undefined, dataPayload);
-    if (cached) {
-      // NOTE: With chunking, whole-range cache might not hit as often,
-      // but individual chunks will be cached inside the genericAnalysisApi.analyze call.
-      // This is left here if they somehow request the exact same chunk/range.
-      // setData(cached); 
-    } else {
+    if (!cached) {
       setData(null);
     }
   }, [db, schema, table, timeColumn]);
@@ -169,17 +179,21 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({ db, schema, ta
 
   useRegisterShellRailActions({ onOpenHistory: openHistory });
 
-  const enrichedData = data?.series?.length ? enrichSpikeData(data.series) : [];
+  const enrichedData = useMemo(() => (data?.series?.length ? enrichSpikeData(data.series) : []), [data]);
+  const spikesOnly = useMemo(() => enrichedData.filter(s => s.isSpike), [enrichedData]);
+  const stats = useMemo(() => (data?.series?.length ? getStatistics(data.series) : null), [data]);
 
-  const handlePointClick = async (point: SpikePoint) => {
+  const handlePointSelect = async (timestamp: string) => {
+    const point = enrichedData.find(s => s.timestamp === timestamp);
+    if (!point) return;
     setSelectedPoint(point);
     setLoadingDetails(true);
     try {
       const details = await genericAnalysisApi.getPointDetails(
-        db, schema, table, timeColumn, point.timestamp, granularity, customMinutes
+        db, schema, table, timeColumn, point.timestamp, granularity, customMinutes,
       );
       setPointDetails(details);
-    } catch (e) {
+    } catch {
       message.error('Ошибка загрузки деталей');
       setPointDetails([]);
     } finally {
@@ -187,163 +201,215 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({ db, schema, ta
     }
   };
 
-  const tableColumns = pointDetails.length > 0 
+  const loadHistoryItem = async (job: any) => {
+    if (job.status !== 'Completed') {
+      message.warning('Анализ еще не завершен или завершился с ошибкой');
+      return;
+    }
+    try {
+      message.loading({ content: 'Загрузка результата...', key: 'loadResult' });
+      const res = await genericAnalysisApi.getJobResult(job.id);
+      setIsPartialResult(false);
+      setData(res);
+      setDateRange([job.startDate, job.endDate]);
+      message.success({ content: 'Результат загружен', key: 'loadResult', duration: 2.5 });
+      setHistoryOpen(false);
+    } catch {
+      message.error({ content: 'Ошибка загрузки', key: 'loadResult' });
+    }
+  };
+
+  const deleteHistoryItem = async (jobId: string) => {
+    try {
+      await genericAnalysisApi.deleteHistoryItem(jobId);
+      setHistoryList(prev => prev.filter(item => item.id !== jobId));
+      message.success('Удалено');
+    } catch {
+      message.error('Ошибка удаления');
+    }
+  };
+
+  const tableColumns = pointDetails.length > 0
     ? Object.keys(pointDetails[0]).map(key => ({
         title: key,
         dataIndex: key,
-        key: key,
+        key,
         render: (text: any) => {
           const isTimeColumn = key.toLowerCase() === timeColumn.toLowerCase();
-          return isTimeColumn 
+          return isTimeColumn
             ? <span style={{ color: '#52c41a', fontWeight: 'bold' }}>{String(text)}</span>
             : <span>{String(text)}</span>;
-        }
+        },
       }))
     : [];
 
+  const periodLabel = `${dayjs(dateRange[0]).format('D MMM HH:mm')} – ${dayjs(dateRange[1]).format('D MMM YYYY HH:mm')}`;
+  const granularityLabel = GRANULARITY_LABEL[granularity] ?? granularity;
+
   return (
-    <div style={{ padding: 24, height: '100%', overflow: 'auto' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <Title level={4}>Анализ: {schema}.{table} ({timeColumn})</Title>
-      </div>
-
-      <Card style={{ marginBottom: 24, borderRadius: 12 }}>
-        <Space wrap size="large">
-          <div>
-            <Text type="secondary" style={{ display: 'block', marginBottom: 4 }}>Период</Text>
-            <RangePicker 
-              showTime={{ format: 'HH:mm' }}
-              format="YYYY-MM-DD HH:mm"
-              presets={[
-                { label: 'Сегодня', value: [dayjs().startOf('day'), dayjs().endOf('day')] },
-                { label: 'Вчера', value: [dayjs().subtract(1, 'day').startOf('day'), dayjs().subtract(1, 'day').endOf('day')] },
-                { label: 'Последние 7 дней', value: [dayjs().subtract(7, 'day').startOf('day'), dayjs().endOf('day')] },
-                { label: 'Последние 30 дней', value: [dayjs().subtract(30, 'day').startOf('day'), dayjs().endOf('day')] },
-                { label: 'Последние 90 дней', value: [dayjs().subtract(90, 'day').startOf('day'), dayjs().endOf('day')] },
-                { label: 'Последние 120 дней', value: [dayjs().subtract(120, 'day').startOf('day'), dayjs().endOf('day')] },
-                { label: 'Последние 365 дней', value: [dayjs().subtract(365, 'day').startOf('day'), dayjs().endOf('day')] },
-                { label: 'Последние 2 года', value: [dayjs().subtract(2, 'year').startOf('day'), dayjs().endOf('day')] },
-                { label: 'Последние 3 года', value: [dayjs().subtract(3, 'year').startOf('day'), dayjs().endOf('day')] },
-              ]}
-              value={[dayjs(dateRange[0]), dayjs(dateRange[1])]}
-              onChange={(dates) => {
-                if (dates && dates[0] && dates[1]) {
-                  setDateRange([dates[0].toISOString(), dates[1].toISOString()]);
-                }
-              }}
-              style={{ minWidth: 350 }}
-            />
-          </div>
-          <div>
-            <Text type="secondary" style={{ display: 'block', marginBottom: 4 }}>Гранулярность</Text>
-            <Select value={granularity} onChange={setGranularity} style={{ width: 120 }}>
-              <Select.Option value="Minute">Минута</Select.Option>
-              <Select.Option value="Hour">Час</Select.Option>
-              <Select.Option value="Day">День</Select.Option>
-              <Select.Option value="Week">Неделя</Select.Option>
-              <Select.Option value="Month">Месяц</Select.Option>
-              <Select.Option value="Custom">Своя (мин)</Select.Option>
-            </Select>
-          </div>
-          {granularity === 'Custom' && (
-            <div>
-              <Text type="secondary" style={{ display: 'block', marginBottom: 4 }}>Минут</Text>
-              <InputNumber value={customMinutes} onChange={(val) => setCustomMinutes(val ? Number(val) : null)} min={1} />
-            </div>
-          )}
-          <div>
-            <Text type="secondary" style={{ display: 'block', marginBottom: 4 }}>Чувствительность</Text>
-            <Select value={confidence} onChange={setConfidence} style={{ width: 100 }}>
-              <Select.Option value={90}>90%</Select.Option>
-              <Select.Option value={95}>95%</Select.Option>
-              <Select.Option value={98}>98%</Select.Option>
-              <Select.Option value={99}>99%</Select.Option>
-              <Select.Option value={99.9}>99.9%</Select.Option>
-            </Select>
-          </div>
-          <div>
-            <Text type="secondary" style={{ display: 'block', marginBottom: 4 }}>Глубина (точек)</Text>
-            <InputNumber value={windowSize} onChange={(val) => setWindowSize(Number(val) || 30)} min={5} max={1000} />
-          </div>
-        </Space>
-        <AnalysisActionBar
-          onAnalyze={fetchData}
-          loading={loading}
-          previewOpen={previewOpen}
-          onPreviewToggle={() => setPreviewOpen(v => !v)}
-          onExport={handleExport}
-          exportDisabled={!data?.series?.length}
-          style={{ marginTop: 16 }}
-          previewContent={
-            <TablePreviewContent
-              preview={tablePreview}
-              loading={loadingPreview}
-              timeColumn={timeColumn}
-              tableLabel={`${schema}.${table}`}
-              onUseAsPeriodStart={(iso) => setDateRange(([_, end]) => [iso, end])}
-              onUseAsPeriodEnd={(iso) => setDateRange(([start]) => [start, iso])}
-            />
-          }
-        />
-      </Card>
-
-      {!data && loading ? (
-        <AnalysisJobProgress
-          loading
-          progress={analysisProgress}
-          isPartialResult={isPartialResult}
-          showSpinner
-        />
-      ) : enrichedData.length > 0 ? (
-        <Card style={{ borderRadius: 12 }}>
-          <AnalysisJobProgress
-            loading={loading}
-            progress={analysisProgress}
-            isPartialResult={isPartialResult}
-          />
-          <div style={{ marginBottom: 16 }}>
-            <h3 style={{ margin: 0, fontSize: 18, fontWeight: 600, color: '#1a2332' }}>
-              Временной ряд
-            </h3>
-            <span style={{ fontSize: 13, color: '#6b7a8f' }}>
-              {dayjs(dateRange[0]).format('DD.MM.YYYY')} — {dayjs(dateRange[1]).format('DD.MM.YYYY')}
+    <>
+      <div className="header-row">
+        <div>
+          <div className="title">Анализ: {schema}.{table}</div>
+          <div className="subtitle-row">
+            <span className="subtitle">
+              {periodLabel} · колонка {timeColumn} · {granularityLabel} детализация
             </span>
           </div>
-          <SpikeChart
-            data={enrichedData}
-            showMarkers={showMarkers}
-            onShowMarkersChange={setShowMarkers}
-            onPointClick={handlePointClick}
+        </div>
+
+        <TelemetryControls
+          activeTab="dbo"
+          granularity={granularity}
+          onGranularityChange={setGranularity}
+          customMinutes={customMinutes}
+          onCustomMinutesChange={setCustomMinutes}
+          confidence={confidence}
+          onConfidenceChange={setConfidence}
+          windowSize={windowSize}
+          onWindowSizeChange={setWindowSize}
+          dateRange={dateRange}
+          onDateRangeChange={setDateRange}
+          channelId={null}
+          onChannelChange={() => {}}
+          channels={[]}
+          onSearchChannels={() => {}}
+          filtersOpen={filtersOpen}
+          onFiltersOpenChange={setFiltersOpen}
+          onAnalyze={fetchData}
+          loading={loading}
+          onExport={handleExport}
+          exportDisabled={!data?.series?.length}
+          previewOpen={previewOpen}
+          onPreviewToggle={() => setPreviewOpen(v => !v)}
+        />
+      </div>
+
+      {previewOpen && (
+        <div className="table-preview-panel">
+          <TablePreviewContent
+            preview={tablePreview}
+            loading={loadingPreview}
+            timeColumn={timeColumn}
+            tableLabel={`${schema}.${table}`}
+            onUseAsPeriodStart={(iso) => setDateRange(([_, end]) => [iso, end])}
+            onUseAsPeriodEnd={(iso) => setDateRange(([start]) => [start, iso])}
           />
-        </Card>
-      ) : null}
+        </div>
+      )}
+
+      <div className="telemetry-progress">
+        <AnalysisJobProgress
+          loading={loading}
+          progress={analysisProgress}
+          isPartialResult={isPartialResult}
+        />
+      </div>
+
+      {stats && (
+        <>
+          <KpiRow
+            totalCalls={stats.totalCalls}
+            totalPoints={stats.totalPoints}
+            spikesCount={isPartialResult ? 0 : stats.spikesCount}
+            criticalCount={isPartialResult ? 0 : stats.criticalSpikes}
+            average={stats.average}
+            max={stats.max}
+            animate={!isPartialResult}
+          />
+
+          <div className={`chart-card telemetry-spike-chart${isPartialResult ? ' chart-card--partial' : ''}`}>
+            <div className="chart-header">
+              <div className="chart-title-row">
+                <div className="chart-title">Обзор показателей</div>
+                {isPartialResult && <span className="chart-partial-badge">Загрузка…</span>}
+              </div>
+              <div className="chart-controls">
+                <button type="button" className={`legend-chip crit ${!showCritical ? 'off' : ''}`} onClick={() => setShowCritical(v => !v)}>
+                  <span className="dot7" style={{ background: '#d64933' }} />Критическая
+                </button>
+                <button type="button" className={`legend-chip warn ${!showWarning ? 'off' : ''}`} onClick={() => setShowWarning(v => !v)}>
+                  <span className="dot7" style={{ background: '#e2a339' }} />Предупреждение
+                </button>
+                <span className="line-legend">
+                  <span className="line-legend-item"><span className="line-swatch" style={{ borderTopColor: '#7A8B9E' }} />Среднее</span>
+                  <span className="line-legend-item"><span className="line-swatch" style={{ borderTopColor: '#C97A6E' }} />Максимум</span>
+                  <span className="line-legend-item"><span className="line-swatch" style={{ borderTopColor: '#5A9E7A' }} />Минимум</span>
+                </span>
+                <button
+                  type="button"
+                  className="switch-track"
+                  style={{ background: showMarkers ? '#3D63DD' : 'var(--switch-off)' }}
+                  onClick={() => setShowMarkers(v => !v)}
+                  title="Маркеры"
+                >
+                  <span className="switch-knob" style={{ transform: showMarkers ? 'translateX(16px)' : 'translateX(0)' }} />
+                </button>
+              </div>
+            </div>
+            <SpikeChart
+              data={enrichedData}
+              showMarkers={showMarkers && !isPartialResult}
+              showCriticalMarkers={showCritical}
+              showWarningMarkers={showWarning}
+              hideToolbar
+              onPointClick={(point) => handlePointSelect(point.timestamp)}
+            />
+          </div>
+
+          {!loading && !isPartialResult && stats.spikesCount > 0 && (
+            <div className="bottom-row">
+              <AnomalyDonut critical={stats.criticalSpikes} warning={Math.max(0, stats.spikesCount - stats.criticalSpikes)} />
+              <AnomalyList
+                spikes={spikesOnly}
+                showCritical={showCritical}
+                showWarning={showWarning}
+                hoveredId={hoveredId}
+                onHoverChange={setHoveredId}
+                onRowClick={handlePointSelect}
+              />
+            </div>
+          )}
+        </>
+      )}
+
+      {!stats && !loading && (
+        <div className="telemetry-empty">Нет данных для отображения. Настройте параметры и нажмите «Запустить анализ».</div>
+      )}
 
       <Drawer
-        title={<Title level={5} style={{ margin: 0 }}>Детали среза ({selectedPoint?.timestamp ? dayjs(selectedPoint.timestamp).format('DD.MM.YYYY HH:mm:ss') : ''})</Title>}
+        title="Детализация точки"
         placement="right"
         size="large"
         onClose={() => setSelectedPoint(null)}
         open={selectedPoint !== null}
       >
-        {loadingDetails ? (
-          <div style={{ display: 'flex', justifyContent: 'center', padding: 50 }}>
-            <Spin size="large" />
+        {selectedPoint && (
+          <div>
+            <div style={{ marginBottom: 16 }}>
+              <Text type="secondary">Время среза:</Text><br />
+              <Text strong>{dayjs(selectedPoint.timestamp).format('DD.MM.YYYY HH:mm:ss')}</Text>
+            </div>
+            {loadingDetails ? (
+              <div style={{ display: 'flex', justifyContent: 'center', padding: 50 }}>
+                <Spin size="large" />
+              </div>
+            ) : (
+              <Table
+                dataSource={pointDetails}
+                columns={tableColumns}
+                rowKey={(_, idx) => `row-${idx}`}
+                scroll={{ x: 'max-content' }}
+                pagination={{ pageSize: 20, showSizeChanger: true }}
+                size="small"
+              />
+            )}
           </div>
-        ) : (
-          <Table
-            dataSource={pointDetails}
-            columns={tableColumns}
-            rowKey={(_, idx) => `row-${idx}`}
-            scroll={{ x: 'max-content' }}
-            pagination={{ pageSize: 20 }}
-            size="small"
-            bordered
-          />
         )}
       </Drawer>
 
       <Drawer
-        title="История анализов"
+        title="История анализов (Фоновые задачи)"
         placement="right"
         size="default"
         onClose={() => setHistoryOpen(false)}
@@ -351,79 +417,50 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({ db, schema, ta
       >
         {loadingHistory ? (
           <Spin />
+        ) : historyList.length === 0 ? (
+          <Text type="secondary">Нет сохранённой истории для этой таблицы</Text>
         ) : (
-          historyList.length === 0 ? <Text type="secondary">Нет сохраненной истории для этой таблицы</Text> : (
-            <Space direction="vertical" style={{ width: '100%' }}>
-              {historyList.map((job: any) => (
-                <Card 
-                  key={job.id} 
-                  size="small" 
-                  style={{ cursor: 'pointer', borderColor: job.status === 'Completed' ? '#b7eb8f' : '#f0f0f0' }}
-                  onClick={async () => {
-                    if (job.status !== 'Completed') {
-                      message.warning('Анализ еще не завершен или завершился с ошибкой');
-                      return;
-                    }
-                    try {
-                      setHistoryOpen(false);
-                      setLoading(true);
-                      const res = await genericAnalysisApi.getJobResult(job.id);
-                      setData(res);
-                      setDateRange([job.startDate, job.endDate]);
-                    } catch (e) {
-                      message.error('Не удалось загрузить результат');
-                    } finally {
-                      setLoading(false);
-                    }
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <div>
-                      <Text strong>{dayjs(job.startDate).format('DD.MM.YY')} - {dayjs(job.endDate).format('DD.MM.YY')}</Text>
-                      <br/>
-                      <Text type="secondary">Гранулярность: {job.granularity}</Text>
-                      <br/>
-                      <Text type={job.status === 'Completed' ? 'success' : job.status === 'Failed' ? 'danger' : 'warning'}>
-                        {job.status} {job.status === 'Running' ? `(${job.progress}%)` : ''}
-                      </Text>
-                      <br/>
-                      <Text type="secondary" style={{ fontSize: 12 }}>
-                        {(job.status === 'Completed' || job.status === 'Failed')
-                          ? `Выполнен: ${formatUtcDateTime(job.completedAt ?? job.createdAt)}`
-                          : `Запущен: ${formatUtcDateTime(job.createdAt)}`}
-                      </Text>
-                    </div>
-                    <Popconfirm
-                      title="Удалить этот результат?"
-                      onConfirm={async (e) => {
-                        e?.stopPropagation();
-                        try {
-                          await genericAnalysisApi.deleteHistoryItem(job.id);
-                          setHistoryList(prev => prev.filter(item => item.id !== job.id));
-                          message.success('Удалено');
-                        } catch(err) {
-                          message.error('Ошибка удаления');
-                        }
-                      }}
-                      onCancel={(e) => e?.stopPropagation()}
-                      okText="Да"
-                      cancelText="Нет"
-                    >
-                      <Button 
-                        type="text" 
-                        danger 
-                        icon={<DeleteOutlined />} 
-                        onClick={(e) => e.stopPropagation()}
-                      />
-                    </Popconfirm>
+          <Space direction="vertical" style={{ width: '100%' }}>
+            {historyList.map((job: any) => (
+              <div
+                key={job.id}
+                style={{
+                  border: '1px solid var(--border-subtle)',
+                  padding: 12,
+                  borderRadius: 8,
+                  cursor: job.status === 'Completed' ? 'pointer' : 'default',
+                  background: job.status === 'Completed' ? 'rgba(61,99,221,.06)' : 'transparent',
+                }}
+                onClick={() => loadHistoryItem(job)}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div>
+                    <Text strong>{dayjs(job.startDate).format('DD.MM.YY')} - {dayjs(job.endDate).format('DD.MM.YY')}</Text><br />
+                    <Text type="secondary">Гранулярность: {job.granularity}</Text><br />
+                    <Text type={job.status === 'Completed' ? 'success' : job.status === 'Failed' ? 'danger' : 'warning'}>
+                      {job.status} {job.status === 'Running' ? `(${job.progress}%)` : ''}
+                    </Text><br />
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      {(job.status === 'Completed' || job.status === 'Failed')
+                        ? `Выполнен: ${formatUtcDateTime(job.completedAt ?? job.createdAt)}`
+                        : `Запущен: ${formatUtcDateTime(job.createdAt)}`}
+                    </Text>
                   </div>
-                </Card>
-              ))}
-            </Space>
-          )
+                  <Popconfirm
+                    title="Удалить этот результат?"
+                    onConfirm={(e) => { e?.stopPropagation(); deleteHistoryItem(job.id); }}
+                    onCancel={(e) => e?.stopPropagation()}
+                    okText="Да"
+                    cancelText="Нет"
+                  >
+                    <Button type="text" danger icon={<DeleteOutlined />} onClick={(e) => e.stopPropagation()} />
+                  </Popconfirm>
+                </div>
+              </div>
+            ))}
+          </Space>
         )}
       </Drawer>
-
-    </div>
+    </>
   );
 };
