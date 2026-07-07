@@ -1,12 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { SpikeResponse } from '../types/analytics.types';
 import { pollAnalysisJob, type AnalysisJobApi, type PollAnalysisJobOptions } from '../utils/jobPolling';
 
 export interface AnalysisSessionSnapshot {
   loading: boolean;
   progress: number;
-  data: SpikeResponse | null;
-  isPartialResult: boolean;
   error: string | null;
   jobId: string | null;
 }
@@ -14,8 +12,6 @@ export interface AnalysisSessionSnapshot {
 const EMPTY_SESSION: AnalysisSessionSnapshot = {
   loading: false,
   progress: 0,
-  data: null,
-  isPartialResult: false,
   error: null,
   jobId: null,
 };
@@ -66,8 +62,6 @@ export function runAnalysisSessionJob(
     jobId,
     progress: 0,
     error: null,
-    data: null,
-    isPartialResult: false,
   });
 
   return pollAnalysisJob(jobId, api, {
@@ -79,7 +73,6 @@ export function runAnalysisSessionJob(
     },
     onPartialResult: (result) => {
       if (pollGeneration.get(key) !== generation) return;
-      patchSession(key, { data: result, isPartialResult: true });
       options.onPartialResult?.(result);
     },
   })
@@ -87,8 +80,6 @@ export function runAnalysisSessionJob(
       if (pollGeneration.get(key) !== generation) return result;
       patchSession(key, {
         loading: false,
-        data: result,
-        isPartialResult: false,
         progress: 100,
         jobId,
       });
@@ -118,4 +109,84 @@ export function useAnalysisSession(sessionKey: string): AnalysisSessionSnapshot 
   useEffect(() => subscribeAnalysisSession(sessionKey, setSnapshot), [sessionKey]);
 
   return snapshot;
+}
+
+export function useAnalysisResultData(
+  sessionKey: string,
+  visible: boolean,
+  api: AnalysisJobApi,
+) {
+  const session = useAnalysisSession(sessionKey);
+  const [data, setData] = useState<SpikeResponse | null>(null);
+  const [isPartialResult, setIsPartialResult] = useState(false);
+  const visibleRef = useRef(visible);
+  visibleRef.current = visible;
+
+  useEffect(() => {
+    if (!visible) {
+      setData(null);
+      setIsPartialResult(false);
+    }
+  }, [visible]);
+
+  useEffect(() => {
+    if (!visible || !session.jobId) return;
+
+    let cancelled = false;
+
+    const load = async () => {
+      try {
+        const status = await api.getJobStatus(session.jobId!);
+        if (cancelled) return;
+
+        if (status.status === 'Running' || session.loading) {
+          if (!api.getJobPartialResult) return;
+          try {
+            const partial = await api.getJobPartialResult(session.jobId!);
+            if (!cancelled && partial?.series?.length) {
+              setData(partial);
+              setIsPartialResult(true);
+            }
+          } catch {
+            // partial file may not exist yet
+          }
+          return;
+        }
+
+        if (status.status === 'Completed') {
+          const result = await api.getJobResult(session.jobId!);
+          if (!cancelled) {
+            setData(result);
+            setIsPartialResult(false);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load analysis result', err);
+      }
+    };
+
+    load();
+    return () => { cancelled = true; };
+  }, [visible, session.jobId, session.loading, session.progress, api]);
+
+  const applyPartialResult = useCallback((partial: SpikeResponse) => {
+    if (!visibleRef.current) return;
+    setData(partial);
+    setIsPartialResult(true);
+  }, []);
+
+  const applyFinalResult = useCallback((result: SpikeResponse) => {
+    if (!visibleRef.current) return;
+    setData(result);
+    setIsPartialResult(false);
+  }, []);
+
+  return {
+    ...session,
+    data,
+    isPartialResult,
+    setData,
+    applyPartialResult,
+    applyFinalResult,
+  };
 }

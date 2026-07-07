@@ -18,7 +18,7 @@ import { AnomalyList } from './AnomalyList';
 import { KpiRow } from './KpiRow';
 import { loadEventCodeMap } from '../../utils/eventCodeMap';
 import { TablePreviewContent, type TablePreviewData } from '../GenericAnalyzer/TablePreviewCard';
-import { runAnalysisSessionJob, updateAnalysisSession, useAnalysisSession } from '../../store/analysisSessionStore';
+import { runAnalysisSessionJob, updateAnalysisSession, useAnalysisResultData } from '../../store/analysisSessionStore';
 
 const { Text } = Typography;
 
@@ -63,13 +63,29 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({ database, ac
   const [filtersOpen, setFiltersOpen] = useState(false);
 
   const sessionKey = useMemo(() => `telemetry:${activeTab}:${database}`, [activeTab, database]);
+  const jobApi = useMemo(() => (
+    activeTab === 'dbo'
+      ? {
+          getJobStatus: analyticsApi.dbo.getJobStatus,
+          getJobResult: analyticsApi.dbo.getJobResult,
+          getJobPartialResult: analyticsApi.dbo.getJobPartialResult,
+        }
+      : {
+          getJobStatus: analyticsApi.emProtocol.getJobStatus,
+          getJobResult: analyticsApi.emProtocol.getJobResult,
+          getJobPartialResult: analyticsApi.emProtocol.getJobPartialResult,
+        }
+  ), [activeTab]);
   const {
     loading,
     progress: analysisProgress,
     data,
     isPartialResult,
     error,
-  } = useAnalysisSession(sessionKey);
+    applyPartialResult,
+    applyFinalResult,
+    setData,
+  } = useAnalysisResultData(sessionKey, visible, jobApi);
 
   const [, setSources] = useState<DataSourceDto[]>([]);
   const sourcesRef = useRef<DataSourceDto[]>([]);
@@ -210,17 +226,16 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({ database, ac
       const result = await runAnalysisSessionJob(
         sessionKey,
         jobId,
-        {
-          getJobStatus: api.getJobStatus,
-          getJobResult: api.getJobResult,
-          getJobPartialResult: api.getJobPartialResult,
-        },
+        jobApi,
         {
           onProgress: (progress) => {
             message.loading({ content: `Анализ выполняется... (${progress}%)`, key: 'jobProgress' });
           },
+          onPartialResult: applyPartialResult,
         },
       );
+
+      applyFinalResult(result);
 
       message.success({ content: 'Анализ завершен!', key: 'jobProgress', duration: 2.5 });
       await fetchDistributions();
@@ -290,12 +305,12 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({ database, ac
       const api = activeTab === 'dbo' ? analyticsApi.dbo : analyticsApi.emProtocol;
       const result = await api.getJobResult(job.id);
       updateAnalysisSession(sessionKey, {
-        data: result,
+        jobId: job.id,
         loading: false,
-        isPartialResult: false,
         progress: 100,
         error: null,
       });
+      setData(result);
       setDateRange([job.startDate, job.endDate]);
       setChannelId(job.channelId ? parseInt(job.channelId, 10) : null);
       setGranularity(job.granularity);

@@ -16,7 +16,7 @@ import { AnomalyDonut } from '../TelemetryRedesign/AnomalyDonut';
 import { AnomalyList } from '../TelemetryRedesign/AnomalyList';
 import type { TimeGranularity, SpikePoint } from '../../types/analytics.types';
 import { useRegisterShellRailActions } from '../../context/ShellRailContext';
-import { runAnalysisSessionJob, updateAnalysisSession, useAnalysisSession } from '../../store/analysisSessionStore';
+import { runAnalysisSessionJob, updateAnalysisSession, useAnalysisResultData } from '../../store/analysisSessionStore';
 
 const { Text } = Typography;
 
@@ -42,13 +42,21 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({ db, schema, ta
     () => `generic:${db}:${schema}:${table}:${timeColumn}`,
     [db, schema, table, timeColumn],
   );
+  const jobApi = useMemo(() => ({
+    getJobStatus: genericAnalysisApi.getJobStatus,
+    getJobResult: genericAnalysisApi.getJobResult,
+    getJobPartialResult: genericAnalysisApi.getJobPartialResult,
+  }), []);
   const {
     loading,
     progress: analysisProgress,
     data,
     isPartialResult,
     error,
-  } = useAnalysisSession(sessionKey);
+    applyPartialResult,
+    applyFinalResult,
+    setData,
+  } = useAnalysisResultData(sessionKey, true, jobApi);
 
   const [selectedPoint, setSelectedPoint] = useState<SpikePoint | null>(null);
   const [pointDetails, setPointDetails] = useState<any[]>([]);
@@ -120,17 +128,16 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({ db, schema, ta
       const result = await runAnalysisSessionJob(
         sessionKey,
         jobId,
-        {
-          getJobStatus: genericAnalysisApi.getJobStatus,
-          getJobResult: genericAnalysisApi.getJobResult,
-          getJobPartialResult: genericAnalysisApi.getJobPartialResult,
-        },
+        jobApi,
         {
           onProgress: (progress) => {
             message.loading({ content: `Анализ выполняется... (${progress}%)`, key: 'jobProgress' });
           },
+          onPartialResult: applyPartialResult,
         },
       );
+
+      applyFinalResult(result);
 
       message.success({ content: 'Анализ завершен!', key: 'jobProgress', duration: 2.5 });
 
@@ -200,12 +207,12 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({ db, schema, ta
       message.loading({ content: 'Загрузка результата...', key: 'loadResult' });
       const res = await genericAnalysisApi.getJobResult(job.id);
       updateAnalysisSession(sessionKey, {
-        data: res,
+        jobId: job.id,
         loading: false,
-        isPartialResult: false,
         progress: 100,
         error: null,
       });
+      setData(res);
       setDateRange([job.startDate, job.endDate]);
       message.success({ content: 'Результат загружен', key: 'loadResult', duration: 2.5 });
       setHistoryOpen(false);
