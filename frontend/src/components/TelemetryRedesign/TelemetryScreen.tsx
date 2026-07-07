@@ -47,6 +47,8 @@ export const TelemetryScreen: React.FC<TelemetryScreenProps> = ({ onLogout, uiTh
     setDbDrawerOpen(false);
   };
 
+  const faviconUrl = `${import.meta.env.BASE_URL}favicon.png`;
+
   return (
     <div className="page" data-theme={uiTheme}>
       <div className="app-bg">
@@ -63,8 +65,8 @@ export const TelemetryScreen: React.FC<TelemetryScreenProps> = ({ onLogout, uiTh
                   width: '70%',
                   height: '70%',
                   backgroundColor: '#fff',
-                  WebkitMaskImage: 'url(/favicon.png)',
-                  maskImage: 'url(/favicon.png)',
+                  WebkitMaskImage: `url(${faviconUrl})`,
+                  maskImage: `url(${faviconUrl})`,
                   WebkitMaskSize: 'contain',
                   maskSize: 'contain',
                   WebkitMaskRepeat: 'no-repeat',
