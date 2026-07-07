@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Drawer, Badge } from 'antd';
-import { HistoryOutlined, DashboardOutlined, ApiOutlined } from '@ant-design/icons';
+import { HistoryOutlined, DashboardOutlined, ApiOutlined, LogoutOutlined } from '@ant-design/icons';
 import { DatabaseTreeSidebar } from '../Explorer/DatabaseTreeSidebar';
 import { GenericAnalyzer } from '../GenericAnalyzer/GenericAnalyzer';
 import { TelemetryContent, type TabKey } from './TelemetryContent';
@@ -49,6 +49,77 @@ export const TelemetryScreen: React.FC<TelemetryScreenProps> = ({ onLogout, uiTh
 
   const faviconUrl = `${import.meta.env.BASE_URL}favicon.png`;
 
+  // Стили для контрастности кнопок (от блеклой к яркой)
+  const getNavItemStyle = (index: number, total: number) => {
+    // index: 0 - самая блеклая (История), total-1 - самая яркая (Выход)
+    const minOpacity = 0.55; // Увеличено с 0.35 до 0.55
+    const maxOpacity = 1;
+    const opacity = minOpacity + (index / (total - 1)) * (maxOpacity - minOpacity);
+    
+    // Цвет от серого к насыщенному синему/красному
+    const isLogout = index === total - 1;
+    const color = isLogout 
+      ? '#d64933' // красный для выхода
+      : `rgba(26, 35, 50, ${opacity})`;
+    
+    return {
+      opacity,
+      color,
+      '--hover-bg': isLogout 
+        ? 'rgba(214, 73, 51, 0.12)' 
+        : `rgba(61, 99, 221, ${opacity * 0.15})`,
+    } as React.CSSProperties;
+  };
+
+  // Список кнопок для рендеринга с контрастностью
+  const navButtons = [
+    {
+      key: 'history',
+      title: 'История анализов',
+      onClick: () => actions.onOpenHistory?.(),
+      disabled: !actions.onOpenHistory,
+      icon: <HistoryOutlined style={{ fontSize: 19 }} />,
+    },
+    {
+      key: 'hangfire',
+      title: 'Панель Hangfire',
+      onClick: () => window.open(HANGFIRE_PATH, '_blank'),
+      icon: <DashboardOutlined style={{ fontSize: 19 }} />,
+    },
+    {
+      key: 'queries',
+      title: 'Сетевые запросы',
+      onClick: openQueryTracker,
+      icon: (
+        <Badge count={activeCount} size="small" offset={[2, -2]}>
+          <ApiOutlined style={{ fontSize: 19, color: activeCount > 0 ? '#3D63DD' : 'inherit' }} />
+        </Badge>
+      ),
+    },
+    {
+      key: 'theme',
+      title: uiTheme === 'dark' ? 'Светлая тема' : 'Тёмная тема',
+      onClick: onToggleTheme,
+      icon: uiTheme === 'dark' ? (
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+          <path d="M20.7 14.6a8.6 8.6 0 0 1-10.3-10.3.6.6 0 0 0-.8-.7A9.5 9.5 0 1 0 21.4 15.4a.6.6 0 0 0-.7-.8Z" />
+        </svg>
+      ) : (
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+          <circle cx="12" cy="12" r="3.2" />
+          <path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1" />
+        </svg>
+      ),
+    },
+    {
+      key: 'logout',
+      title: 'Выйти из системы',
+      onClick: onLogout,
+      icon: <LogoutOutlined style={{ fontSize: 19 }} />,
+      isLogout: true,
+    },
+  ];
+
   return (
     <div className="page" data-theme={uiTheme}>
       <div className="app-bg">
@@ -87,45 +158,41 @@ export const TelemetryScreen: React.FC<TelemetryScreenProps> = ({ onLogout, uiTh
 
             <div style={{ flex: 1 }} />
 
-            <div
-              className={`nav-item ${actions.onOpenHistory ? '' : 'disabled'}`}
-              title="История анализов"
-              onClick={() => actions.onOpenHistory?.()}
-              style={{ cursor: actions.onOpenHistory ? 'pointer' : 'default', opacity: actions.onOpenHistory ? 1 : 0.4 }}
-            >
-              <HistoryOutlined style={{ fontSize: 19 }} />
-            </div>
-            <div
-              className="nav-item"
-              title="Панель Hangfire"
-              onClick={() => window.open(HANGFIRE_PATH, '_blank')}
-              style={{ cursor: 'pointer' }}
-            >
-              <DashboardOutlined style={{ fontSize: 19 }} />
-            </div>
-            <div className="nav-item" title="Сетевые запросы" onClick={openQueryTracker} style={{ cursor: 'pointer' }}>
-              <Badge count={activeCount} size="small" offset={[2, -2]}>
-                <ApiOutlined style={{ fontSize: 19, color: activeCount > 0 ? '#3D63DD' : 'inherit' }} />
-              </Badge>
-            </div>
-
-            <div
-              className="nav-item"
-              title={uiTheme === 'dark' ? 'Светлая тема' : 'Тёмная тема'}
-              onClick={onToggleTheme}
-              style={{ cursor: 'pointer' }}
-            >
-              {uiTheme === 'dark' ? (
-                <svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor" stroke="none">
-                  <path d="M20.7 14.6a8.6 8.6 0 0 1-10.3-10.3.6.6 0 0 0-.8-.7A9.5 9.5 0 1 0 21.4 15.4a.6.6 0 0 0-.7-.8Z" />
-                </svg>
-              ) : (
-                <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-                  <circle cx="12" cy="12" r="3.2" />
-                  <path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1" />
-                </svg>
-              )}
-            </div>
+            {navButtons.map((btn, index) => {
+              const total = navButtons.length;
+              const style = getNavItemStyle(index, total);
+              const isLogout = btn.key === 'logout';
+              
+              return (
+                <div
+                  key={btn.key}
+                  className={`nav-item ${btn.disabled ? 'disabled' : ''}`}
+                  title={btn.title}
+                  onClick={btn.disabled ? undefined : btn.onClick}
+                  style={{
+                    cursor: btn.disabled ? 'default' : 'pointer',
+                    opacity: btn.disabled ? 0.4 : style.opacity,
+                    color: style.color,
+                    transition: 'opacity 0.2s ease, color 0.2s ease, background 0.2s ease',
+                    ...(isLogout ? {
+                      '--hover-bg': 'rgba(214, 73, 51, 0.12)',
+                    } : {}),
+                  } as React.CSSProperties}
+                  onMouseEnter={(e) => {
+                    if (!btn.disabled) {
+                      const target = e.currentTarget;
+                      const bg = isLogout ? 'rgba(214, 73, 51, 0.12)' : 'rgba(61, 99, 221, 0.08)';
+                      target.style.background = bg;
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'transparent';
+                  }}
+                >
+                  {btn.icon}
+                </div>
+              );
+            })}
           </div>
 
           <div className="content">
