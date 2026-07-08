@@ -20,3 +20,22 @@ export async function loadEventCodeMap(): Promise<Record<string, string>> {
 
   return map;
 }
+
+/** Map DB/CSV event code id → human-readable label. */
+export function resolveEventCodeLabel(
+  code: string | number | null | undefined,
+  map: Record<string, string>,
+): string {
+  if (code === null || code === undefined || code === '') return 'Неизвестный код';
+
+  const raw = String(code).trim();
+  if (map[raw]) return map[raw];
+
+  // Numeric codes from DB may omit leading zeros or use float formatting.
+  if (/^\d+(\.0+)?$/.test(raw)) {
+    const normalized = String(parseInt(raw, 10));
+    if (map[normalized]) return map[normalized];
+  }
+
+  return raw;
+}

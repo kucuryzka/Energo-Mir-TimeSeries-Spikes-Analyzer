@@ -16,7 +16,7 @@ import { SpikeChart } from '../Chart/SpikeChart';
 import { AnomalyDonut } from './AnomalyDonut';
 import { AnomalyList } from './AnomalyList';
 import { KpiRow } from './KpiRow';
-import { loadEventCodeMap } from '../../utils/eventCodeMap';
+import { loadEventCodeMap, resolveEventCodeLabel } from '../../utils/eventCodeMap';
 import { TablePreviewContent, type TablePreviewData } from '../GenericAnalyzer/TablePreviewCard';
 import { runAnalysisSessionJob, updateAnalysisSession, useAnalysisResultData } from '../../store/analysisSessionStore';
 
@@ -104,7 +104,7 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({ database, ac
   const [loadingHistory, setLoadingHistory] = useState(false);
 
   const [tablePreview, setTablePreview] = useState<TablePreviewData | null>(null);
-  const [loadingPreview, setLoadingPreview] = useState(true);
+  const [loadingPreview, setLoadingPreview] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
 
   const fetchChannels = async (search: string = '') => {
@@ -127,28 +127,36 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({ database, ac
   }, []);
 
   useEffect(() => {
-    let mounted = true;
-    const loadPreview = async () => {
-      setLoadingPreview(true);
-      setPreviewOpen(false);
-      try {
-        const preview = activeTab === 'dbo'
-          ? await analyticsApi.dbo.getTablePreview(database)
-          : await analyticsApi.emProtocol.getTablePreview(database);
-        if (!mounted) return;
-        setTablePreview(preview);
-      } catch (e) {
-        console.error('Failed to load table preview', e);
-        if (mounted) setTablePreview(null);
-      } finally {
-        if (mounted) setLoadingPreview(false);
-      }
-    };
-    if (database) loadPreview();
-    return () => { mounted = false; };
+    setTablePreview(null);
+    setPreviewOpen(false);
+    setLoadingPreview(false);
+  }, [database, activeTab, visible]);
+
+  const loadPreview = useCallback(async () => {
+    setLoadingPreview(true);
+    try {
+      const preview = activeTab === 'dbo'
+        ? await analyticsApi.dbo.getTablePreview(database)
+        : await analyticsApi.emProtocol.getTablePreview(database);
+      setTablePreview(preview);
+    } catch (e) {
+      console.error('Failed to load table preview', e);
+      setTablePreview(null);
+      message.error('Не удалось загрузить превью таблицы');
+    } finally {
+      setLoadingPreview(false);
+    }
   }, [database, activeTab]);
 
+  const handlePreviewToggle = useCallback(async () => {
+    if (!previewOpen && !tablePreview && !loadingPreview) {
+      await loadPreview();
+    }
+    setPreviewOpen(v => !v);
+  }, [previewOpen, tablePreview, loadingPreview, loadPreview]);
+
   useEffect(() => {
+    if (!visible || !database) return;
     setChannelId(null);
     setChannels([]);
     setDistributions({});
@@ -162,13 +170,14 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({ database, ac
       }).catch(() => {});
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [database]);
+  }, [database, visible]);
 
   useEffect(() => {
+    if (!visible) return;
     const timer = setTimeout(() => fetchChannels(channelSearch), 400);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [channelSearch]);
+  }, [channelSearch, visible]);
 
   const fetchDistributions = async () => {
     if (activeTab !== 'em') return;
@@ -272,11 +281,15 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({ database, ac
       setPointDetails(details);
       const meta = new Map(channels.map(c => [c.id, c]));
       const fallbackLabel = activeTab === 'dbo' ? 'Объект' : 'Канал';
-      setPointChannels((breakdown as ChannelContributionDto[]).map(c => ({
-        ...c,
-        channelName: c.channelName || meta.get(c.channelId)?.name || `${fallbackLabel} ${c.channelId}`,
-        eventCode: activeTab === 'em' ? meta.get(c.channelId)?.eventCode : c.eventCode,
-      })));
+      setPointChannels((breakdown as ChannelContributionDto[]).map(c => {
+        const fromList = meta.get(c.channelId)?.name;
+        const nameLooksLikeId = c.channelName && /^\d+$/.test(c.channelName.trim());
+        return {
+          ...c,
+          channelName: (nameLooksLikeId ? fromList : c.channelName) || fromList || `${fallbackLabel} ${c.channelId}`,
+          eventCode: c.eventCode ?? meta.get(c.channelId)?.eventCode,
+        };
+      }));
     }).catch(err => {
       console.error(err);
     }).finally(() => setLoadingDetails(false));
@@ -400,7 +413,7 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({ database, ac
           onExport={handleExport}
           exportDisabled={!data?.series?.length}
           previewOpen={previewOpen}
-          onPreviewToggle={() => setPreviewOpen(v => !v)}
+          onPreviewToggle={handlePreviewToggle}
         />
       </div>
 
@@ -508,7 +521,7 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({ database, ac
                   <div className="chart-title" style={{ marginBottom: 4 }}>Распределение</div>
                   {Object.entries(distributions).map(([category, items]) => {
                     const chartData = category === 'EventCode'
-                      ? items.map(d => ({ ...d, category: eventCodeMap[d.category] || d.category }))
+                      ? items.map(d => ({ ...d, category: resolveEventCodeLabel(d.category, eventCodeMap) }))
                       : items;
                     return (
                       <div key={category} className="distribution-card">
@@ -613,9 +626,8 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({ database, ac
                     <Table
                       dataSource={Object.entries(
                         pointChannels.reduce((acc, curr) => {
-                          const rawCode = curr.eventCode ? String(curr.eventCode) : 'Неизвестный код';
-                          const code = eventCodeMap[rawCode] || rawCode;
-                          acc[code] = (acc[code] || 0) + curr.count;
+                          const label = resolveEventCodeLabel(curr.eventCode, eventCodeMap);
+                          acc[label] = (acc[label] || 0) + curr.count;
                           return acc;
                         }, {} as Record<string, number>)
                       ).map(([code, count]) => ({ code, count }))}
