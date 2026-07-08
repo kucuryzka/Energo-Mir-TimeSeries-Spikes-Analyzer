@@ -10,12 +10,11 @@ export default defineConfig(({ mode }) => ({
       '/api/dist/hangfire': {
         target: 'http://localhost:5090',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api\/dist\/hangfire/, '/hangfire'),
       },
-      '/api/dist': {
+      '/api/dist/api': {
         target: 'http://localhost:5090',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api\/dist/, '/api'),
+        rewrite: (path) => path.replace(/^\/api\/dist\/api/, '/api'),
       },
     },
   },

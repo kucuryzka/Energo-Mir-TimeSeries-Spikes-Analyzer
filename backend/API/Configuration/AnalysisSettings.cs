@@ -22,6 +22,14 @@ public class AnalysisSettings
 
     public int ProgressSaveIntervalSeconds { get; set; } = 5;
 
-    /// <summary>Timeout for lightweight table preview queries (seconds).</summary>
     public int PreviewCommandTimeoutSeconds { get; set; } = 120;
+
+    public long PreviewOrderedSampleMaxRows { get; set; } = 500_000;
+}
+
+public class HangfireSettings
+{
+    public const string SectionName = "Hangfire";
+
+    public string DashboardPrefixPath { get; set; } = "/api/dist";
 }

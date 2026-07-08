@@ -2,15 +2,28 @@ using API.Configuration;
 using API.Data;
 using Hangfire;
 using Hangfire.Storage.SQLite;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.Configure<AnalysisSettings>(
     builder.Configuration.GetSection(AnalysisSettings.SectionName));
+builder.Services.Configure<HangfireSettings>(
+    builder.Configuration.GetSection(HangfireSettings.SectionName));
 var analysisSettings = builder.Configuration
     .GetSection(AnalysisSettings.SectionName)
     .Get<AnalysisSettings>() ?? new AnalysisSettings();
+var hangfireSettings = builder.Configuration
+    .GetSection(HangfireSettings.SectionName)
+    .Get<HangfireSettings>() ?? new HangfireSettings();
+
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedPrefix;
+    options.KnownNetworks.Clear();
+    options.KnownProxies.Clear();
+});
 
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
@@ -83,6 +96,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseCors("ReactCorsPolicy");
+app.UseForwardedHeaders();
 
 using (var scope = app.Services.CreateScope())
 {
@@ -90,7 +104,23 @@ using (var scope = app.Services.CreateScope())
     internalDb.Database.EnsureCreated();
 }
 
-app.UseHangfireDashboard("/hangfire", new DashboardOptions
+var dashboardPrefix = hangfireSettings.DashboardPrefixPath.TrimEnd('/');
+var dashboardPath = string.IsNullOrEmpty(dashboardPrefix)
+    ? "/hangfire"
+    : $"{dashboardPrefix}/hangfire";
+
+// Старый nginx: proxy_pass .../hangfire/ — переписываем на публичный путь dashboard.
+if (!dashboardPath.Equals("/hangfire", StringComparison.OrdinalIgnoreCase))
+{
+    app.Use(async (context, next) =>
+    {
+        if (context.Request.Path.StartsWithSegments("/hangfire", out var remainder))
+            context.Request.Path = new PathString(dashboardPath) + remainder;
+        await next();
+    });
+}
+
+app.UseHangfireDashboard(dashboardPath, new DashboardOptions
 {
     Authorization = [new API.Infrastructure.HangfireDashboardAuthorizationFilter()]
 });

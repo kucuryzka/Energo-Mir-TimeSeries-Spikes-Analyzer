@@ -1,8 +1,8 @@
 import axios from 'axios';
 import { requestTracker } from '../store/requestTracker';
 
-/** Префикс API за nginx: /api/dist/... → backend /api/... */
-export const API_BASE_PATH = import.meta.env.VITE_API_BASE_PATH ?? '/api/dist';
+/** Префикс API за nginx: /api/dist/api/... → backend /api/... */
+export const API_BASE_PATH = import.meta.env.VITE_API_BASE_PATH ?? '/api/dist/api';
 
 /** Hangfire на backend в /hangfire, за nginx — /api/dist/hangfire */
 export const HANGFIRE_PATH = import.meta.env.VITE_HANGFIRE_PATH ?? '/api/dist/hangfire/';
