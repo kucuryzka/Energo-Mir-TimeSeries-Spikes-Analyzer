@@ -81,6 +81,7 @@ builder.Services.AddScoped<Core.Interfaces.ITimeSeriesService, Core.Services.Tim
 builder.Services.AddScoped<Core.Interfaces.ISpikeDetectionService, Core.Services.SpikeDetectionService>();
 builder.Services.AddSingleton<API.Services.IConnectionManagerService, API.Services.ConnectionManagerService>();
 builder.Services.AddSingleton<API.Services.AnalysisResultService>();
+builder.Services.AddScoped<API.Services.AnalysisExportService>();
 builder.Services.AddScoped<API.Services.TablePreviewService>();
 builder.Services.AddScoped<API.Services.AnalysisRequestValidator>();
 builder.Services.AddSingleton<API.Services.IAnalysisJobCancellationService, API.Services.AnalysisJobCancellationService>();

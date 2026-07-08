@@ -6,7 +6,6 @@ import { formatUtcDateTime } from '../../utils/dateTimeUtils';
 import { confirmHeavyAnalysis } from '../../utils/granularityWarning';
 import { SpikeChart } from '../Chart/SpikeChart';
 import { enrichSpikeData, getStatistics } from '../../utils/spikeUtils';
-import { exportSpikesToExcel } from '../../utils/exportUtils';
 import { genericAnalysisApi } from '../../api/explorerApi';
 import { TablePreviewContent, type TablePreviewData } from './TablePreviewCard';
 import { AnalysisJobProgress } from '../Dashboard/AnalysisJobProgress';
@@ -80,6 +79,7 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({
   } = useAnalysisResultData(sessionKey, visible, jobApi);
 
   const [cancellingJob, setCancellingJob] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const [selectedPoint, setSelectedPoint] = useState<SpikePoint | null>(null);
   const [pointDetails, setPointDetails] = useState<any[]>([]);
@@ -211,13 +211,26 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({
     }
   };
 
-  const handleExport = () => {
-    if (!data?.series?.length) {
-      message.warning('Нет данных для экспорта. Сначала выполните анализ.');
+  const handleExport = async (options?: { loadDistribution?: boolean }) => {
+    if (!jobId) {
+      message.warning('Нет завершённого анализа для экспорта.');
       return;
     }
-    exportSpikesToExcel(data);
-    message.success('Данные экспортированы в Excel');
+    if (isPartialResult || loading) {
+      message.warning('Дождитесь завершения анализа перед экспортом.');
+      return;
+    }
+
+    setExporting(true);
+    try {
+      await analysisJobsApi.downloadExport(jobId, options?.loadDistribution ?? false);
+      message.success('Данные экспортированы в Excel');
+    } catch (err: any) {
+      const errorText = err?.message || err?.response?.data?.message || 'Не удалось скачать Excel';
+      message.error(errorText);
+    } finally {
+      setExporting(false);
+    }
   };
 
   const openHistory = useCallback(async () => {
@@ -492,7 +505,8 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({
           onAnalyze={fetchData}
           loading={loading}
           onExport={handleExport}
-          exportDisabled={!data?.series?.length}
+          exportDisabled={!jobId || loading || isPartialResult}
+          exportLoading={exporting}
           previewOpen={previewOpen}
           onPreviewToggle={handlePreviewToggle}
           estimateHint={durationEstimate}

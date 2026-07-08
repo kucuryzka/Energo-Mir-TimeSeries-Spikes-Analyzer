@@ -221,6 +221,37 @@
 .btn-secondary:hover:not(:disabled) { transform: translateY(-1px); }
 .btn-secondary:disabled { opacity:.5; cursor:default; }
 .btn-secondary.active { border-color: #3D63DD; color: #3D63DD; background: rgba(61,99,221,.08); }
+.btn-secondary--sm { padding: 10px 14px; font-size: 12px; gap: 6px; }
+
+.export-menu-wrap { position: relative; }
+.export-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  min-width: 228px;
+  background: var(--popover-bg);
+  border-radius: 14px;
+  padding: 6px;
+  box-shadow: var(--popover-shadow);
+  animation: tm-popover-in .18s ease-out;
+}
+.export-option {
+  display: block;
+  width: 100%;
+  border: none;
+  border-radius: 10px;
+  padding: 9px 11px;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: background .12s;
+}
+.export-option:hover:not(:disabled) { background: var(--nav-icon-hover-bg); }
+.export-option:disabled { opacity: .5; cursor: default; }
+.export-option + .export-option { margin-top: 2px; }
+.export-option-title { font: 600 12.5px 'Manrope', sans-serif; color: var(--text-heading); }
+.export-option-desc { font: 500 10.5px 'Manrope', sans-serif; color: var(--text-muted); margin-top: 2px; }
 
 .table-preview-panel {
   padding: 16px;

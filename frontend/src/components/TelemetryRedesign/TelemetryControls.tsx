@@ -54,8 +54,9 @@ export interface TelemetryControlsProps {
   /** Optional period is the picker value at click time (avoids stale parent state). */
   onAnalyze: (period?: [string, string]) => void;
   loading: boolean;
-  onExport: () => void;
+  onExport: (options?: { loadDistribution?: boolean }) => void;
   exportDisabled: boolean;
+  exportLoading?: boolean;
   previewOpen?: boolean;
   onPreviewToggle?: () => void;
   estimateHint?: string | null;
@@ -83,12 +84,15 @@ export const TelemetryControls: React.FC<TelemetryControlsProps> = ({
   loading,
   onExport,
   exportDisabled,
+  exportLoading = false,
   previewOpen,
   onPreviewToggle,
   estimateHint,
 }) => {
   const filtersRef = useRef<HTMLDivElement>(null);
+  const exportRef = useRef<HTMLDivElement>(null);
   const isEditingPeriodRef = useRef(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const [pickerValue, setPickerValue] = useState<[Dayjs | null, Dayjs | null]>(
     () => toPickerValue(dateRange),
   );
@@ -107,10 +111,18 @@ export const TelemetryControls: React.FC<TelemetryControlsProps> = ({
       if (filtersRef.current && !filtersRef.current.contains(e.target as Node)) {
         onFiltersOpenChange(false);
       }
+      if (exportRef.current && !exportRef.current.contains(e.target as Node)) {
+        setExportOpen(false);
+      }
     };
-    if (filtersOpen) document.addEventListener('mousedown', onClickOutside);
+    if (filtersOpen || exportOpen) document.addEventListener('mousedown', onClickOutside);
     return () => document.removeEventListener('mousedown', onClickOutside);
-  }, [filtersOpen, onFiltersOpenChange]);
+  }, [filtersOpen, exportOpen, onFiltersOpenChange]);
+
+  const runExport = (loadDistribution: boolean) => {
+    setExportOpen(false);
+    onExport({ loadDistribution });
+  };
 
   return (
     <div className="controls">
@@ -237,12 +249,52 @@ export const TelemetryControls: React.FC<TelemetryControlsProps> = ({
           {estimateHint}
         </span>
       )}
-      <button type="button" className="btn-secondary" onClick={onExport} disabled={exportDisabled}>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M12 3v12" /><path d="M7 10l5 5 5-5" /><path d="M4 19h16" />
-        </svg>
-        Excel
-      </button>
+      <div className="export-menu-wrap" ref={exportRef}>
+        <button
+          type="button"
+          className={`btn-secondary btn-secondary--sm${exportOpen ? ' active' : ''}`}
+          disabled={exportDisabled || exportLoading}
+          onClick={() => setExportOpen((open) => !open)}
+          aria-expanded={exportOpen}
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 3v12" /><path d="M7 10l5 5 5-5" /><path d="M4 19h16" />
+          </svg>
+          {exportLoading ? 'Excel…' : 'Excel'}
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <path d="M6 9l6 6 6-6" />
+          </svg>
+        </button>
+
+        {exportOpen && (
+          <div className="export-popover" role="menu">
+            <button
+              type="button"
+              className="export-option"
+              role="menuitem"
+              disabled={exportLoading}
+              onClick={() => runExport(false)}
+            >
+              <div>
+                <div className="export-option-title">Скачать Excel</div>
+                <div className="export-option-desc">Данные из результата анализа</div>
+              </div>
+            </button>
+            <button
+              type="button"
+              className="export-option"
+              role="menuitem"
+              disabled={exportLoading}
+              onClick={() => runExport(true)}
+            >
+              <div>
+                <div className="export-option-title">С распределением из БД</div>
+                <div className="export-option-desc">Доп. лист с актуальным распределением</div>
+              </div>
+            </button>
+          </div>
+        )}
+      </div>
       {onPreviewToggle && (
         <button
           type="button"

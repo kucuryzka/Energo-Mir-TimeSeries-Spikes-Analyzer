@@ -1,0 +1,260 @@
+using API.DataSources;
+using API.DTOs;
+using API.Models;
+using API.Sql;
+using ClosedXML.Excel;
+
+namespace API.Services;
+
+public class AnalysisExportService
+{
+    private readonly AnalysisResultService _resultService;
+    private readonly AnalysisPipelineService _pipeline;
+    private readonly DboDataSource _dboDataSource;
+    private readonly ISqlDialectProvider _dialectProvider;
+    private readonly IConnectionManagerService _connectionManager;
+    private readonly IHttpContextAccessor _httpContextAccessor;
+
+    public AnalysisExportService(
+        AnalysisResultService resultService,
+        AnalysisPipelineService pipeline,
+        IEnumerable<IDataSourceStrategy> dataSources,
+        ISqlDialectProvider dialectProvider,
+        IConnectionManagerService connectionManager,
+        IHttpContextAccessor httpContextAccessor)
+    {
+        _resultService = resultService;
+        _pipeline = pipeline;
+        _dboDataSource = dataSources.OfType<DboDataSource>().First();
+        _dialectProvider = dialectProvider;
+        _connectionManager = connectionManager;
+        _httpContextAccessor = httpContextAccessor;
+    }
+
+    public async Task<(MemoryStream Stream, string FileName)> BuildExcelAsync(
+        AnalysisJob job,
+        bool loadDistribution,
+        CancellationToken cancellationToken = default)
+    {
+        if (!_resultService.CanExport(job))
+            throw new InvalidOperationException("Analysis result is not available for export.");
+
+        var breakdownHeader = job.Schema == "dbo"
+            ? "Объекты (детализация)"
+            : "Каналы (детализация)";
+
+        using var workbook = new XLWorkbook();
+        var seriesSheet = workbook.Worksheets.Add("Аномалии");
+
+        seriesSheet.Cell(1, 1).Value = "Время среза";
+        seriesSheet.Cell(1, 2).Value = "Количество сообщений";
+        seriesSheet.Cell(1, 3).Value = "Статус";
+        seriesSheet.Cell(1, 4).Value = "P-Value";
+        seriesSheet.Cell(1, 5).Value = "Достоверность (%)";
+        seriesSheet.Cell(1, 6).Value = breakdownHeader;
+        seriesSheet.Row(1).Style.Font.Bold = true;
+
+        var row = 2;
+        await foreach (var point in _resultService.EnumerateSeriesAsync(job, cancellationToken))
+        {
+            var confidence = (1 - point.PValue) * 100;
+            seriesSheet.Cell(row, 1).Value = point.Timestamp;
+            seriesSheet.Cell(row, 1).Style.DateFormat.Format = "dd.MM.yyyy HH:mm:ss";
+            seriesSheet.Cell(row, 2).Value = point.Value;
+            seriesSheet.Cell(row, 3).Value = FormatStatus(point);
+            seriesSheet.Cell(row, 4).Value = point.PValue;
+            seriesSheet.Cell(row, 5).Value = $"{confidence:F2}%";
+            seriesSheet.Cell(row, 6).Value = FormatBreakdown(point.ChannelBreakdown);
+            row++;
+        }
+
+        seriesSheet.Column(1).Width = 22;
+        seriesSheet.Column(2).Width = 14;
+        seriesSheet.Column(3).Width = 22;
+        seriesSheet.Column(4).Width = 12;
+        seriesSheet.Column(5).Width = 16;
+        seriesSheet.Column(6).Width = 40;
+
+        AddParametersSheet(workbook, job);
+
+        var distribution = await ResolveDistributionAsync(job, loadDistribution, cancellationToken);
+        if (distribution.Count > 0)
+            AddDistributionSheet(workbook, distribution, job.Schema);
+
+        var fileName = $"spike-analysis-{SanitizeFilePart(job.Database)}-{job.Id[..Math.Min(8, job.Id.Length)]}-{DateTime.UtcNow:yyyy-MM-dd_HHmm}.xlsx";
+        var stream = new MemoryStream();
+        workbook.SaveAs(stream);
+        stream.Position = 0;
+        return (stream, fileName);
+    }
+
+    private async Task<List<ChannelContributionDto>> ResolveDistributionAsync(
+        AnalysisJob job,
+        bool loadDistribution,
+        CancellationToken cancellationToken)
+    {
+        if (!loadDistribution)
+            return _resultService.GetStoredDistribution(job);
+
+        var channelId = ParseChannelFilter(job);
+
+        if (job.Schema == "dbo")
+        {
+            return await _dboDataSource.GetObjectDistributionAsync(
+                job.Database,
+                job.StartDate,
+                job.EndDate,
+                channelId);
+        }
+
+        var (connectionString, provider) = ResolveConnection();
+        var dialect = _dialectProvider.GetDialect(provider);
+
+        if (job.Schema == "em_protocol")
+        {
+            var spec = BuildEmTableSpec(dialect);
+            return await _pipeline.GetDistributionAsync(
+                spec,
+                job.StartDate,
+                job.EndDate,
+                channelId,
+                connectionString,
+                provider,
+                job.Database,
+                cancellationToken);
+        }
+
+        var genericSpec = new AnalysisTableSpec
+        {
+            Schema = job.Schema,
+            Table = job.Table,
+            TimeColumn = job.TimeColumn,
+        };
+
+        return await _pipeline.GetDistributionAsync(
+            genericSpec,
+            job.StartDate,
+            job.EndDate,
+            channelId,
+            connectionString,
+            provider,
+            job.Database,
+            cancellationToken);
+    }
+
+    private static void AddParametersSheet(XLWorkbook workbook, AnalysisJob job)
+    {
+        var sheet = workbook.Worksheets.Add("Параметры");
+        var rows = new (string Label, string Value)[]
+        {
+            ("ID задачи", job.Id),
+            ("База данных", job.Database),
+            ("Схема", job.Schema),
+            ("Таблица / фильтр", job.Table),
+            ("Колонка времени", string.IsNullOrEmpty(job.TimeColumn) ? "—" : job.TimeColumn),
+            ("Период с", job.StartDate.ToString("dd.MM.yyyy HH:mm:ss")),
+            ("Период по", job.EndDate.ToString("dd.MM.yyyy HH:mm:ss")),
+            ("Детализация", job.Granularity.ToString()),
+            ("Custom minutes", job.CustomMinutes?.ToString() ?? "—"),
+            ("Confidence", job.Confidence?.ToString() ?? "—"),
+            ("Window size", job.WindowSize?.ToString() ?? "—"),
+            ("Статус", job.Status),
+            ("Точек в серии", job.SeriesPointCount.ToString()),
+            ("Создано (UTC)", job.CreatedAt.ToString("dd.MM.yyyy HH:mm:ss")),
+            ("Завершено (UTC)", job.CompletedAt?.ToString("dd.MM.yyyy HH:mm:ss") ?? "—"),
+        };
+
+        for (var i = 0; i < rows.Length; i++)
+        {
+            sheet.Cell(i + 1, 1).Value = rows[i].Label;
+            sheet.Cell(i + 1, 1).Style.Font.Bold = true;
+            sheet.Cell(i + 1, 2).Value = rows[i].Value;
+        }
+
+        sheet.Columns().AdjustToContents();
+    }
+
+    private static void AddDistributionSheet(
+        XLWorkbook workbook,
+        List<ChannelContributionDto> distribution,
+        string schema)
+    {
+        var sheet = workbook.Worksheets.Add("Распределение");
+        var idHeader = schema == "dbo" ? "ID объекта" : "ID канала";
+        var nameHeader = schema == "dbo" ? "Объект" : "Канал";
+
+        sheet.Cell(1, 1).Value = idHeader;
+        sheet.Cell(1, 2).Value = nameHeader;
+        sheet.Cell(1, 3).Value = "EventCode";
+        sheet.Cell(1, 4).Value = "Количество";
+        sheet.Row(1).Style.Font.Bold = true;
+
+        var row = 2;
+        foreach (var item in distribution)
+        {
+            sheet.Cell(row, 1).Value = item.ChannelId;
+            sheet.Cell(row, 2).Value = item.ChannelName;
+            sheet.Cell(row, 3).Value = item.EventCode ?? "—";
+            sheet.Cell(row, 4).Value = item.Count;
+            row++;
+        }
+
+        sheet.Columns().AdjustToContents();
+    }
+
+    private static string FormatStatus(AnomalyResultDto point)
+    {
+        if (!point.IsSpike)
+            return "Штатный режим";
+
+        if (point.PValue < 0.01)
+            return "Критическая аномалия";
+        if (point.PValue < 0.05)
+            return "Аномалия";
+        return "Подозрительное";
+    }
+
+    private static string FormatBreakdown(IEnumerable<ChannelContributionDto> breakdown)
+    {
+        var parts = breakdown
+            .Select(cb => $"{(string.IsNullOrWhiteSpace(cb.ChannelName) ? cb.ChannelId.ToString() : cb.ChannelName)}: {cb.Count}")
+            .ToList();
+        return parts.Count == 0 ? "—" : string.Join("; ", parts);
+    }
+
+    private static int? ParseChannelFilter(AnalysisJob job) =>
+        job.Table != "All" && int.TryParse(job.Table, out var channelId) ? channelId : null;
+
+    private (string ConnectionString, string Provider) ResolveConnection()
+    {
+        var token = _httpContextAccessor.HttpContext?.Request.Headers["X-Session-Token"].ToString();
+        var info = _connectionManager.GetConnectionInfo(token ?? "");
+        if (info == null)
+            throw new UnauthorizedAccessException("Invalid or missing session token");
+        return (info.ConnectionString, info.Provider);
+    }
+
+    private static AnalysisTableSpec BuildEmTableSpec(IDatabaseDialect dialect) => new()
+    {
+        Schema = "em_protocol",
+        Table = "Records",
+        TimeColumn = "InsertTime",
+        ChannelColumn = "ChannelId",
+        FromClause = dialect.QualifyFromTable("em_protocol", "Records", "r"),
+        TableAlias = "r",
+        ChannelLookup = new ChannelLookupSpec
+        {
+            Schema = "em_protocol",
+            Table = "Channels",
+            IdColumn = "Id",
+            NameColumn = "Id",
+            EventCodeColumn = "EventCode",
+        },
+    };
+
+    private static string SanitizeFilePart(string value)
+    {
+        var invalid = Path.GetInvalidFileNameChars();
+        return new string(value.Select(ch => invalid.Contains(ch) ? '_' : ch).ToArray());
+    }
+}

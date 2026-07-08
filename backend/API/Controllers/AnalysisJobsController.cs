@@ -1,6 +1,8 @@
 using API.Services;
+using API.Data;
 using Core.Enums;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace API.Controllers;
 
@@ -11,15 +13,24 @@ public class AnalysisJobsController : ControllerBase
     private readonly AnalysisJobCoordinatorService _coordinator;
     private readonly AnalysisTimingStatsService _timingStats;
     private readonly IConnectionManagerService _connectionManager;
+    private readonly InternalDbContext _internalDb;
+    private readonly AnalysisResultService _resultService;
+    private readonly AnalysisExportService _exportService;
 
     public AnalysisJobsController(
         AnalysisJobCoordinatorService coordinator,
         AnalysisTimingStatsService timingStats,
-        IConnectionManagerService connectionManager)
+        IConnectionManagerService connectionManager,
+        InternalDbContext internalDb,
+        AnalysisResultService resultService,
+        AnalysisExportService exportService)
     {
         _coordinator = coordinator;
         _timingStats = timingStats;
         _connectionManager = connectionManager;
+        _internalDb = internalDb;
+        _resultService = resultService;
+        _exportService = exportService;
     }
 
     [HttpGet("queue")]
@@ -69,6 +80,40 @@ public class AnalysisJobsController : ControllerBase
             return BadRequest(new { message = "Задача не найдена или уже завершена." });
 
         return Ok(new { message = "Задача отменяется." });
+    }
+
+    [HttpGet("{id}/export")]
+    public async Task<IActionResult> Export(
+        string id,
+        [FromQuery] bool loadDistribution = false,
+        CancellationToken cancellationToken = default)
+    {
+        if (!HasValidSession())
+            return Unauthorized();
+
+        var job = await _internalDb.AnalysisJobs.FindAsync([id], cancellationToken);
+        if (job == null)
+            return NotFound();
+
+        if (!_resultService.CanExport(job))
+            return BadRequest(new { message = "Результат анализа недоступен для экспорта." });
+
+        try
+        {
+            var (stream, fileName) = await _exportService.BuildExcelAsync(job, loadDistribution, cancellationToken);
+            return File(
+                stream,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                fileName);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Unauthorized(new { message = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
     }
 
     private bool HasValidSession()

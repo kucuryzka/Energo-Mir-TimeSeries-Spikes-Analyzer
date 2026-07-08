@@ -1,5 +1,6 @@
 import { apiClient } from './index';
 import type { TimeGranularity } from '../types/analytics.types';
+import { downloadBlob, resolveDownloadFileName } from '../utils/downloadBlob';
 
 export interface AnalysisJobQueueItem {
   id: string;
@@ -74,5 +75,40 @@ export const analysisJobsApi = {
   }): Promise<AnalysisDurationEstimate> => {
     const response = await apiClient.get<AnalysisDurationEstimate>('/analysis-jobs/estimate', { params });
     return response.data;
+  },
+
+  downloadExport: async (jobId: string, loadDistribution = false): Promise<void> => {
+    try {
+      const response = await apiClient.get(`/analysis-jobs/${jobId}/export`, {
+        params: { loadDistribution },
+        responseType: 'blob',
+      });
+
+      const fallbackName = `spike-analysis-${jobId}.xlsx`;
+      const fileName = resolveDownloadFileName(
+        response.headers['content-disposition'],
+        fallbackName,
+      );
+      downloadBlob(response.data, fileName);
+    } catch (error: unknown) {
+      if (error && typeof error === 'object' && 'response' in error) {
+        const axiosError = error as { response?: { data?: Blob } };
+        const blob = axiosError.response?.data;
+        if (blob instanceof Blob) {
+          const text = await blob.text();
+          try {
+            const payload = JSON.parse(text) as { message?: string };
+            if (payload.message) {
+              throw new Error(payload.message);
+            }
+          } catch (parseError) {
+            if (parseError instanceof Error && parseError.message !== text) {
+              throw parseError;
+            }
+          }
+        }
+      }
+      throw error;
+    }
   },
 };

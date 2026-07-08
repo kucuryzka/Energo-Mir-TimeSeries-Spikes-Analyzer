@@ -4,7 +4,6 @@ import { message, Drawer, Table, Tabs, Typography, Popconfirm, Button, Space, Sp
 import { DeleteOutlined } from '@ant-design/icons';
 import { analyticsApi } from '../../api/analyticsApi';
 import { enrichSpikeData, getStatistics } from '../../utils/spikeUtils';
-import { exportSpikesToExcel } from '../../utils/exportUtils';
 import { formatUtcDateTime } from '../../utils/dateTimeUtils';
 import { confirmHeavyAnalysis } from '../../utils/granularityWarning';
 import { useRegisterShellRailActions } from '../../context/ShellRailContext';
@@ -105,6 +104,7 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
   } = useAnalysisResultData(sessionKey, visible, jobApi);
 
   const [cancellingJob, setCancellingJob] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const [, setSources] = useState<DataSourceDto[]>([]);
   const sourcesRef = useRef<DataSourceDto[]>([]);
@@ -619,13 +619,26 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
     [data?.series],
   );
 
-  const handleExport = () => {
-    if (!data?.series?.length) {
-      message.warning('Нет данных для экспорта. Сначала выполните анализ.');
+  const handleExport = async (options?: { loadDistribution?: boolean }) => {
+    if (!jobId) {
+      message.warning('Нет завершённого анализа для экспорта.');
       return;
     }
-    exportSpikesToExcel(data);
-    message.success('Данные экспортированы в Excel');
+    if (isPartialResult || loading) {
+      message.warning('Дождитесь завершения анализа перед экспортом.');
+      return;
+    }
+
+    setExporting(true);
+    try {
+      await analysisJobsApi.downloadExport(jobId, options?.loadDistribution ?? false);
+      message.success('Данные экспортированы в Excel');
+    } catch (err: any) {
+      const errorText = err?.message || err?.response?.data?.message || 'Не удалось скачать Excel';
+      message.error(errorText);
+    } finally {
+      setExporting(false);
+    }
   };
 
   const handlePointSelect = (timestamp: string) => {
@@ -673,7 +686,8 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
           onAnalyze={fetchData}
           loading={loading}
           onExport={handleExport}
-          exportDisabled={!data?.series?.length}
+          exportDisabled={!jobId || loading || isPartialResult}
+          exportLoading={exporting}
           previewOpen={previewOpen}
           onPreviewToggle={handlePreviewToggle}
           estimateHint={durationEstimate}
