@@ -7,8 +7,6 @@ using API.Services;
 using API.DTOs;
 using Core.Enums;
 using Dapper;
-using Microsoft.Data.SqlClient;
-using Npgsql;
 using API.Data;
 using Hangfire;
 using API.Models;
@@ -306,10 +304,8 @@ public class GenericAnalysisController : ControllerBase
 
             var qualifiedTable = dialect.QualifyTable(schema, table);
             var qualifiedTime = dialect.QualifyColumn(null, timeColumn);
-
-            var sql = dialect.ProviderId == "pgsql"
-                ? $"SELECT * FROM {qualifiedTable} WHERE {qualifiedTime} >= @Start AND {qualifiedTime} < @End {dialect.LimitClause(1000)}"
-                : $"SELECT {dialect.LimitClause(1000)} * FROM {qualifiedTable} WHERE {qualifiedTime} >= @Start AND {qualifiedTime} < @End";
+            var whereClause = $"{qualifiedTime} >= @Start AND {qualifiedTime} < @End";
+            var sql = dialect.BuildLimitedSelect("*", qualifiedTable, whereClause, 1000);
 
             var result = await connection.QueryAsync(sql, new { Start = timestamp, End = endDate });
             return Ok(result);

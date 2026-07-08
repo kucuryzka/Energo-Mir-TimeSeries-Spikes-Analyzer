@@ -12,6 +12,8 @@ public interface IDatabaseDialect
 
     string QualifyTable(string schema, string table);
 
+    string QualifyFromTable(string schema, string table, string? alias = null);
+
     string GetTimeBucketExpression(string columnExpression, TimeGranularity granularity, int? customMinutes);
 
     string NullTimestampExpression { get; }
@@ -22,9 +24,28 @@ public interface IDatabaseDialect
 
     string CountAggregateExpression { get; }
 
+    string LargeCountAggregateExpression { get; }
+
+    string CastAsText(string columnExpression);
+
+    string BuildLimitedSelect(
+        string selectList,
+        string fromClause,
+        string? whereClause,
+        int limit,
+        string? orderByClause = null);
+
     string Concat(params string[] parts);
 
-    string BuildSampleSql(string qualifiedTable, int limit);
+    string BuildSampleSql(string qualifiedTable, int limit, string? orderByColumn = null);
 
     string BuildApproximateRowCountSql(string schema, string table);
+
+    string BuildListDatabasesSql();
+
+    string BuildListSchemasSql();
+
+    string BuildListTablesSql();
+
+    string BuildListColumnsSql();
 }

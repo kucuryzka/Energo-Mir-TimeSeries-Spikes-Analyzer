@@ -55,7 +55,7 @@ public class DboDataSource : IDataSourceStrategy, ISupportsPointChannels
         Table = "METERINGS",
         TimeColumn = "TIME_INSERT",
         ChannelColumn = "IDOBJECT",
-        FromClause = $"{dialect.QualifyTable("dbo", "METERINGS")} m",
+        FromClause = dialect.QualifyFromTable("dbo", "METERINGS", "m"),
         TableAlias = "m",
         ChannelLookup = new ChannelLookupSpec
         {
@@ -121,7 +121,7 @@ public class DboDataSource : IDataSourceStrategy, ISupportsPointChannels
         var dialect = _dialectProvider.GetDialect(prov);
         using var context = _contextFactory.Create(conn, prov, database);
 
-        var table = dialect.QualifyTable("dbo", "OBJECTS");
+        var table = dialect.QualifyFromTable("dbo", "OBJECTS");
         var sql = $"SELECT {dialect.QualifyColumn(null, "IDOBJECT")} AS Id, {dialect.QualifyColumn(null, "OBJECT_NAME")} AS Name FROM {table}";
         var parameters = new List<object>();
 
@@ -163,15 +163,10 @@ public class DboDataSource : IDataSourceStrategy, ISupportsPointChannels
             _ => timestamp.AddHours(1)
         };
 
-        var meterings = dialect.QualifyTable("dbo", "METERINGS");
-        var objects = dialect.QualifyTable("dbo", "OBJECTS");
+        var meterings = dialect.QualifyFromTable("dbo", "METERINGS", "m");
+        var objects = dialect.QualifyFromTable("dbo", "OBJECTS", "o");
         var channelFilter = channelId.HasValue ? $" AND m.{dialect.QuoteIdentifier("IDOBJECT")} = @p2" : "";
-
-        string sql;
-        if (dialect.ProviderId == "pgsql")
-        {
-            sql = $@"
-                SELECT
+        var selectList = $@"
                     m.{dialect.QuoteIdentifier("IDOBJECT_AGGREGATE")} AS IdObjectAggregate,
                     m.{dialect.QuoteIdentifier("IDOBJECT_AVERAGE")} AS IdObjectAverage,
                     m.{dialect.QuoteIdentifier("QUALITY")} AS Quality,
@@ -179,28 +174,12 @@ public class DboDataSource : IDataSourceStrategy, ISupportsPointChannels
                     m.{dialect.QuoteIdentifier("SOURCE")} AS Source,
                     m.{dialect.QuoteIdentifier("VALUE_METERING")} AS ValueMetering,
                     m.{dialect.QuoteIdentifier("IDOBJECT")} AS IdObject,
-                    o.{dialect.QuoteIdentifier("OBJECT_NAME")} AS ObjectName
-                FROM {meterings} m
-                LEFT JOIN {objects} o ON m.{dialect.QuoteIdentifier("IDOBJECT")} = o.{dialect.QuoteIdentifier("IDOBJECT")}
-                WHERE m.{dialect.QuoteIdentifier("TIME_INSERT")} >= @p0 AND m.{dialect.QuoteIdentifier("TIME_INSERT")} < @p1{channelFilter}
-                {dialect.LimitClause(1000)}";
-        }
-        else
-        {
-            sql = $@"
-                SELECT {dialect.LimitClause(1000)}
-                    m.{dialect.QuoteIdentifier("IDOBJECT_AGGREGATE")} AS IdObjectAggregate,
-                    m.{dialect.QuoteIdentifier("IDOBJECT_AVERAGE")} AS IdObjectAverage,
-                    m.{dialect.QuoteIdentifier("QUALITY")} AS Quality,
-                    m.{dialect.QuoteIdentifier("QUALITY_SOURCE")} AS QualitySource,
-                    m.{dialect.QuoteIdentifier("SOURCE")} AS Source,
-                    m.{dialect.QuoteIdentifier("VALUE_METERING")} AS ValueMetering,
-                    m.{dialect.QuoteIdentifier("IDOBJECT")} AS IdObject,
-                    o.{dialect.QuoteIdentifier("OBJECT_NAME")} AS ObjectName
-                FROM {meterings} m
-                LEFT JOIN {objects} o ON m.{dialect.QuoteIdentifier("IDOBJECT")} = o.{dialect.QuoteIdentifier("IDOBJECT")}
-                WHERE m.{dialect.QuoteIdentifier("TIME_INSERT")} >= @p0 AND m.{dialect.QuoteIdentifier("TIME_INSERT")} < @p1{channelFilter}";
-        }
+                    o.{dialect.QuoteIdentifier("OBJECT_NAME")} AS ObjectName";
+        var fromClause = $@"
+                {meterings}
+                LEFT JOIN {objects} ON m.{dialect.QuoteIdentifier("IDOBJECT")} = o.{dialect.QuoteIdentifier("IDOBJECT")}";
+        var whereClause = $@"m.{dialect.QuoteIdentifier("TIME_INSERT")} >= @p0 AND m.{dialect.QuoteIdentifier("TIME_INSERT")} < @p1{channelFilter}";
+        var sql = dialect.BuildLimitedSelect(selectList, fromClause, whereClause, 1000);
 
         var parameters = new List<object> { timestamp, endDate };
         if (channelId.HasValue) parameters.Add(channelId.Value);

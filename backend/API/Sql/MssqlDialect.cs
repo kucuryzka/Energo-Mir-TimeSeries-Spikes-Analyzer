@@ -8,6 +8,23 @@ public class MssqlDialect : IDatabaseDialect
 
     public string CountAggregateExpression => "COUNT(*)";
 
+    public string LargeCountAggregateExpression => "COUNT_BIG(*)";
+
+    public string CastAsText(string columnExpression) =>
+        $"CAST({columnExpression} AS NVARCHAR(200))";
+
+    public string BuildLimitedSelect(
+        string selectList,
+        string fromClause,
+        string? whereClause,
+        int limit,
+        string? orderByClause = null)
+    {
+        var where = whereClause != null ? $" WHERE {whereClause}" : string.Empty;
+        var order = orderByClause ?? string.Empty;
+        return $"SELECT {LimitClause(limit)} {selectList} FROM {fromClause}{where}{order}";
+    }
+
     public string QuoteIdentifier(string identifier) => $"[{identifier}]";
 
     public string QualifyColumn(string? tableAlias, string column)
@@ -18,6 +35,14 @@ public class MssqlDialect : IDatabaseDialect
 
     public string QualifyTable(string schema, string table) =>
         $"{QuoteIdentifier(schema)}.{QuoteIdentifier(table)}";
+
+    public string QualifyFromTable(string schema, string table, string? alias = null)
+    {
+        var tableRef = QualifyTable(schema, table);
+        return alias != null
+            ? $"{tableRef} {alias} WITH (NOLOCK)"
+            : $"{tableRef} WITH (NOLOCK)";
+    }
 
     public string NullTimestampExpression => "CAST('1900-01-01' AS datetime)";
 
@@ -44,8 +69,28 @@ public class MssqlDialect : IDatabaseDialect
     public string Concat(params string[] parts) =>
         $"CONCAT({string.Join(", ", parts)})";
 
-    public string BuildSampleSql(string qualifiedTable, int limit) =>
-        $"SELECT {LimitClause(limit)} * FROM {qualifiedTable} WITH (NOLOCK)";
+    public string BuildSampleSql(string qualifiedTable, int limit, string? orderByColumn = null)
+    {
+        var order = orderByColumn != null
+            ? $" ORDER BY {QuoteIdentifier(orderByColumn)} DESC"
+            : null;
+        return BuildLimitedSelect("*", $"{qualifiedTable} WITH (NOLOCK)", null, limit, order);
+    }
+
+    public string BuildListDatabasesSql() =>
+        "SELECT name FROM sys.databases WHERE state_desc = 'ONLINE';";
+
+    public string BuildListSchemasSql() =>
+        "SELECT name FROM sys.schemas WHERE principal_id = 1;";
+
+    public string BuildListTablesSql() =>
+        "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = @schema AND TABLE_TYPE = 'BASE TABLE';";
+
+    public string BuildListColumnsSql() => @"
+        SELECT COLUMN_NAME AS Name,
+               CASE WHEN DATA_TYPE IN ('datetime', 'datetime2', 'date', 'smalldatetime') THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END AS IsTimeColumn
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = @schema AND TABLE_NAME = @table;";
 
     public string BuildApproximateRowCountSql(string schema, string table) => $@"
         SELECT CAST(SUM(p.rows) AS BIGINT) AS [RowCount]
