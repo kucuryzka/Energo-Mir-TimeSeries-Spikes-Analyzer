@@ -215,11 +215,12 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [channelSearch, visible]);
 
-  const fetchDistributions = async () => {
+  const fetchDistributions = useCallback(async (range?: readonly [string, string]) => {
     if (activeTab !== 'em') return;
+    const startDate = range?.[0] ?? dateRange[0];
+    const endDate = range?.[1] ?? dateRange[1];
     let currentSource = sourcesRef.current.find(s => s.id === emSourceIdRef.current);
     if (!currentSource) {
-      // sources not loaded yet (race with tab switch) — fetch fresh
       const list = await analyticsApi.getSources().catch(() => []);
       sourcesRef.current = list;
       setSources(list);
@@ -231,13 +232,13 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
     try {
       const newDists: Record<string, DistributionItemDto[]> = {};
       for (const category of cats) {
-        newDists[category] = await analyticsApi.emProtocol.getDistribution(database, dateRange[0], dateRange[1], category);
+        newDists[category] = await analyticsApi.emProtocol.getDistribution(database, startDate, endDate, category);
       }
       setDistributions(newDists);
     } catch (e) {
       console.error('Ошибка при загрузке распределений', e);
     }
-  };
+  }, [activeTab, database, dateRange]);
 
   const fetchData = async () => {
     const confirmed = await confirmHeavyAnalysis(
@@ -390,8 +391,12 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
     setGranularity(job.granularity);
     setCustomMinutes(job.customMinutes ?? null);
 
+    if (activeTab === 'em') {
+      await fetchDistributions([job.startDate, job.endDate]);
+    }
+
     return result;
-  }, [activeTab, sessionKey, setData]);
+  }, [activeTab, sessionKey, setData, fetchDistributions]);
 
   useEffect(() => {
     if (!visible || !pendingJobForTab) return;
