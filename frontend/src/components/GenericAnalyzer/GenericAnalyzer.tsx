@@ -77,7 +77,7 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({ db, schema, ta
   const [windowSize, setWindowSize] = useState<number>(30);
 
   const [tablePreview, setTablePreview] = useState<TablePreviewData | null>(null);
-  const [loadingPreview, setLoadingPreview] = useState(true);
+  const [loadingPreview, setLoadingPreview] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
 
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -85,23 +85,31 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({ db, schema, ta
   const [loadingHistory, setLoadingHistory] = useState(false);
 
   useEffect(() => {
-    let mounted = true;
-    const loadPreview = async () => {
-      setLoadingPreview(true);
-      try {
-        const preview = await genericAnalysisApi.getTablePreview(db, schema, table, timeColumn);
-        if (!mounted) return;
-        setTablePreview(preview);
-      } catch (e) {
-        console.error('Failed to fetch table preview', e);
-        if (mounted) setTablePreview(null);
-      } finally {
-        if (mounted) setLoadingPreview(false);
-      }
-    };
-    loadPreview();
-    return () => { mounted = false; };
+    setTablePreview(null);
+    setPreviewOpen(false);
+    setLoadingPreview(false);
   }, [db, schema, table, timeColumn]);
+
+  const loadPreview = useCallback(async () => {
+    setLoadingPreview(true);
+    try {
+      const preview = await genericAnalysisApi.getTablePreview(db, schema, table, timeColumn);
+      setTablePreview(preview);
+    } catch (e) {
+      console.error('Failed to fetch table preview', e);
+      setTablePreview(null);
+      message.error('Не удалось загрузить превью таблицы');
+    } finally {
+      setLoadingPreview(false);
+    }
+  }, [db, schema, table, timeColumn]);
+
+  const handlePreviewToggle = useCallback(async () => {
+    if (!previewOpen && !tablePreview && !loadingPreview) {
+      await loadPreview();
+    }
+    setPreviewOpen(v => !v);
+  }, [previewOpen, tablePreview, loadingPreview, loadPreview]);
 
   const fetchData = async () => {
     const confirmed = await confirmHeavyAnalysis(granularity, dateRange[0], dateRange[1], customMinutes);
@@ -283,7 +291,7 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({ db, schema, ta
           onExport={handleExport}
           exportDisabled={!data?.series?.length}
           previewOpen={previewOpen}
-          onPreviewToggle={() => setPreviewOpen(v => !v)}
+          onPreviewToggle={handlePreviewToggle}
         />
       </div>
 

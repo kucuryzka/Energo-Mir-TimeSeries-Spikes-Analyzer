@@ -44,6 +44,7 @@ public class TablePreviewService
 
         var response = new TablePreviewResponse();
 
+        long? rowCount = null;
         try
         {
             var countSql = dialect.BuildApproximateRowCountSql(schema, table);
@@ -51,14 +52,27 @@ public class TablePreviewService
                 new CommandDefinition(countSql, commandTimeout: commandTimeout));
             var rc = GetColumnValue(countRow, "RowCount");
             if (rc is not null and not DBNull)
-                response.ApproximateRowCount = Convert.ToInt64(rc);
+            {
+                rowCount = Convert.ToInt64(rc);
+                response.ApproximateRowCount = rowCount.Value;
+            }
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Table preview row count failed for {Schema}.{Table}", schema, table);
         }
 
-        var sampleSql = dialect.BuildSampleSql(qualifiedTable, limit);
+        var orderByColumn = rowCount is > 0 and long count && count <= _settings.PreviewOrderedSampleMaxRows
+            ? timeColumn
+            : null;
+        if (orderByColumn == null && rowCount > _settings.PreviewOrderedSampleMaxRows)
+        {
+            _logger.LogInformation(
+                "Preview for {Schema}.{Table}: skipping ORDER BY ({RowCount:N0} rows > {Max:N0})",
+                schema, table, rowCount, _settings.PreviewOrderedSampleMaxRows);
+        }
+
+        var sampleSql = dialect.BuildSampleSql(qualifiedTable, limit, orderByColumn);
         var rows = await connection.QueryAsync(
             new CommandDefinition(sampleSql, commandTimeout: commandTimeout));
         response.SampleRows = ToRowDictionaries(rows);

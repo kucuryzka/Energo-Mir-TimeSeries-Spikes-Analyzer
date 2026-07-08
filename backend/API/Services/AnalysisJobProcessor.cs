@@ -209,11 +209,21 @@ public class AnalysisJobProcessor
 
             try
             {
-                _resultService.SavePartialSeriesAsync(jobId, points).GetAwaiter().GetResult();
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await _resultService.SavePartialSeriesAsync(jobId, points);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to persist partial series for job {JobId}", jobId);
+                    }
+                });
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Failed to persist partial series for job {JobId}", jobId);
+                _logger.LogWarning(ex, "Failed to schedule partial series save for job {JobId}", jobId);
             }
         };
     }
