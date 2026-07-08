@@ -2,7 +2,7 @@ using API.Contracts;
 using API.DataSources;
 using API.DTOs;
 using API.Infrastructure;
-using API.Models;using API.Sql;
+using API.Models;
 using ClosedXML.Excel;
 
 namespace API.Services;
@@ -14,7 +14,6 @@ public class AnalysisExportService
     private readonly DboDataSource _dboDataSource;
     private readonly EmProtocolDataSource _emDataSource;
     private readonly EventCodeLabelService _eventCodeLabels;
-    private readonly ISqlDialectProvider _dialectProvider;
     private readonly IConnectionManagerService _connectionManager;
     private readonly IHttpContextAccessor _httpContextAccessor;
 
@@ -23,7 +22,6 @@ public class AnalysisExportService
         AnalysisPipelineService pipeline,
         IEnumerable<IDataSourceStrategy> dataSources,
         EventCodeLabelService eventCodeLabels,
-        ISqlDialectProvider dialectProvider,
         IConnectionManagerService connectionManager,
         IHttpContextAccessor httpContextAccessor)
     {
@@ -32,7 +30,6 @@ public class AnalysisExportService
         _dboDataSource = dataSources.OfType<DboDataSource>().First();
         _emDataSource = dataSources.OfType<EmProtocolDataSource>().First();
         _eventCodeLabels = eventCodeLabels;
-        _dialectProvider = dialectProvider;
         _connectionManager = connectionManager;
         _httpContextAccessor = httpContextAccessor;
     }
@@ -99,11 +96,25 @@ public class AnalysisExportService
         bool loadDistribution,
         CancellationToken cancellationToken)
     {
-        if (!loadDistribution)
-            return _resultService.GetStoredDistribution(job);
-
         var channelId = ParseChannelFilter(job);
+        if (channelId.HasValue)
+            return new List<ChannelContributionDto>();
 
+        if (!loadDistribution)
+        {
+            var stored = _resultService.GetStoredDistribution(job);
+            if (stored.Count > 0 || !SupportsDistributionExport(job.Schema))
+                return stored;
+        }
+
+        return await LoadDistributionFromSourceAsync(job, channelId, cancellationToken);
+    }
+
+    private async Task<List<ChannelContributionDto>> LoadDistributionFromSourceAsync(
+        AnalysisJob job,
+        int? channelId,
+        CancellationToken cancellationToken)
+    {
         if (job.Schema == "dbo")
         {
             return await _dboDataSource.GetObjectDistributionAsync(
@@ -124,7 +135,6 @@ public class AnalysisExportService
         }
 
         var (connectionString, provider) = ResolveConnection();
-        var dialect = _dialectProvider.GetDialect(provider);
 
         var genericSpec = new AnalysisTableSpec
         {
@@ -143,6 +153,9 @@ public class AnalysisExportService
             job.Database,
             cancellationToken);
     }
+
+    private static bool SupportsDistributionExport(string schema) =>
+        schema is "dbo" or "em_protocol";
 
     private static void AddParametersSheet(XLWorkbook workbook, AnalysisJob job)
     {
@@ -184,15 +197,18 @@ public class AnalysisExportService
     {
         var sheet = workbook.Worksheets.Add("Распределение");
         var isEmProtocol = schema == "em_protocol";
-        var idHeader = schema == "dbo" ? "ID объекта" : "ID канала";
-        var nameHeader = schema == "dbo" ? "Объект" : "Канал";
+        var isDbo = schema == "dbo";
+        var idHeader = isDbo ? "ID объекта" : "ID канала";
+        var nameHeader = isDbo ? "Объект" : "Канал";
+        var countColumn = isEmProtocol ? 5 : 3;
 
         sheet.Cell(1, 1).Value = idHeader;
         sheet.Cell(1, 2).Value = nameHeader;
-        sheet.Cell(1, 3).Value = "EventCode";
-        var countColumn = isEmProtocol ? 5 : 4;
         if (isEmProtocol)
+        {
+            sheet.Cell(1, 3).Value = "EventCode";
             sheet.Cell(1, 4).Value = "Расшифровка EventCode";
+        }
         sheet.Cell(1, countColumn).Value = "Количество";
         sheet.Row(1).Style.Font.Bold = true;
 
@@ -201,9 +217,11 @@ public class AnalysisExportService
         {
             sheet.Cell(row, 1).Value = item.ChannelId;
             sheet.Cell(row, 2).Value = item.ChannelName;
-            sheet.Cell(row, 3).Value = item.EventCode ?? "—";
             if (isEmProtocol)
+            {
+                sheet.Cell(row, 3).Value = item.EventCode ?? "—";
                 sheet.Cell(row, 4).Value = eventCodeLabels?.ResolveLabel(item.EventCode) ?? item.EventCode ?? "—";
+            }
             sheet.Cell(row, countColumn).Value = item.Count;
             row++;
         }
