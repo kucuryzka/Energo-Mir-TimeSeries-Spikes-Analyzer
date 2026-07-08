@@ -1,5 +1,6 @@
 using API.Configuration;
 using API.Data;
+using API.Infrastructure;
 using Hangfire;
 using Hangfire.Storage.SQLite;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -17,6 +18,20 @@ var analysisSettings = builder.Configuration
 var hangfireSettings = builder.Configuration
     .GetSection(HangfireSettings.SectionName)
     .Get<HangfireSettings>() ?? new HangfireSettings();
+var fileLogSettings = builder.Configuration
+    .GetSection(LoggingSettings.SectionName)
+    .Get<LoggingSettings>() ?? new LoggingSettings();
+
+if (fileLogSettings.Enabled)
+{
+    var logDirectory = Path.IsPathRooted(fileLogSettings.Directory)
+        ? fileLogSettings.Directory
+        : Path.Combine(builder.Environment.ContentRootPath, fileLogSettings.Directory);
+    var minLevel = Enum.TryParse<LogLevel>(fileLogSettings.MinLevel, ignoreCase: true, out var parsed)
+        ? parsed
+        : LogLevel.Information;
+    builder.Logging.AddProvider(new FileLoggerProvider(logDirectory, minLevel));
+}
 
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
@@ -68,6 +83,8 @@ builder.Services.AddSingleton<API.Services.IConnectionManagerService, API.Servic
 builder.Services.AddSingleton<API.Services.AnalysisResultService>();
 builder.Services.AddScoped<API.Services.TablePreviewService>();
 builder.Services.AddScoped<API.Services.AnalysisRequestValidator>();
+builder.Services.AddSingleton<API.Services.IAnalysisJobCancellationService, API.Services.AnalysisJobCancellationService>();
+builder.Services.AddScoped<API.Services.AnalysisJobCoordinatorService>();
 builder.Services.AddScoped<API.Services.AnalysisJobProcessor>();
 
 builder.Services.AddScoped<API.DataSources.IDataSourceStrategy, API.DataSources.EmProtocolDataSource>();

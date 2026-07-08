@@ -127,17 +127,20 @@ public class AnalysisResultService
     public void DeleteResultFiles(AnalysisJob job)
     {
         if (!string.IsNullOrEmpty(job.ResultFilePath))
-        {
-            var fullPath = Path.Combine(_resultsRoot, job.ResultFilePath);
-            if (File.Exists(fullPath))
-                File.Delete(fullPath);
+            DeleteFileIfExists(Path.Combine(_resultsRoot, job.ResultFilePath));
 
-            var tempPath = fullPath + ".tmp";
-            if (File.Exists(tempPath))
-                File.Delete(tempPath);
-        }
-
+        DeleteFileIfExists(Path.Combine(_resultsRoot, $"{job.Id}.jsonl"));
         DeletePartialFile(job.Id);
+    }
+
+    private static void DeleteFileIfExists(string fullPath)
+    {
+        if (File.Exists(fullPath))
+            File.Delete(fullPath);
+
+        var tempPath = fullPath + ".tmp";
+        if (File.Exists(tempPath))
+            File.Delete(tempPath);
     }
 
     public bool HasPartialResult(string jobId) =>
@@ -189,13 +192,7 @@ public class AnalysisResultService
 
     public void DeletePartialFile(string jobId)
     {
-        var fullPath = GetPartialFilePath(jobId);
-        if (File.Exists(fullPath))
-            File.Delete(fullPath);
-
-        var tempPath = fullPath + ".tmp";
-        if (File.Exists(tempPath))
-            File.Delete(tempPath);
+        DeleteFileIfExists(GetPartialFilePath(jobId));
     }
 
     private static string GetPartialFileName(string jobId) => $"{jobId}.partial.jsonl";
