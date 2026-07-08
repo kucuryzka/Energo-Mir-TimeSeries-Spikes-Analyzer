@@ -28,6 +28,16 @@ public class AnalysisJobsController : ControllerBase
         return Ok(queue);
     }
 
+    [HttpGet("overview")]
+    public async Task<IActionResult> GetOverview([FromQuery] string? database, [FromQuery] int recentLimit = 50)
+    {
+        if (!HasValidSession())
+            return Unauthorized();
+
+        var overview = await _coordinator.GetOverviewAsync(database, recentLimit);
+        return Ok(overview);
+    }
+
     [HttpPost("{id}/cancel")]
     public async Task<IActionResult> Cancel(string id)
     {

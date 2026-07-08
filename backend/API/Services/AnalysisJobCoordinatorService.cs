@@ -26,21 +26,46 @@ public class AnalysisJobCoordinatorService
         _resultService = resultService;
     }
 
-    public async Task<IReadOnlyList<AnalysisJobQueueItemDto>> GetQueueAsync(string? database = null)
+    public async Task<AnalysisJobsOverviewDto> GetOverviewAsync(string? database = null, int recentLimit = 50)
     {
-        var query = _db.AnalysisJobs
+        var activeQuery = _db.AnalysisJobs
             .Where(j => j.Status == "Pending" || j.Status == "Running");
 
-        if (!string.IsNullOrWhiteSpace(database))
-            query = query.Where(j => j.Database == database);
+        var recentQuery = _db.AnalysisJobs
+            .Where(j => j.Status == "Completed" || j.Status == "Failed" || j.Status == "Cancelled");
 
-        var jobs = await query
+        if (!string.IsNullOrWhiteSpace(database))
+        {
+            activeQuery = activeQuery.Where(j => j.Database == database);
+            recentQuery = recentQuery.Where(j => j.Database == database);
+        }
+
+        var activeJobs = await activeQuery
             .OrderBy(j => j.CreatedAt)
+            .ToListAsync();
+
+        var recentJobs = await recentQuery
+            .OrderByDescending(j => j.CompletedAt ?? j.CreatedAt)
+            .Take(Math.Clamp(recentLimit, 1, 200))
             .ToListAsync();
 
         var queuePositions = BuildHangfireQueuePositions();
 
-        return jobs.Select(job => new AnalysisJobQueueItemDto
+        return new AnalysisJobsOverviewDto
+        {
+            Active = activeJobs.Select(job => MapJob(job, queuePositions)).ToList(),
+            Recent = recentJobs.Select(job => MapJob(job, queuePositions)).ToList(),
+        };
+    }
+
+    public async Task<IReadOnlyList<AnalysisJobQueueItemDto>> GetQueueAsync(string? database = null)
+    {
+        var overview = await GetOverviewAsync(database);
+        return overview.Active;
+    }
+
+    private AnalysisJobQueueItemDto MapJob(AnalysisJob job, IReadOnlyDictionary<string, int> queuePositions) =>
+        new()
         {
             Id = job.Id,
             Status = job.Status,
@@ -53,12 +78,16 @@ public class AnalysisJobCoordinatorService
             EndDate = job.EndDate,
             Granularity = job.Granularity,
             CreatedAt = job.CreatedAt,
+            CompletedAt = job.CompletedAt,
+            TimeColumn = job.TimeColumn,
+            CustomMinutes = job.CustomMinutes,
+            ChannelId = ResolveChannelId(job),
             QueuePosition = job.Status == "Pending"
                 ? TryGetQueuePosition(job.BackgroundJobId, queuePositions)
                 : null,
             HasPartialResult = _resultService.HasPartialResult(job.Id),
-        }).ToList();
-    }
+            HasResult = _resultService.HasResult(job),
+        };
 
     public async Task<bool> TryCancelAsync(string jobId)
     {
@@ -95,6 +124,12 @@ public class AnalysisJobCoordinatorService
             "em_protocol" => "em_protocol",
             _ => "generic",
         };
+
+    private static string? ResolveChannelId(AnalysisJob job) =>
+        job.Schema is "dbo" or "em_protocol"
+        && !string.Equals(job.Table, "All", StringComparison.OrdinalIgnoreCase)
+            ? job.Table
+            : null;
 
     private static Dictionary<string, int> BuildHangfireQueuePositions()
     {

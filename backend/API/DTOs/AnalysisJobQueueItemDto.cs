@@ -26,7 +26,17 @@ public class AnalysisJobQueueItemDto
 
     public DateTime CreatedAt { get; set; }
 
+    public DateTime? CompletedAt { get; set; }
+
+    public string TimeColumn { get; set; } = string.Empty;
+
+    public int? CustomMinutes { get; set; }
+
+    public string? ChannelId { get; set; }
+
     public int? QueuePosition { get; set; }
 
     public bool HasPartialResult { get; set; }
+
+    public bool HasResult { get; set; }
 }
