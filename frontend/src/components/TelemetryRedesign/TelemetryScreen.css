@@ -339,13 +339,15 @@
 .chart-header { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; }
 .chart-title { font:700 17px 'Manrope',sans-serif; color:var(--text-heading); }
 .chart-title-row { display:flex; align-items:center; gap:10px; }
-.chart-partial-badge {
+.chart-partial-badge,
+.queue-partial-badge {
   font:600 11px 'Manrope',sans-serif;
   color:#3D63DD;
   background:rgba(61,99,221,.12);
   border:1px solid rgba(61,99,221,.25);
   border-radius:999px;
   padding:2px 10px;
+  white-space:nowrap;
 }
 .telemetry-spike-chart { padding-bottom: 8px; }
 .chart-card--partial .telemetry-spike-chart { opacity: .92; }

@@ -54,9 +54,12 @@ export const SpikeChart: React.FC<Props> = ({
     };
   }, [sortedData, onPointClick]);
 
+  const isLargeDataset = sortedData.length > 5000;
+
   const option = useMemo(() => {
     const timestamps = sortedData.map(d => d.timestamp);
     const values = sortedData.map(d => d.value);
+    const timeSeriesData = sortedData.map(d => [d.timestamp, d.value] as [string, number]);
 
     const spikeMarkers = showMarkers
       ? sortedData
@@ -105,19 +108,32 @@ export const SpikeChart: React.FC<Props> = ({
         bottom: 80,
         top: onShowMarkersChange ? 40 : 30,
       },
-      xAxis: {
-        type: 'category',
-        data: timestamps,
-        axisLine: { lineStyle: { color: '#E9EEFA' } },
-        axisLabel: {
-          color: '#7A8B9E',
-          fontSize: 11,
-          rotate: 30,
-          formatter: (value: string) => dayjs(value).format('DD.MM HH:mm'),
-        },
-        splitLine: { show: false },
-        axisTick: { show: false },
-      },
+      xAxis: isLargeDataset
+        ? {
+            type: 'time',
+            axisLine: { lineStyle: { color: '#E9EEFA' } },
+            axisLabel: {
+              color: '#7A8B9E',
+              fontSize: 11,
+              rotate: 30,
+              formatter: (value: number) => dayjs(value).format('DD.MM HH:mm'),
+            },
+            splitLine: { show: false },
+            axisTick: { show: false },
+          }
+        : {
+            type: 'category',
+            data: timestamps,
+            axisLine: { lineStyle: { color: '#E9EEFA' } },
+            axisLabel: {
+              color: '#7A8B9E',
+              fontSize: 11,
+              rotate: 30,
+              formatter: (value: string) => dayjs(value).format('DD.MM HH:mm'),
+            },
+            splitLine: { show: false },
+            axisTick: { show: false },
+          },
       yAxis: {
         type: 'value',
         name: 'Количество сообщений телеметрии',
@@ -134,7 +150,11 @@ export const SpikeChart: React.FC<Props> = ({
         {
           name: 'Показатели',
           type: 'line',
-          data: values,
+          data: isLargeDataset ? timeSeriesData : values,
+          large: isLargeDataset,
+          sampling: isLargeDataset ? 'lttb' : undefined,
+          progressive: isLargeDataset ? 5000 : undefined,
+          progressiveThreshold: isLargeDataset ? 10000 : undefined,
           smooth: false,
           showSymbol: false,
           lineStyle: {
@@ -200,7 +220,7 @@ export const SpikeChart: React.FC<Props> = ({
       ],
       color: ['#4761BF'],
     };
-  }, [sortedData, showMarkers, showCriticalMarkers, showWarningMarkers, onShowMarkersChange]);
+  }, [sortedData, isLargeDataset, showMarkers, showCriticalMarkers, showWarningMarkers, onShowMarkersChange]);
 
   const onEvents = {
     click: (params: {

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using API.Configuration;
 using API.DataSources;
 using API.DTOs;
@@ -41,6 +42,8 @@ public class AnalysisPipelineService
         string database,
         IProgress<int>? progress = null,
         Action<IReadOnlyList<Core.Models.DataPoint>>? onBatchAggregated = null,
+        Action<AnalysisBatchCompletedDto>? onBatchCompleted = null,
+        Action<long>? onFinalizeCompleted = null,
         CancellationToken cancellationToken = default)
     {
         var dialect = _dialectProvider.GetDialect(provider);
@@ -57,7 +60,8 @@ public class AnalysisPipelineService
         var seriesSql = BuildSeriesSql(dialect, fromClause, timeExpr, timeCol, spec, channelId);
         var usePerBatchDistribution = spec.ChannelColumn != null
             && !channelId.HasValue
-            && !spec.DeferDistribution;
+            && !spec.DeferDistribution
+            && !spec.OmitDistribution;
         var distributionSql = usePerBatchDistribution
             ? BuildDistributionSql(dialect, fromClause, timeCol, spec)
             : null;
@@ -66,6 +70,8 @@ public class AnalysisPipelineService
         var totalDays = Math.Max((endDate - startDate).TotalDays, 1);
         var daysProcessed = 0.0;
         var batchDays = Math.Max(_settings.BatchIntervalDays, 1);
+        var totalBatches = Math.Max(1, (int)Math.Ceiling(totalDays / batchDays));
+        var batchIndex = 0;
 
         while (currentStart < endDate)
         {
@@ -74,6 +80,7 @@ public class AnalysisPipelineService
             var currentEnd = currentStart.AddDays(batchDays);
             if (currentEnd > endDate) currentEnd = endDate;
 
+            var batchSw = Stopwatch.StartNew();
             var parameters = BuildBatchParameters(currentStart, currentEnd, channelId);
             var batchSeries = await context.Database
                 .SqlQueryRaw<AggregatedResult>(seriesSql, parameters.ToArray())
@@ -94,16 +101,31 @@ public class AnalysisPipelineService
 
             onBatchAggregated?.Invoke(seriesDict.Values.OrderBy(p => p.Timestamp).ToList());
 
+            batchSw.Stop();
+            onBatchCompleted?.Invoke(new AnalysisBatchCompletedDto
+            {
+                BatchIndex = batchIndex,
+                TotalBatches = totalBatches,
+                DurationMs = batchSw.ElapsedMilliseconds,
+                SeriesPointCount = seriesDict.Count,
+            });
+            batchIndex++;
+
             await context.Database.CloseConnectionAsync();
 
             currentStart = currentEnd;
         }
 
+        var finalizeSw = Stopwatch.StartNew();
         var groupedSeries = seriesDict.Values.OrderBy(p => p.Timestamp).ToList();
         var anomalyResults = spikeDetectionService.DetectSpikes(groupedSeries, confidence, windowSize);
 
         List<ChannelContributionDto> distribution;
-        if (spec.ChannelColumn != null && !channelId.HasValue && spec.DeferDistribution)
+        if (spec.OmitDistribution)
+        {
+            distribution = new List<ChannelContributionDto>();
+        }
+        else if (spec.ChannelColumn != null && !channelId.HasValue && spec.DeferDistribution)
         {
             cancellationToken.ThrowIfCancellationRequested();
             distribution = await LoadDistributionAsync(
@@ -122,6 +144,9 @@ public class AnalysisPipelineService
                 .ToList();
         }
 
+        finalizeSw.Stop();
+        onFinalizeCompleted?.Invoke(finalizeSw.ElapsedMilliseconds);
+
         return new SpikeResponse
         {
             Series = anomalyResults.Select(r => new AnomalyResultDto
@@ -133,6 +158,28 @@ public class AnalysisPipelineService
             }).ToList(),
             Distribution = distribution
         };
+    }
+
+    public async Task<List<ChannelContributionDto>> GetDistributionAsync(
+        AnalysisTableSpec spec,
+        DateTime startDate,
+        DateTime endDate,
+        int? channelId,
+        string connectionString,
+        string provider,
+        string database,
+        CancellationToken cancellationToken = default)
+    {
+        if (spec.ChannelColumn == null || channelId.HasValue)
+            return new List<ChannelContributionDto>();
+
+        var dialect = _dialectProvider.GetDialect(provider);
+        using var context = _contextFactory.Create(connectionString, provider, database);
+        var fromClause = spec.FromClause ?? dialect.QualifyFromTable(spec.Schema, spec.Table, spec.TableAlias);
+        var timeCol = dialect.QualifyColumn(spec.TableAlias, spec.TimeColumn);
+
+        return await LoadDistributionAsync(
+            context, dialect, fromClause, timeCol, spec, startDate, endDate);
     }
 
     public async Task<List<ChannelContributionDto>> GetPointChannelBreakdownAsync(

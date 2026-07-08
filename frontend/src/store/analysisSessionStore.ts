@@ -65,7 +65,7 @@ export function runAnalysisSessionJob(
   patchSession(key, {
     loading: true,
     jobId,
-    progress: 0,
+    progress: options.attach ? (options.initialProgress ?? 0) : 0,
     error: null,
   });
 
@@ -135,13 +135,26 @@ export function useAnalysisResultData(
     if (!visible) {
       setData(null);
       setIsPartialResult(false);
+      return;
     }
-  }, [visible]);
-
-  useEffect(() => {
-    if (!visible || !session.jobId) return;
-    // While the poll loop is active, partial updates come from applyPartialResult only.
-    if (session.loading) return;
+    if (!session.jobId) return;
+    // Re-attach after tab was hidden while the job kept running on the server.
+    if (session.loading) {
+      let cancelled = false;
+      (async () => {
+        if (!api.getJobPartialResult) return;
+        try {
+          const partial = await api.getJobPartialResult(session.jobId!);
+          if (!cancelled && partial?.series?.length) {
+            setData(partial);
+            setIsPartialResult(true);
+          }
+        } catch {
+          // partial may not exist yet
+        }
+      })();
+      return () => { cancelled = true; };
+    }
     if (data?.series?.length) return;
 
     let cancelled = false;

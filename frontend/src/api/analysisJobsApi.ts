@@ -20,6 +20,21 @@ export interface AnalysisJobQueueItem {
   queuePosition?: number | null;
   hasPartialResult: boolean;
   hasResult: boolean;
+  completedBatchCount?: number;
+  totalBatchCount?: number;
+  avgBatchDurationMs?: number | null;
+  lastBatchDurationMs?: number | null;
+  postProcessDurationMs?: number | null;
+}
+
+export interface AnalysisDurationEstimate {
+  estimatedDurationMs: number;
+  estimatedBatchCount: number;
+  avgBatchDurationMs?: number | null;
+  avgPostProcessDurationMs?: number | null;
+  confidence: 'high' | 'low' | 'none';
+  sampleCount: number;
+  batchIntervalDays: number;
 }
 
 export interface AnalysisJobsOverview {
@@ -47,5 +62,17 @@ export const analysisJobsApi = {
 
   cancel: async (jobId: string): Promise<void> => {
     await apiClient.post(`/analysis-jobs/${jobId}/cancel`);
+  },
+
+  getEstimate: async (params: {
+    database: string;
+    schema: string;
+    table: string;
+    granularity: TimeGranularity;
+    startDate: string;
+    endDate: string;
+  }): Promise<AnalysisDurationEstimate> => {
+    const response = await apiClient.get<AnalysisDurationEstimate>('/analysis-jobs/estimate', { params });
+    return response.data;
   },
 };

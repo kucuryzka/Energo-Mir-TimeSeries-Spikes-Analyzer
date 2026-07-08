@@ -68,7 +68,8 @@ export function getAnalysisJobApi(sourceKind: string): AnalysisJobApi {
 export function canOpenAnalysisJob(job: Pick<AnalysisJobQueueItem, 'status' | 'hasResult' | 'hasPartialResult'>): boolean {
   if (job.status === 'Completed') return job.hasResult;
   if (job.status === 'Cancelled') return job.hasPartialResult;
-  return job.status === 'Running' || job.status === 'Pending';
+  if (job.status === 'Running') return job.hasPartialResult;
+  return false;
 }
 
 export async function loadAnalysisJobResult(

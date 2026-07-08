@@ -91,6 +91,8 @@ public class EmProtocolDataSource : IDataSourceStrategy, ISupportsChannels, ISup
         string provider,
         IProgress<int>? progress = null,
         Action<IReadOnlyList<DataPoint>>? onBatchAggregated = null,
+        Action<AnalysisBatchCompletedDto>? onBatchCompleted = null,
+        Action<long>? onFinalizeCompleted = null,
         CancellationToken cancellationToken = default)
     {
         var dialect = _dialectProvider.GetDialect(provider);
@@ -109,6 +111,8 @@ public class EmProtocolDataSource : IDataSourceStrategy, ISupportsChannels, ISup
             request.Database,
             progress,
             onBatchAggregated,
+            onBatchCompleted,
+            onFinalizeCompleted,
             cancellationToken);
     }
 

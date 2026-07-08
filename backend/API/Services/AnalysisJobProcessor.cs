@@ -1,9 +1,11 @@
 using System;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
 using API.Configuration;
 using API.Data;
 using API.DataSources;
+using API.DTOs;
 using API.Models;
 using Core.Interfaces;
 using Core.Models;
@@ -21,6 +23,7 @@ public class AnalysisJobProcessor
     private readonly ISpikeDetectionService _spikeDetectionService;
     private readonly IEnumerable<IDataSourceStrategy> _dataSourceStrategies;
     private readonly AnalysisResultService _resultService;
+    private readonly AnalysisTimingStatsService _timingStats;
     private readonly IConnectionManagerService _connectionManager;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IAnalysisJobCancellationService _cancellation;
@@ -34,6 +37,7 @@ public class AnalysisJobProcessor
         ISpikeDetectionService spikeDetectionService,
         IEnumerable<IDataSourceStrategy> dataSourceStrategies,
         AnalysisResultService resultService,
+        AnalysisTimingStatsService timingStats,
         IConnectionManagerService connectionManager,
         IServiceScopeFactory scopeFactory,
         IAnalysisJobCancellationService cancellation,
@@ -46,6 +50,7 @@ public class AnalysisJobProcessor
         _spikeDetectionService = spikeDetectionService;
         _dataSourceStrategies = dataSourceStrategies;
         _resultService = resultService;
+        _timingStats = timingStats;
         _connectionManager = connectionManager;
         _scopeFactory = scopeFactory;
         _cancellation = cancellation;
@@ -84,6 +89,9 @@ public class AnalysisJobProcessor
         var connectionString = connectionInfo.ConnectionString;
         var cancellationToken = _cancellation.Register(jobId);
 
+        long finalizeMs = 0;
+        var batchMetrics = CreateBatchMetricsHandler(job);
+
         try
         {
             if (_cancellation.IsCancellationRequested(jobId))
@@ -97,7 +105,7 @@ public class AnalysisJobProcessor
 
             var onBatchAggregated = CreateBatchAggregator(job.Id);
 
-            API.DTOs.SpikeResponse response;
+            SpikeResponse response;
             if (string.IsNullOrEmpty(sourceId))
             {
                 var spec = new AnalysisTableSpec
@@ -122,6 +130,8 @@ public class AnalysisJobProcessor
                     job.Database,
                     CreateProgressReporter(job.Id),
                     onBatchAggregated,
+                    batchMetrics,
+                    ms => finalizeMs = ms,
                     cancellationToken);
             }
             else
@@ -133,7 +143,7 @@ public class AnalysisJobProcessor
                 if (!string.IsNullOrEmpty(job.Table) && int.TryParse(job.Table, out var cid))
                     channelId = cid;
 
-                var request = new API.DTOs.DetectSpikesRequest
+                var request = new DetectSpikesRequest
                 {
                     Database = job.Database,
                     SourceId = sourceId,
@@ -153,9 +163,12 @@ public class AnalysisJobProcessor
                     provider,
                     CreateProgressReporter(job.Id),
                     onBatchAggregated,
+                    batchMetrics,
+                    ms => finalizeMs = ms,
                     cancellationToken);
             }
 
+            job.PostProcessDurationMs = finalizeMs;
             await CompleteJobAsync(job, response);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -178,7 +191,43 @@ public class AnalysisJobProcessor
     {
         job.Status = "Running";
         job.Progress = 0;
+        job.CompletedBatchCount = 0;
+        job.TotalBatchCount = 0;
+        job.AvgBatchDurationMs = null;
+        job.LastBatchDurationMs = null;
+        job.PostProcessDurationMs = null;
         await _internalDb.SaveChangesAsync();
+    }
+
+    private Action<AnalysisBatchCompletedDto> CreateBatchMetricsHandler(AnalysisJob job)
+    {
+        long batchDurationSum = 0;
+
+        return info =>
+        {
+            batchDurationSum += info.DurationMs;
+            job.CompletedBatchCount = info.BatchIndex + 1;
+            job.TotalBatchCount = info.TotalBatches;
+            job.LastBatchDurationMs = info.DurationMs;
+            job.AvgBatchDurationMs = batchDurationSum / job.CompletedBatchCount;
+
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var db = scope.ServiceProvider.GetRequiredService<InternalDbContext>();
+                db.AnalysisJobs
+                    .Where(j => j.Id == job.Id && j.Status == "Running")
+                    .ExecuteUpdate(s => s
+                        .SetProperty(j => j.CompletedBatchCount, job.CompletedBatchCount)
+                        .SetProperty(j => j.TotalBatchCount, job.TotalBatchCount)
+                        .SetProperty(j => j.LastBatchDurationMs, job.LastBatchDurationMs)
+                        .SetProperty(j => j.AvgBatchDurationMs, job.AvgBatchDurationMs));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to persist batch metrics for job {JobId}", job.Id);
+            }
+        };
     }
 
     private IProgress<int> CreateProgressReporter(string jobId)
@@ -252,14 +301,20 @@ public class AnalysisJobProcessor
         };
     }
 
-    private async Task CompleteJobAsync(AnalysisJob job, API.DTOs.SpikeResponse response)
+    private async Task CompleteJobAsync(AnalysisJob job, SpikeResponse response)
     {
+        var saveSw = Stopwatch.StartNew();
         await _resultService.SaveAsync(job, response);
+        saveSw.Stop();
+
+        var saveMs = saveSw.ElapsedMilliseconds;
+        job.PostProcessDurationMs = (job.PostProcessDurationMs ?? 0) + saveMs;
         _resultService.DeletePartialFile(job.Id);
         job.Status = "Completed";
         job.Progress = 100;
         job.CompletedAt = DateTime.UtcNow;
         await _internalDb.SaveChangesAsync();
+        await _timingStats.RecordCompletedJobAsync(job, saveMs);
     }
 
     private async Task FailJobAsync(AnalysisJob job, Exception ex)

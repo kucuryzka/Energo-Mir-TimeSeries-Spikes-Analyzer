@@ -20,17 +20,41 @@ export const getSpikesOnly = (series: AnomalyResultDto[]): AnomalyResultDto[] =>
 };
 
 export const getStatistics = (series: AnomalyResultDto[]) => {
-  const values = series.map(s => s.value);
-  const spikes = series.filter(s => s.isSpike);
-  const criticalSpikes = spikes.filter(s => s.pValue < 0.01);
-  
+  if (series.length === 0) {
+    return {
+      totalPoints: 0,
+      totalCalls: 0,
+      average: 0,
+      max: 0,
+      min: 0,
+      spikesCount: 0,
+      criticalSpikes: 0,
+    };
+  }
+
+  let totalCalls = 0;
+  let max = series[0].value;
+  let min = series[0].value;
+  let spikesCount = 0;
+  let criticalSpikes = 0;
+
+  for (const point of series) {
+    totalCalls += point.value;
+    if (point.value > max) max = point.value;
+    if (point.value < min) min = point.value;
+    if (point.isSpike) {
+      spikesCount += 1;
+      if (point.pValue < 0.01) criticalSpikes += 1;
+    }
+  }
+
   return {
     totalPoints: series.length,
-    totalCalls: values.reduce((a, b) => a + b, 0),
-    average: values.reduce((a, b) => a + b, 0) / values.length,
-    max: Math.max(...values),
-    min: Math.min(...values),
-    spikesCount: spikes.length,
-    criticalSpikes: criticalSpikes.length,
+    totalCalls,
+    average: totalCalls / series.length,
+    max,
+    min,
+    spikesCount,
+    criticalSpikes,
   };
 };

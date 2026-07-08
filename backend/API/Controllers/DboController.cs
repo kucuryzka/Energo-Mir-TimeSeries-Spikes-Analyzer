@@ -118,6 +118,29 @@ public class DboController : ControllerBase
         }
     }
 
+    [HttpGet("distribution")]
+    public async Task<IActionResult> GetDistribution(
+        [FromQuery] string database,
+        [FromQuery] DateTime startDate,
+        [FromQuery] DateTime endDate,
+        [FromQuery] int? channelId)
+    {
+        try
+        {
+            RequireSessionToken();
+            var distribution = await _dataSource.GetObjectDistributionAsync(database, startDate, endDate, channelId);
+            return Ok(distribution);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Unauthorized(ex.Message);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { message = "An error occurred while fetching object distribution.", details = ex.Message });
+        }
+    }
+
     [HttpPost("enqueue")]
     public async Task<IActionResult> EnqueueAnalysis([FromBody] DetectSpikesRequest request)
     {

@@ -85,7 +85,7 @@ builder.Services.AddScoped<API.Services.TablePreviewService>();
 builder.Services.AddScoped<API.Services.AnalysisRequestValidator>();
 builder.Services.AddSingleton<API.Services.IAnalysisJobCancellationService, API.Services.AnalysisJobCancellationService>();
 builder.Services.AddScoped<API.Services.AnalysisJobCoordinatorService>();
-builder.Services.AddScoped<API.Services.AnalysisJobProcessor>();
+builder.Services.AddScoped<API.Services.AnalysisTimingStatsService>();
 
 builder.Services.AddScoped<API.DataSources.IDataSourceStrategy, API.DataSources.EmProtocolDataSource>();
 builder.Services.AddScoped<API.DataSources.IDataSourceStrategy, API.DataSources.DboDataSource>();
@@ -118,7 +118,7 @@ app.UseForwardedHeaders();
 using (var scope = app.Services.CreateScope())
 {
     var internalDb = scope.ServiceProvider.GetRequiredService<InternalDbContext>();
-    internalDb.Database.EnsureCreated();
+    InternalDbSchemaUpdater.Apply(internalDb);
 }
 
 var dashboardPrefix = hangfireSettings.DashboardPrefixPath.TrimEnd('/');

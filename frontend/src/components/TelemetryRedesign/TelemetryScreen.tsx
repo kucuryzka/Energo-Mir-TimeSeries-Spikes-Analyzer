@@ -190,7 +190,7 @@ export const TelemetryScreen: React.FC<TelemetryScreenProps> = ({ onLogout, uiTh
                       <TelemetryContent
                         database={selectedDb}
                         activeTab="dbo"
-                        visible={!genericConfig && activeTab === 'dbo'}
+                        visible={mainView !== 'queue' && !genericConfig && activeTab === 'dbo'}
                         pendingJobOpen={pendingJobOpen}
                         onPendingJobConsumed={handlePendingJobConsumed}
                       />
@@ -202,7 +202,7 @@ export const TelemetryScreen: React.FC<TelemetryScreenProps> = ({ onLogout, uiTh
                       <TelemetryContent
                         database={selectedDb}
                         activeTab="em"
-                        visible={!genericConfig && activeTab === 'em'}
+                        visible={mainView !== 'queue' && !genericConfig && activeTab === 'em'}
                         pendingJobOpen={pendingJobOpen}
                         onPendingJobConsumed={handlePendingJobConsumed}
                       />
@@ -216,6 +216,7 @@ export const TelemetryScreen: React.FC<TelemetryScreenProps> = ({ onLogout, uiTh
                     table={genericConfig.table}
                     timeColumn={genericConfig.timeColumn}
                     onBack={() => setGenericConfig(null)}
+                    visible={mainView !== 'queue'}
                     pendingJobOpen={pendingJobOpen}
                     onPendingJobConsumed={handlePendingJobConsumed}
                   />

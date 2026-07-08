@@ -87,6 +87,11 @@ public class AnalysisJobCoordinatorService
                 : null,
             HasPartialResult = _resultService.HasPartialResult(job.Id),
             HasResult = _resultService.HasResult(job),
+            CompletedBatchCount = job.CompletedBatchCount,
+            TotalBatchCount = job.TotalBatchCount,
+            AvgBatchDurationMs = job.AvgBatchDurationMs,
+            LastBatchDurationMs = job.LastBatchDurationMs,
+            PostProcessDurationMs = job.PostProcessDurationMs,
         };
 
     public async Task<bool> TryCancelAsync(string jobId)

@@ -21,7 +21,8 @@ import { TablePreviewContent, type TablePreviewData } from '../GenericAnalyzer/T
 import { runAnalysisSessionJob, updateAnalysisSession, useAnalysisResultData, cancelAnalysisSessionJob } from '../../store/analysisSessionStore';
 import { analysisJobsApi } from '../../api/analysisJobsApi';
 import { AnalysisJobCancelledError } from '../../utils/jobPolling';
-import type { PendingAnalysisJobOpen } from '../../utils/analysisJobLoader';
+import { loadAnalysisJobResult, type PendingAnalysisJobOpen } from '../../utils/analysisJobLoader';
+import { formatDurationMs } from '../../utils/formatDuration';
 
 const { Text } = Typography;
 
@@ -73,6 +74,9 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
 
+  const visibleRef = useRef(visible);
+  visibleRef.current = visible;
+
   const sessionKey = useMemo(() => `telemetry:${activeTab}:${database}`, [activeTab, database]);
   const jobApi = useMemo(() => (
     activeTab === 'dbo'
@@ -96,6 +100,7 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
     error,
     applyPartialResult,
     applyFinalResult,
+    applyLoadedResult,
     setData,
   } = useAnalysisResultData(sessionKey, visible, jobApi);
 
@@ -106,6 +111,9 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
   const emSourceIdRef = useRef<string>('em_protocol');
 
   const [distributions, setDistributions] = useState<Record<string, DistributionItemDto[]>>({});
+  const [dboObjectDistribution, setDboObjectDistribution] = useState<DistributionItemDto[] | null>(null);
+  const [loadingDboDistribution, setLoadingDboDistribution] = useState(false);
+  const [durationEstimate, setDurationEstimate] = useState<string | null>(null);
   const [eventCodeMap, setEventCodeMap] = useState<Record<string, string>>({});
 
   const [selectedPoint, setSelectedPoint] = useState<SpikePoint | null>(null);
@@ -250,6 +258,7 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
     if (!confirmed) return;
 
     setDistributions({});
+    setDboObjectDistribution(null);
 
     try {
       const requestPayload = {
@@ -278,6 +287,7 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
             message.loading({ content: `Анализ выполняется... (${progress}%)`, key: 'jobProgress' });
           },
           onPartialResult: applyPartialResult,
+          shouldFetchPartial: () => visibleRef.current,
         },
       );
 
@@ -285,6 +295,7 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
 
       message.success({ content: 'Анализ завершен!', key: 'jobProgress', duration: 2.5 });
       await fetchDistributions();
+      setDboObjectDistribution(null);
 
       const spikes = result.series.filter(s => s.isSpike);
       if (spikes.length > 0) {
@@ -361,42 +372,134 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
 
   const pendingOpenRef = useRef<string | null>(null);
 
-  const applyJobResultToView = useCallback(async (job: {
-    id: string;
-    startDate: string;
-    endDate: string;
-    granularity: TimeGranularity;
-    customMinutes?: number | null;
-    channelId?: string | null;
-  }) => {
-    const api = activeTab === 'dbo' ? analyticsApi.dbo : analyticsApi.emProtocol;
-    updateAnalysisSession(sessionKey, {
-      jobId: job.id,
-      loading: true,
-      progress: 0,
-      error: null,
-    });
-
-    const result = await api.getJobResult(job.id);
-
-    updateAnalysisSession(sessionKey, {
-      jobId: job.id,
-      loading: false,
-      progress: 100,
-      error: null,
-    });
-    setData(result);
+  const applyJobResultToView = useCallback(async (job: PendingAnalysisJobOpen) => {
     setDateRange([job.startDate, job.endDate]);
     setChannelId(job.channelId ? parseInt(job.channelId, 10) : null);
     setGranularity(job.granularity);
     setCustomMinutes(job.customMinutes ?? null);
+    setDboObjectDistribution(null);
 
+    const api = activeTab === 'dbo' ? analyticsApi.dbo : analyticsApi.emProtocol;
+
+    if (job.status === 'Completed') {
+      const result = await api.getJobResult(job.id);
+      updateAnalysisSession(sessionKey, {
+        jobId: job.id,
+        loading: false,
+        progress: 100,
+        error: null,
+      });
+      setData(result);
+      if (activeTab === 'em') {
+        await fetchDistributions([job.startDate, job.endDate]);
+      }
+      return result;
+    }
+
+    if (job.status === 'Cancelled') {
+      const { result } = await loadAnalysisJobResult(job);
+      if (!result?.series?.length) {
+        throw new Error('Result is empty');
+      }
+      applyLoadedResult(result, true);
+      updateAnalysisSession(sessionKey, {
+        jobId: job.id,
+        loading: false,
+        progress: 100,
+        error: null,
+      });
+      if (activeTab === 'em') {
+        await fetchDistributions([job.startDate, job.endDate]);
+      }
+      return result;
+    }
+
+    updateAnalysisSession(sessionKey, {
+      jobId: job.id,
+      loading: true,
+      progress: job.progress,
+      error: null,
+    });
+
+    const { result, isPartial } = await loadAnalysisJobResult(job);
+    if (result?.series?.length) {
+      applyLoadedResult(result, isPartial);
+    }
+
+    const final = await runAnalysisSessionJob(sessionKey, job.id, jobApi, {
+      attach: true,
+      initialProgress: job.progress,
+      onProgress: (progress) => {
+        updateAnalysisSession(sessionKey, { progress });
+      },
+      onPartialResult: applyPartialResult,
+      shouldFetchPartial: () => visibleRef.current,
+    });
+
+    applyFinalResult(final);
     if (activeTab === 'em') {
       await fetchDistributions([job.startDate, job.endDate]);
     }
+    return final;
+  }, [
+    activeTab,
+    sessionKey,
+    setData,
+    fetchDistributions,
+    applyLoadedResult,
+    applyPartialResult,
+    applyFinalResult,
+    jobApi,
+  ]);
 
-    return result;
-  }, [activeTab, sessionKey, setData, fetchDistributions]);
+  const loadDboObjectDistribution = useCallback(async () => {
+    if (activeTab !== 'dbo' || channelId != null) return;
+    setLoadingDboDistribution(true);
+    try {
+      message.loading({ content: 'Загрузка распределения по объектам...', key: 'dboDistribution' });
+      const rows = await analyticsApi.dbo.getObjectDistribution(
+        database,
+        dateRange[0],
+        dateRange[1],
+        channelId ?? undefined,
+      );
+      setDboObjectDistribution(rows.map(item => ({
+        category: item.channelName || `Объект ${item.channelId}`,
+        count: item.count,
+      })));
+      message.success({ content: 'Распределение загружено', key: 'dboDistribution', duration: 2.5 });
+    } catch {
+      message.error({ content: 'Ошибка загрузки распределения', key: 'dboDistribution' });
+    } finally {
+      setLoadingDboDistribution(false);
+    }
+  }, [activeTab, channelId, database, dateRange]);
+
+  useEffect(() => {
+    if (!visible) return;
+    const timer = window.setTimeout(() => {
+      const schema = activeTab === 'dbo' ? 'dbo' : 'em_protocol';
+      const table = activeTab === 'dbo' ? 'All' : 'Records';
+      analysisJobsApi.getEstimate({
+        database,
+        schema,
+        table,
+        granularity,
+        startDate: dateRange[0],
+        endDate: dateRange[1],
+      }).then((estimate) => {
+        if (estimate.confidence === 'none' || !estimate.estimatedDurationMs) {
+          setDurationEstimate(null);
+          return;
+        }
+        const suffix = estimate.confidence === 'low'
+          ? ` (мало данных, ${estimate.sampleCount})`
+          : '';
+        setDurationEstimate(`Ожидаемое время: ${formatDurationMs(estimate.estimatedDurationMs, true)}${suffix}`);
+      }).catch(() => setDurationEstimate(null));
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [visible, database, activeTab, granularity, dateRange]);
 
   useEffect(() => {
     if (!visible || !pendingJobForTab) return;
@@ -414,6 +517,8 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
 
         if (!result?.series?.length) {
           message.warning({ content: 'Результат пуст или недоступен', key: 'loadResult', duration: 3 });
+        } else if (job.status === 'Running') {
+          message.success({ content: 'Подключено к выполняющейся задаче', key: 'loadResult', duration: 2.5 });
         } else {
           message.success({ content: 'Результат загружен', key: 'loadResult', duration: 2.5 });
         }
@@ -435,7 +540,17 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
   const loadHistoryItem = async (job: any) => {
     try {
       message.loading({ content: 'Загрузка результата...', key: 'loadResult' });
-      await applyJobResultToView(job);
+      await applyJobResultToView({
+        ...job,
+        database,
+        schema: activeTab === 'dbo' ? 'dbo' : 'em_protocol',
+        table: activeTab === 'dbo' ? (job.channelId ?? 'All') : 'Records',
+        timeColumn: activeTab === 'dbo' ? '' : 'InsertTime',
+        sourceKind: activeTab === 'dbo' ? 'dbo' : 'em_protocol',
+        channelId: job.channelId != null ? String(job.channelId) : null,
+        hasPartialResult: false,
+        hasResult: job.status === 'Completed',
+      });
       message.success({ content: 'Результат загружен', key: 'loadResult', duration: 2.5 });
       setHistoryOpen(false);
     } catch {
@@ -463,14 +578,6 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
     () => (data?.series?.length ? getStatistics(data.series) : null),
     [data?.series],
   );
-
-  const objectDistribution = useMemo(() => {
-    if (!data?.distribution?.length) return [];
-    return data.distribution.map(item => ({
-      category: item.channelName || `Объект ${item.channelId}`,
-      count: item.count,
-    }));
-  }, [data]);
 
   const handleExport = () => {
     if (!data?.series?.length) {
@@ -529,6 +636,7 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
           exportDisabled={!data?.series?.length}
           previewOpen={previewOpen}
           onPreviewToggle={handlePreviewToggle}
+          estimateHint={durationEstimate}
         />
       </div>
 
@@ -625,12 +733,22 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
                 />
               </div>
 
-              {activeTab === 'dbo' && objectDistribution.length > 0 && (
+              {activeTab === 'dbo' && !channelId && stats && (
                 <div className="distributions-section">
                   <div className="chart-title" style={{ marginBottom: 4 }}>Распределение</div>
-                  <div className="distribution-card">
-                    <DistributionChart data={objectDistribution} title="Распределение по объектам" />
-                  </div>
+                  {dboObjectDistribution && dboObjectDistribution.length > 0 ? (
+                    <div className="distribution-card">
+                      <DistributionChart data={dboObjectDistribution} title="Распределение по объектам" />
+                    </div>
+                  ) : (
+                    <Button
+                      type="default"
+                      loading={loadingDboDistribution}
+                      onClick={loadDboObjectDistribution}
+                    >
+                      Загрузить распределение по объектам
+                    </Button>
+                  )}
                 </div>
               )}
 

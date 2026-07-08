@@ -19,5 +19,7 @@ public interface IDataSourceStrategy
         string provider,
         IProgress<int>? progress = null,
         Action<IReadOnlyList<DataPoint>>? onBatchAggregated = null,
+        Action<AnalysisBatchCompletedDto>? onBatchCompleted = null,
+        Action<long>? onFinalizeCompleted = null,
         CancellationToken cancellationToken = default);
 }

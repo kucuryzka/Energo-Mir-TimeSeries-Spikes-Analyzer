@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button, Popconfirm, Table, Tag } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { parseUtcTimestamp } from '../../utils/dateTimeUtils';
+import { formatDurationMs } from '../../utils/formatDuration';
 import { canOpenAnalysisJob, toPendingAnalysisJobOpen } from '../../utils/analysisJobLoader';
 import type { PendingAnalysisJobOpen } from '../../utils/analysisJobLoader';
 import { analysisJobsApi, type AnalysisJobQueueItem } from '../../api/analysisJobsApi';
@@ -132,16 +133,34 @@ export const AnalysisJobQueue: React.FC<AnalysisJobQueueProps> = ({
         title: 'Статус',
         dataIndex: 'status',
         render: (status: string, row) => (
-          <Tag color={STATUS_COLORS[status] ?? 'default'}>
-            {STATUS_LABELS[status] ?? status}
-            {status === 'Pending' && row.queuePosition ? ` (#${row.queuePosition})` : ''}
-          </Tag>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <Tag color={STATUS_COLORS[status] ?? 'default'}>
+              {STATUS_LABELS[status] ?? status}
+              {status === 'Pending' && row.queuePosition ? ` (#${row.queuePosition})` : ''}
+            </Tag>
+            {row.hasPartialResult && (status === 'Running' || status === 'Cancelled') && (
+              <span className="queue-partial-badge" title="Частичный результат доступен для просмотра">
+                Можно смотреть
+              </span>
+            )}
+          </span>
         ),
       },
       {
         title: 'Прогресс',
         dataIndex: 'progress',
-        render: (value: number, row) => (row.status === 'Completed' ? '100%' : `${value}%`),
+        render: (value: number, row) => {
+          const progressText = row.status === 'Completed' ? '100%' : `${value}%`;
+          const batchText = row.totalBatchCount
+            ? ` · ${row.completedBatchCount ?? 0}/${row.totalBatchCount} батч.`
+            : '';
+          return (
+            <span style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
+              {progressText}
+              {batchText}
+            </span>
+          );
+        },
       },
       {
         title: 'Длительность',
@@ -154,6 +173,29 @@ export const AnalysisJobQueue: React.FC<AnalysisJobQueueProps> = ({
           return (
             <span style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
               {prefix}{elapsed}
+            </span>
+          );
+        },
+      },
+      {
+        title: 'Ср. батч',
+        key: 'avgBatch',
+        render: (_, row) => (
+          <span style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
+            {row.avgBatchDurationMs ? formatDurationMs(row.avgBatchDurationMs, true) : '—'}
+          </span>
+        ),
+      },
+      {
+        title: 'Осталось ~',
+        key: 'remaining',
+        render: (_, row) => {
+          if (row.status !== 'Running' || !row.avgBatchDurationMs) return '—';
+          const batchesLeft = Math.max(0, (row.totalBatchCount ?? 0) - (row.completedBatchCount ?? 0));
+          const remainingMs = batchesLeft * row.avgBatchDurationMs + (row.postProcessDurationMs ?? 0);
+          return (
+            <span style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
+              {remainingMs > 0 ? formatDurationMs(remainingMs, true) : '—'}
             </span>
           );
         },
@@ -174,16 +216,20 @@ export const AnalysisJobQueue: React.FC<AnalysisJobQueueProps> = ({
         title: '',
         key: 'open',
         width: 110,
-        render: (_, row) => (
-          <Button
-            size="small"
-            type="link"
-            disabled={!canOpenAnalysisJob(row)}
-            onClick={() => onOpenJob(toPendingAnalysisJobOpen(row))}
-          >
-            Открыть
-          </Button>
-        ),
+        render: (_, row) => {
+          const canOpen = canOpenAnalysisJob(row);
+          const isRunningPartial = row.status === 'Running' && row.hasPartialResult;
+          return (
+            <Button
+              size="small"
+              type={isRunningPartial ? 'primary' : 'link'}
+              disabled={!canOpen}
+              onClick={() => onOpenJob(toPendingAnalysisJobOpen(row))}
+            >
+              {row.status === 'Running' ? 'Смотреть' : 'Открыть'}
+            </Button>
+          );
+        },
       });
     }
 
@@ -234,6 +280,7 @@ export const AnalysisJobQueue: React.FC<AnalysisJobQueueProps> = ({
           rowKey="id"
           loading={loading && !hasItems}
           pagination={false}
+          scroll={{ x: 'max-content' }}
           locale={{ emptyText: 'Нет активных задач' }}
           dataSource={activeItems}
           columns={activeColumns}
@@ -248,6 +295,7 @@ export const AnalysisJobQueue: React.FC<AnalysisJobQueueProps> = ({
             rowKey="id"
             loading={loading && !hasItems}
             pagination={{ pageSize: 10, hideOnSinglePage: true }}
+            scroll={{ x: 'max-content' }}
             locale={{ emptyText: 'Нет завершённых задач' }}
             dataSource={recentItems}
             columns={recentColumns}

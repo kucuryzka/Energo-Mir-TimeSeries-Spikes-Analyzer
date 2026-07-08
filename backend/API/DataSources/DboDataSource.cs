@@ -64,7 +64,7 @@ public class DboDataSource : IDataSourceStrategy, ISupportsPointChannels
             IdColumn = "IDOBJECT",
             NameColumn = "OBJECT_NAME",
         },
-        DeferDistribution = true,
+        OmitDistribution = true,
     };
 
     public Task<SpikeResponse> ExecuteAnalysisAsync(
@@ -74,6 +74,8 @@ public class DboDataSource : IDataSourceStrategy, ISupportsPointChannels
         string provider,
         IProgress<int>? progress = null,
         Action<IReadOnlyList<DataPoint>>? onBatchAggregated = null,
+        Action<AnalysisBatchCompletedDto>? onBatchCompleted = null,
+        Action<long>? onFinalizeCompleted = null,
         CancellationToken cancellationToken = default)
     {
         var dialect = _dialectProvider.GetDialect(provider);
@@ -93,7 +95,29 @@ public class DboDataSource : IDataSourceStrategy, ISupportsPointChannels
             request.Database,
             progress,
             onBatchAggregated,
+            onBatchCompleted,
+            onFinalizeCompleted,
             cancellationToken);
+    }
+
+    public Task<List<ChannelContributionDto>> GetObjectDistributionAsync(
+        string database,
+        DateTime startDate,
+        DateTime endDate,
+        int? channelId = null,
+        string? connectionString = null,
+        string? provider = null)
+    {
+        var (conn, prov) = ResolveConnection(connectionString, provider);
+        var dialect = _dialectProvider.GetDialect(prov);
+        return _pipeline.GetDistributionAsync(
+            BuildTableSpec(dialect),
+            startDate,
+            endDate,
+            channelId,
+            conn,
+            prov,
+            database);
     }
 
     public Task<List<ChannelContributionDto>> GetPointChannelBreakdownAsync(

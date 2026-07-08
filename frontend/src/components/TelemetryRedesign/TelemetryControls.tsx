@@ -50,6 +50,7 @@ export interface TelemetryControlsProps {
   exportDisabled: boolean;
   previewOpen?: boolean;
   onPreviewToggle?: () => void;
+  estimateHint?: string | null;
 }
 
 export const TelemetryControls: React.FC<TelemetryControlsProps> = ({
@@ -76,6 +77,7 @@ export const TelemetryControls: React.FC<TelemetryControlsProps> = ({
   exportDisabled,
   previewOpen,
   onPreviewToggle,
+  estimateHint,
 }) => {
   const filtersRef = useRef<HTMLDivElement>(null);
   const entityLabel = activeTab === 'dbo' ? 'Объект' : 'Канал';
@@ -189,6 +191,11 @@ export const TelemetryControls: React.FC<TelemetryControlsProps> = ({
         </svg>
         {loading ? 'Анализ…' : 'Запустить анализ'}
       </button>
+      {estimateHint && (
+        <span style={{ fontSize: 12, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+          {estimateHint}
+        </span>
+      )}
       <button type="button" className="btn-secondary" onClick={onExport} disabled={exportDisabled}>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
           <path d="M12 3v12" /><path d="M7 10l5 5 5-5" /><path d="M4 19h16" />

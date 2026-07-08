@@ -139,6 +139,17 @@ export const analyticsApi = {
       });
       return response.data;
     },
+    getObjectDistribution: async (
+      database: string,
+      startDate: string,
+      endDate: string,
+      channelId?: number,
+    ): Promise<ChannelContributionDto[]> => {
+      const response = await apiClient.get<ChannelContributionDto[]>('/dbo/distribution', {
+        params: { database, startDate, endDate, channelId },
+      });
+      return response.data;
+    },
     getTablePreview: async (database: string, limit = 15): Promise<any> => {
       const response = await apiClient.get('/dbo/preview', { params: { database, limit } });
       return response.data;

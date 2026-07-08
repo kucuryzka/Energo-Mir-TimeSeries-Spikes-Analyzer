@@ -25,6 +25,12 @@ public class AnalysisJob
     public string Status { get; set; } = "Pending"; // Pending, Running, Completed, Failed
     public int Progress { get; set; } = 0; // 0 to 100
 
+    public int CompletedBatchCount { get; set; }
+    public int TotalBatchCount { get; set; }
+    public long? AvgBatchDurationMs { get; set; }
+    public long? LastBatchDurationMs { get; set; }
+    public long? PostProcessDurationMs { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? CompletedAt { get; set; }
     public string? ErrorMessage { get; set; }

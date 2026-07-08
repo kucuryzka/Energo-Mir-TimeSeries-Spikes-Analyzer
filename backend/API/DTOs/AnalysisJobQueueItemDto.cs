@@ -39,4 +39,14 @@ public class AnalysisJobQueueItemDto
     public bool HasPartialResult { get; set; }
 
     public bool HasResult { get; set; }
+
+    public int CompletedBatchCount { get; set; }
+
+    public int TotalBatchCount { get; set; }
+
+    public long? AvgBatchDurationMs { get; set; }
+
+    public long? LastBatchDurationMs { get; set; }
+
+    public long? PostProcessDurationMs { get; set; }
 }

@@ -28,6 +28,9 @@ export interface PollAnalysisJobOptions {
   onPartialResult?: (result: SpikeResponse) => void;
   pollIntervalMs?: number;
   partialIntervalMs?: number;
+  attach?: boolean;
+  initialProgress?: number;
+  shouldFetchPartial?: () => boolean;
 }
 
 export async function pollAnalysisJob(
@@ -56,7 +59,8 @@ export async function pollAnalysisJob(
 
     if (status.status === 'Running' && api.getJobPartialResult) {
       const now = Date.now();
-      if (now - lastPartialFetchAt >= partialInterval) {
+      const mayFetchPartial = !options.shouldFetchPartial || options.shouldFetchPartial();
+      if (mayFetchPartial && now - lastPartialFetchAt >= partialInterval) {
         try {
           const partial = await api.getJobPartialResult(jobId);
           if (partial.series.length > 0 && partial.series.length !== lastPartialCount) {

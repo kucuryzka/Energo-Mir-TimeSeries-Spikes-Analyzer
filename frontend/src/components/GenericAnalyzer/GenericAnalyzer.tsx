@@ -19,7 +19,8 @@ import { useRegisterShellRailActions } from '../../context/ShellRailContext';
 import { runAnalysisSessionJob, updateAnalysisSession, useAnalysisResultData, cancelAnalysisSessionJob } from '../../store/analysisSessionStore';
 import { analysisJobsApi } from '../../api/analysisJobsApi';
 import { AnalysisJobCancelledError } from '../../utils/jobPolling';
-import type { PendingAnalysisJobOpen } from '../../utils/analysisJobLoader';
+import { loadAnalysisJobResult, type PendingAnalysisJobOpen } from '../../utils/analysisJobLoader';
+import { formatDurationMs } from '../../utils/formatDuration';
 
 const { Text } = Typography;
 
@@ -38,6 +39,7 @@ interface GenericAnalyzerProps {
   table: string;
   timeColumn: string;
   onBack: () => void;
+  visible?: boolean;
   pendingJobOpen?: PendingAnalysisJobOpen | null;
   onPendingJobConsumed?: () => void;
 }
@@ -48,9 +50,13 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({
   table,
   timeColumn,
   onBack: _onBack,
+  visible = true,
   pendingJobOpen,
   onPendingJobConsumed,
 }) => {
+  const visibleRef = useRef(visible);
+  visibleRef.current = visible;
+
   const sessionKey = useMemo(
     () => `generic:${db}:${schema}:${table}:${timeColumn}`,
     [db, schema, table, timeColumn],
@@ -69,8 +75,9 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({
     error,
     applyPartialResult,
     applyFinalResult,
+    applyLoadedResult,
     setData,
-  } = useAnalysisResultData(sessionKey, true, jobApi);
+  } = useAnalysisResultData(sessionKey, visible, jobApi);
 
   const [cancellingJob, setCancellingJob] = useState(false);
 
@@ -80,6 +87,7 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({
   const [showMarkers, setShowMarkers] = useState(true);
   const [showCritical, setShowCritical] = useState(true);
   const [showWarning, setShowWarning] = useState(true);
+  const [durationEstimate, setDurationEstimate] = useState<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
 
@@ -173,6 +181,7 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({
             message.loading({ content: `Анализ выполняется... (${progress}%)`, key: 'jobProgress' });
           },
           onPartialResult: applyPartialResult,
+          shouldFetchPartial: () => visibleRef.current,
         },
       );
 
@@ -231,28 +240,80 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({
   const pendingOpenRef = useRef<string | null>(null);
 
   const applyJobResultToView = useCallback(async (job: PendingAnalysisJobOpen) => {
-    updateAnalysisSession(sessionKey, {
-      jobId: job.id,
-      loading: true,
-      progress: 0,
-      error: null,
-    });
-
-    const result = await genericAnalysisApi.getJobResult(job.id);
-
-    updateAnalysisSession(sessionKey, {
-      jobId: job.id,
-      loading: false,
-      progress: 100,
-      error: null,
-    });
-    setData(result);
     setDateRange([job.startDate, job.endDate]);
     setGranularity(job.granularity);
     setCustomMinutes(job.customMinutes ?? null);
 
-    return result;
-  }, [sessionKey, setData]);
+    if (job.status === 'Completed') {
+      const result = await genericAnalysisApi.getJobResult(job.id);
+      updateAnalysisSession(sessionKey, {
+        jobId: job.id,
+        loading: false,
+        progress: 100,
+        error: null,
+      });
+      setData(result);
+      return result;
+    }
+
+    if (job.status === 'Cancelled') {
+      const { result } = await loadAnalysisJobResult(job);
+      if (!result?.series?.length) throw new Error('Result is empty');
+      applyLoadedResult(result, true);
+      updateAnalysisSession(sessionKey, {
+        jobId: job.id,
+        loading: false,
+        progress: 100,
+        error: null,
+      });
+      return result;
+    }
+
+    updateAnalysisSession(sessionKey, {
+      jobId: job.id,
+      loading: true,
+      progress: job.progress,
+      error: null,
+    });
+
+    const { result, isPartial } = await loadAnalysisJobResult(job);
+    if (result?.series?.length) {
+      applyLoadedResult(result, isPartial);
+    }
+
+    const final = await runAnalysisSessionJob(sessionKey, job.id, jobApi, {
+      attach: true,
+      initialProgress: job.progress,
+      onProgress: (progress) => updateAnalysisSession(sessionKey, { progress }),
+      onPartialResult: applyPartialResult,
+      shouldFetchPartial: () => visibleRef.current,
+    });
+    applyFinalResult(final);
+    return final;
+  }, [sessionKey, setData, applyLoadedResult, applyPartialResult, applyFinalResult, jobApi]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      analysisJobsApi.getEstimate({
+        database: db,
+        schema,
+        table,
+        granularity,
+        startDate: dateRange[0],
+        endDate: dateRange[1],
+      }).then((estimate) => {
+        if (estimate.confidence === 'none' || !estimate.estimatedDurationMs) {
+          setDurationEstimate(null);
+          return;
+        }
+        const suffix = estimate.confidence === 'low'
+          ? ` (мало данных, ${estimate.sampleCount})`
+          : '';
+        setDurationEstimate(`Ожидаемое время: ${formatDurationMs(estimate.estimatedDurationMs, true)}${suffix}`);
+      }).catch(() => setDurationEstimate(null));
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [db, schema, table, granularity, dateRange]);
 
   useEffect(() => {
     if (!pendingJobForTable) return;
@@ -270,6 +331,8 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({
 
         if (!result?.series?.length) {
           message.warning({ content: 'Результат пуст или недоступен', key: 'loadResult', duration: 3 });
+        } else if (job.status === 'Running') {
+          message.success({ content: 'Подключено к выполняющейся задаче', key: 'loadResult', duration: 2.5 });
         } else {
           message.success({ content: 'Результат загружен', key: 'loadResult', duration: 2.5 });
         }
@@ -398,6 +461,7 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({
           exportDisabled={!data?.series?.length}
           previewOpen={previewOpen}
           onPreviewToggle={handlePreviewToggle}
+          estimateHint={durationEstimate}
         />
       </div>
 

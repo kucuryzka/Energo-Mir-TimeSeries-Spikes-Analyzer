@@ -1,4 +1,5 @@
 using API.Services;
+using Core.Enums;
 using Microsoft.AspNetCore.Mvc;
 
 namespace API.Controllers;
@@ -8,13 +9,16 @@ namespace API.Controllers;
 public class AnalysisJobsController : ControllerBase
 {
     private readonly AnalysisJobCoordinatorService _coordinator;
+    private readonly AnalysisTimingStatsService _timingStats;
     private readonly IConnectionManagerService _connectionManager;
 
     public AnalysisJobsController(
         AnalysisJobCoordinatorService coordinator,
+        AnalysisTimingStatsService timingStats,
         IConnectionManagerService connectionManager)
     {
         _coordinator = coordinator;
+        _timingStats = timingStats;
         _connectionManager = connectionManager;
     }
 
@@ -36,6 +40,22 @@ public class AnalysisJobsController : ControllerBase
 
         var overview = await _coordinator.GetOverviewAsync(database, recentLimit);
         return Ok(overview);
+    }
+
+    [HttpGet("estimate")]
+    public async Task<IActionResult> GetEstimate(
+        [FromQuery] string database,
+        [FromQuery] string schema,
+        [FromQuery] string table,
+        [FromQuery] TimeGranularity granularity,
+        [FromQuery] DateTime startDate,
+        [FromQuery] DateTime endDate)
+    {
+        if (!HasValidSession())
+            return Unauthorized();
+
+        var estimate = await _timingStats.EstimateAsync(database, schema, table, granularity, startDate, endDate);
+        return Ok(estimate);
     }
 
     [HttpPost("{id}/cancel")]
