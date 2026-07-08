@@ -6,4 +6,7 @@ public class ChannelLookupSpec
     public required string Table { get; init; }
     public required string IdColumn { get; init; }
     public required string NameColumn { get; init; }
+    public string? EventCodeColumn { get; init; }
+    public string? AdditionalJoinClause { get; init; }
+    public string? DisplayNameExpression { get; init; }
 }

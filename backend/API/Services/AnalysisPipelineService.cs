@@ -45,7 +45,7 @@ public class AnalysisPipelineService
         var dialect = _dialectProvider.GetDialect(provider);
         using var context = _contextFactory.Create(connectionString, provider, database);
 
-        var fromClause = spec.FromClause ?? dialect.QualifyTable(spec.Schema, spec.Table);
+        var fromClause = spec.FromClause ?? dialect.QualifyFromTable(spec.Schema, spec.Table, spec.TableAlias);
         var timeCol = dialect.QualifyColumn(spec.TableAlias, spec.TimeColumn);
         var timeExpr = dialect.GetTimeBucketExpression(timeCol, granularity, customMinutes);
 
@@ -87,6 +87,8 @@ public class AnalysisPipelineService
             progress?.Report(Math.Min(99, (int)(daysProcessed / totalDays * 100)));
 
             onBatchAggregated?.Invoke(seriesDict.Values.OrderBy(p => p.Timestamp).ToList());
+
+            await context.Database.CloseConnectionAsync();
 
             currentStart = currentEnd;
         }
@@ -131,7 +133,7 @@ public class AnalysisPipelineService
         var dialect = _dialectProvider.GetDialect(provider);
         using var context = _contextFactory.Create(connectionString, provider, database);
 
-        var fromClause = spec.FromClause ?? dialect.QualifyTable(spec.Schema, spec.Table);
+        var fromClause = spec.FromClause ?? dialect.QualifyFromTable(spec.Schema, spec.Table, spec.TableAlias);
         var timeCol = dialect.QualifyColumn(spec.TableAlias, spec.TimeColumn);
         var channelCol = dialect.QualifyColumn(spec.TableAlias, spec.ChannelColumn);
         var endDate = GetBucketEnd(timestamp, granularity, customMinutes);
@@ -142,12 +144,16 @@ public class AnalysisPipelineService
             ? $", {lookup.NameExpression} AS ChannelName"
             : ", NULL AS ChannelName";
         var nameGroupBy = lookup != null ? $", {lookup.NameExpression}" : "";
+        var eventCodeSelect = lookup?.EventCodeExpression != null
+            ? $", {lookup.EventCodeExpression} AS EventCode"
+            : ", NULL AS EventCode";
+        var eventCodeGroupBy = lookup?.EventCodeGroupBy != null ? $", {lookup.EventCodeGroupBy}" : "";
 
         var sql = $@"
-            SELECT {dialect.NullTimestampExpression} AS Timestamp, {dialect.CountAggregateExpression} AS Value, {channelCol} AS ChannelId{nameSelect}
+            SELECT {dialect.NullTimestampExpression} AS Timestamp, {dialect.CountAggregateExpression} AS Value, {channelCol} AS ChannelId{nameSelect}{eventCodeSelect}
             FROM {fromClause}{lookup?.JoinClause ?? string.Empty}
             WHERE {timeCol} >= @p0 AND {timeCol} < @p1{channelFilter}
-            GROUP BY {channelCol}{nameGroupBy}
+            GROUP BY {channelCol}{nameGroupBy}{eventCodeGroupBy}
             ORDER BY Value DESC";
 
         var parameters = BuildBatchParameters(timestamp, endDate, channelId);
@@ -160,6 +166,7 @@ public class AnalysisPipelineService
                 ChannelId = r.ChannelId!.Value,
                 Count = r.Value,
                 ChannelName = r.ChannelName ?? string.Empty,
+                EventCode = r.EventCode,
             })
             .ToList();
     }
@@ -180,7 +187,7 @@ public class AnalysisPipelineService
         }
 
         return $@"
-            SELECT {timeExpr} AS Timestamp, {dialect.CountAggregateExpression} AS Value, 0 AS ChannelId, NULL AS ChannelName
+            SELECT {timeExpr} AS Timestamp, {dialect.CountAggregateExpression} AS Value, 0 AS ChannelId, NULL AS ChannelName, NULL AS EventCode
             FROM {fromClause}
             WHERE {timeCol} >= @p0 AND {timeCol} < @p1{channelFilter}
             GROUP BY {timeExpr}
@@ -199,15 +206,23 @@ public class AnalysisPipelineService
             ? $", {lookup.NameExpression} AS ChannelName"
             : ", NULL AS ChannelName";
         var nameGroupBy = lookup != null ? $", {lookup.NameExpression}" : "";
+        var eventCodeSelect = lookup?.EventCodeExpression != null
+            ? $", {lookup.EventCodeExpression} AS EventCode"
+            : ", NULL AS EventCode";
+        var eventCodeGroupBy = lookup?.EventCodeGroupBy != null ? $", {lookup.EventCodeGroupBy}" : "";
 
         return $@"
-            SELECT {dialect.NullTimestampExpression} AS Timestamp, {dialect.CountAggregateExpression} AS Value, {channelCol} AS ChannelId{nameSelect}
+            SELECT {dialect.NullTimestampExpression} AS Timestamp, {dialect.CountAggregateExpression} AS Value, {channelCol} AS ChannelId{nameSelect}{eventCodeSelect}
             FROM {fromClause}{lookup?.JoinClause ?? string.Empty}
             WHERE {timeCol} >= @p0 AND {timeCol} < @p1
-            GROUP BY {channelCol}{nameGroupBy}";
+            GROUP BY {channelCol}{nameGroupBy}{eventCodeGroupBy}";
     }
 
-    private sealed record ChannelLookupJoin(string JoinClause, string NameExpression);
+    private sealed record ChannelLookupJoin(
+        string JoinClause,
+        string NameExpression,
+        string? EventCodeExpression = null,
+        string? EventCodeGroupBy = null);
 
     private static ChannelLookupJoin? BuildChannelLookupJoin(
         IDatabaseDialect dialect,
@@ -218,13 +233,28 @@ public class AnalysisPipelineService
             return null;
 
         const string lookupAlias = "ch";
-        var lookupTable = dialect.QualifyTable(spec.ChannelLookup.Schema, spec.ChannelLookup.Table);
+        var lookupTable = dialect.QualifyFromTable(spec.ChannelLookup.Schema, spec.ChannelLookup.Table, lookupAlias);
         var lookupId = $"{lookupAlias}.{dialect.QuoteIdentifier(spec.ChannelLookup.IdColumn)}";
-        var lookupName = $"{lookupAlias}.{dialect.QuoteIdentifier(spec.ChannelLookup.NameColumn)}";
+        var lookupNameRaw = $"{lookupAlias}.{dialect.QuoteIdentifier(spec.ChannelLookup.NameColumn)}";
+        var lookupName = !string.IsNullOrEmpty(spec.ChannelLookup.DisplayNameExpression)
+            ? spec.ChannelLookup.DisplayNameExpression
+            : dialect.CastAsText(lookupNameRaw);
+        string? eventCodeExpr = null;
+        if (!string.IsNullOrEmpty(spec.ChannelLookup.EventCodeColumn))
+        {
+            var eventCodeCol = $"{lookupAlias}.{dialect.QuoteIdentifier(spec.ChannelLookup.EventCodeColumn)}";
+            eventCodeExpr = dialect.CastAsText(eventCodeCol);
+        }
+
+        var joinClause = $" LEFT JOIN {lookupTable} ON {channelCol} = {lookupId}";
+        if (!string.IsNullOrEmpty(spec.ChannelLookup.AdditionalJoinClause))
+            joinClause += spec.ChannelLookup.AdditionalJoinClause;
 
         return new ChannelLookupJoin(
-            $" LEFT JOIN {lookupTable} {lookupAlias} ON {channelCol} = {lookupId}",
-            lookupName);
+            joinClause,
+            lookupName,
+            eventCodeExpr,
+            eventCodeExpr);
     }
 
     private static List<object> BuildBatchParameters(DateTime start, DateTime end, int? channelId)

@@ -6,4 +6,5 @@ public class AggregatedResult
     public int Value { get; set; }
     public int? ChannelId { get; set; }
     public string? ChannelName { get; set; }
+    public string? EventCode { get; set; }
 }

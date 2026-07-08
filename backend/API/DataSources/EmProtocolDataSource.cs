@@ -49,13 +49,40 @@ public class EmProtocolDataSource : IDataSourceStrategy, ISupportsChannels, ISup
         return (info.ConnectionString, info.Provider);
     }
 
-    private AnalysisTableSpec BuildTableSpec() => new()
+    private AnalysisTableSpec BuildTableSpec(IDatabaseDialect dialect) => new()
     {
         Schema = "em_protocol",
         Table = "Records",
         TimeColumn = "InsertTime",
-        ChannelColumn = "ChannelId"
+        ChannelColumn = "ChannelId",
+        FromClause = dialect.QualifyFromTable("em_protocol", "Records", "r"),
+        TableAlias = "r",
+        ChannelLookup = BuildEmChannelLookup(dialect),
     };
+
+    private static ChannelLookupSpec BuildEmChannelLookup(IDatabaseDialect dialect)
+    {
+        const string channelAlias = "ch";
+        var eventCodeText = dialect.CastAsText($"{channelAlias}.{dialect.QuoteIdentifier("EventCode")}");
+        var objects = dialect.QualifyFromTable("dbo", "OBJECTS", "obj");
+        var displayName = dialect.Concat(
+            $"obj.{dialect.QuoteIdentifier("OBJECT_NAME")}",
+            "' ('",
+            eventCodeText,
+            "')'");
+
+        return new ChannelLookupSpec
+        {
+            Schema = "em_protocol",
+            Table = "Channels",
+            IdColumn = "Id",
+            NameColumn = "Id",
+            EventCodeColumn = "EventCode",
+            AdditionalJoinClause =
+                $" LEFT JOIN {objects} ON {channelAlias}.{dialect.QuoteIdentifier("ObjectId")} = obj.{dialect.QuoteIdentifier("IDGLOBAL")}",
+            DisplayNameExpression = displayName,
+        };
+    }
 
     public Task<SpikeResponse> ExecuteAnalysisAsync(
         DetectSpikesRequest request,
@@ -65,8 +92,9 @@ public class EmProtocolDataSource : IDataSourceStrategy, ISupportsChannels, ISup
         IProgress<int>? progress = null,
         Action<IReadOnlyList<DataPoint>>? onBatchAggregated = null)
     {
+        var dialect = _dialectProvider.GetDialect(provider);
         return _pipeline.ExecuteAsync(
-            BuildTableSpec(),
+            BuildTableSpec(dialect),
             request.StartDate,
             request.EndDate,
             request.Granularity,
@@ -92,8 +120,9 @@ public class EmProtocolDataSource : IDataSourceStrategy, ISupportsChannels, ISup
         string? provider = null)
     {
         var (conn, prov) = ResolveConnection(connectionString, provider);
+        var dialect = _dialectProvider.GetDialect(prov);
         return _pipeline.GetPointChannelBreakdownAsync(
-            BuildTableSpec(),
+            BuildTableSpec(dialect),
             timestamp,
             granularity,
             customMinutes,
@@ -109,29 +138,26 @@ public class EmProtocolDataSource : IDataSourceStrategy, ISupportsChannels, ISup
         var dialect = _dialectProvider.GetDialect(prov);
         using var context = _contextFactory.Create(conn, prov, database);
 
-        var channels = dialect.QualifyTable("em_protocol", "Channels");
-        var objects = dialect.QualifyTable("dbo", "OBJECTS");
+        var channels = dialect.QualifyFromTable("em_protocol", "Channels", "c");
+        var objects = dialect.QualifyFromTable("dbo", "OBJECTS", "o");
+        var eventCodeExpr = dialect.CastAsText($"c.{dialect.QuoteIdentifier("EventCode")}");
         var nameExpr = dialect.Concat(
             $"o.{dialect.QuoteIdentifier("OBJECT_NAME")}",
             "' ('",
-            dialect.ProviderId == "pgsql"
-                ? $"c.{dialect.QuoteIdentifier("EventCode")}::text"
-                : $"CAST(c.{dialect.QuoteIdentifier("EventCode")} AS NVARCHAR(100))",
+            eventCodeExpr,
             "')'");
 
         var sql = $@"
             SELECT c.{dialect.QuoteIdentifier("Id")} AS Id,
                    {nameExpr} AS Name,
-                   {(dialect.ProviderId == "pgsql"
-                       ? $"c.{dialect.QuoteIdentifier("EventCode")}::text"
-                       : $"CAST(c.{dialect.QuoteIdentifier("EventCode")} AS NVARCHAR(100))")} AS EventCode
-            FROM {channels} c
-            JOIN {objects} o ON c.{dialect.QuoteIdentifier("ObjectId")} = o.{dialect.QuoteIdentifier("IDGLOBAL")}";
+                   {eventCodeExpr} AS EventCode
+            FROM {channels}
+            JOIN {objects} ON c.{dialect.QuoteIdentifier("ObjectId")} = o.{dialect.QuoteIdentifier("IDGLOBAL")}";
 
         var parameters = new List<object>();
         if (!string.IsNullOrWhiteSpace(search))
         {
-            sql += $" WHERE o.{dialect.QuoteIdentifier("OBJECT_NAME")} LIKE {{0}} OR {(dialect.ProviderId == "pgsql" ? $"c.{dialect.QuoteIdentifier("EventCode")}::text" : $"CAST(c.{dialect.QuoteIdentifier("EventCode")} AS NVARCHAR(100))")} LIKE {{0}}";
+            sql += $" WHERE o.{dialect.QuoteIdentifier("OBJECT_NAME")} LIKE {{0}} OR {eventCodeExpr} LIKE {{0}}";
             parameters.Add($"%{search}%");
         }
 
@@ -152,18 +178,14 @@ public class EmProtocolDataSource : IDataSourceStrategy, ISupportsChannels, ISup
         var dialect = _dialectProvider.GetDialect(prov);
         using var context = _contextFactory.Create(conn, prov, database);
 
-        var records = dialect.QualifyTable("em_protocol", "Records");
-        var channels = dialect.QualifyTable("em_protocol", "Channels");
-        var eventCodeExpr = dialect.ProviderId == "pgsql"
-            ? $"c.{dialect.QuoteIdentifier("EventCode")}::text"
-            : $"CAST(c.{dialect.QuoteIdentifier("EventCode")} AS NVARCHAR(100))";
-
-        var countExpr = dialect.ProviderId == "pgsql" ? "COUNT(*)" : "COUNT_BIG(*)";
+        var records = dialect.QualifyFromTable("em_protocol", "Records", "r");
+        var channels = dialect.QualifyFromTable("em_protocol", "Channels", "c");
+        var eventCodeExpr = dialect.CastAsText($"c.{dialect.QuoteIdentifier("EventCode")}");
 
         var sql = $@"
-            SELECT {eventCodeExpr} AS Category, {countExpr} AS Count
-            FROM {records} r
-            JOIN {channels} c ON r.{dialect.QuoteIdentifier("ChannelId")} = c.{dialect.QuoteIdentifier("Id")}
+            SELECT {eventCodeExpr} AS Category, {dialect.LargeCountAggregateExpression} AS Count
+            FROM {records}
+            JOIN {channels} ON r.{dialect.QuoteIdentifier("ChannelId")} = c.{dialect.QuoteIdentifier("Id")}
             WHERE r.{dialect.QuoteIdentifier("InsertTime")} >= @p0 AND r.{dialect.QuoteIdentifier("InsertTime")} <= @p1
             GROUP BY {eventCodeExpr}
             ORDER BY Count DESC";
