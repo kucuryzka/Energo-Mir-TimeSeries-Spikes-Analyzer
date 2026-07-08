@@ -277,6 +277,7 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
 
       const api = activeTab === 'dbo' ? analyticsApi.dbo : analyticsApi.emProtocol;
       const { jobId: enqueuedJobId } = await api.enqueueAnalysis(requestPayload);
+      syncedJobFormRef.current = enqueuedJobId;
 
       const result = await runAnalysisSessionJob(
         sessionKey,
@@ -371,13 +372,24 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
     : null;
 
   const pendingOpenRef = useRef<string | null>(null);
+  const syncedJobFormRef = useRef<string | null>(null);
 
-  const applyJobResultToView = useCallback(async (job: PendingAnalysisJobOpen) => {
+  const syncJobFormFromJob = useCallback((job: PendingAnalysisJobOpen) => {
+    if (syncedJobFormRef.current === job.id) return;
+    syncedJobFormRef.current = job.id;
     setDateRange([job.startDate, job.endDate]);
     setChannelId(job.channelId ? parseInt(job.channelId, 10) : null);
     setGranularity(job.granularity);
     setCustomMinutes(job.customMinutes ?? null);
     setDboObjectDistribution(null);
+  }, []);
+
+  const applyJobResultToView = useCallback(async (
+    job: PendingAnalysisJobOpen,
+    options?: { waitForCompletion?: boolean },
+  ) => {
+    const waitForCompletion = options?.waitForCompletion ?? true;
+    syncJobFormFromJob(job);
 
     const api = activeTab === 'dbo' ? analyticsApi.dbo : analyticsApi.emProtocol;
 
@@ -426,7 +438,7 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
       applyLoadedResult(result, isPartial);
     }
 
-    const final = await runAnalysisSessionJob(sessionKey, job.id, jobApi, {
+    const pollPromise = runAnalysisSessionJob(sessionKey, job.id, jobApi, {
       attach: true,
       initialProgress: job.progress,
       onProgress: (progress) => {
@@ -435,6 +447,25 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
       onPartialResult: applyPartialResult,
       shouldFetchPartial: () => visibleRef.current,
     });
+
+    if (!waitForCompletion) {
+      void pollPromise
+        .then((final) => {
+          applyFinalResult(final);
+          if (activeTab === 'em') {
+            void fetchDistributions([job.startDate, job.endDate]);
+          }
+        })
+        .catch((err: unknown) => {
+          if (err instanceof AnalysisJobCancelledError || (err as { cancelled?: boolean })?.cancelled) {
+            return;
+          }
+          console.error('Failed to complete attached analysis job', err);
+        });
+      return result ?? null;
+    }
+
+    const final = await pollPromise;
 
     applyFinalResult(final);
     if (activeTab === 'em') {
@@ -450,6 +481,7 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
     applyPartialResult,
     applyFinalResult,
     jobApi,
+    syncJobFormFromJob,
   ]);
 
   const loadDboObjectDistribution = useCallback(async () => {
@@ -512,7 +544,8 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
     (async () => {
       try {
         message.loading({ content: 'Загрузка результата...', key: 'loadResult' });
-        const result = await applyJobResultToView(job);
+        const waitForCompletion = job.status !== 'Running' && job.status !== 'Pending';
+        const result = await applyJobResultToView(job, { waitForCompletion });
         if (cancelled) return;
 
         if (!result?.series?.length) {
@@ -535,7 +568,8 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [pendingJobForTab?.id, visible, applyJobResultToView, onPendingJobConsumed]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingJobForTab?.id, visible, onPendingJobConsumed]);
 
   const loadHistoryItem = async (job: any) => {
     try {

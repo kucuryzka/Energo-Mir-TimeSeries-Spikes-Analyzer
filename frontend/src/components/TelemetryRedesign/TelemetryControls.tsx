@@ -1,6 +1,6 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { DatePicker, InputNumber, Select, Slider } from 'antd';
-import dayjs from 'dayjs';
+import dayjs, { type Dayjs } from 'dayjs';
 import type { ChannelDto, TimeGranularity } from '../../types/analytics.types';
 
 const { RangePicker } = DatePicker;
@@ -80,8 +80,18 @@ export const TelemetryControls: React.FC<TelemetryControlsProps> = ({
   estimateHint,
 }) => {
   const filtersRef = useRef<HTMLDivElement>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [draftRange, setDraftRange] = useState<[Dayjs | null, Dayjs | null] | null>(null);
   const entityLabel = activeTab === 'dbo' ? 'Объект' : 'Канал';
   const entityPlaceholder = activeTab === 'dbo' ? 'Все объекты' : 'Все каналы';
+
+  const pickerValue = useMemo(
+    () => [
+      dateRange[0] ? dayjs(dateRange[0]) : null,
+      dateRange[1] ? dayjs(dateRange[1]) : null,
+    ] as [Dayjs | null, Dayjs | null],
+    [dateRange[0], dateRange[1]],
+  );
 
   useEffect(() => {
     const onClickOutside = (e: MouseEvent) => {
@@ -100,13 +110,20 @@ export const TelemetryControls: React.FC<TelemetryControlsProps> = ({
         showTime={{ format: 'HH:mm' }}
         format="YYYY-MM-DD HH:mm"
         presets={PERIOD_PRESETS}
-        value={[
-          dateRange[0] ? dayjs(dateRange[0]) : null,
-          dateRange[1] ? dayjs(dateRange[1]) : null,
-        ]}
+        value={pickerOpen && draftRange ? draftRange : pickerValue}
+        open={pickerOpen}
+        onOpenChange={(open) => {
+          setPickerOpen(open);
+          if (!open) setDraftRange(null);
+        }}
+        onCalendarChange={(dates) => {
+          setDraftRange(dates as [Dayjs | null, Dayjs | null]);
+        }}
         onChange={(dates) => {
           if (dates?.[0] && dates[1]) {
             onDateRangeChange([dates[0].toISOString(), dates[1].toISOString()]);
+            setDraftRange(null);
+            setPickerOpen(false);
           }
         }}
       />

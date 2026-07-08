@@ -171,6 +171,7 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({
       message.loading({ content: 'Задача поставлена в очередь...', key: 'jobProgress' });
 
       const { jobId: enqueuedJobId } = await genericAnalysisApi.enqueueAnalysis(requestData);
+      syncedJobFormRef.current = enqueuedJobId;
 
       const result = await runAnalysisSessionJob(
         sessionKey,
@@ -238,11 +239,22 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({
     : null;
 
   const pendingOpenRef = useRef<string | null>(null);
+  const syncedJobFormRef = useRef<string | null>(null);
 
-  const applyJobResultToView = useCallback(async (job: PendingAnalysisJobOpen) => {
+  const syncJobFormFromJob = useCallback((job: PendingAnalysisJobOpen) => {
+    if (syncedJobFormRef.current === job.id) return;
+    syncedJobFormRef.current = job.id;
     setDateRange([job.startDate, job.endDate]);
     setGranularity(job.granularity);
     setCustomMinutes(job.customMinutes ?? null);
+  }, []);
+
+  const applyJobResultToView = useCallback(async (
+    job: PendingAnalysisJobOpen,
+    options?: { waitForCompletion?: boolean },
+  ) => {
+    const waitForCompletion = options?.waitForCompletion ?? true;
+    syncJobFormFromJob(job);
 
     if (job.status === 'Completed') {
       const result = await genericAnalysisApi.getJobResult(job.id);
@@ -281,16 +293,30 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({
       applyLoadedResult(result, isPartial);
     }
 
-    const final = await runAnalysisSessionJob(sessionKey, job.id, jobApi, {
+    const pollPromise = runAnalysisSessionJob(sessionKey, job.id, jobApi, {
       attach: true,
       initialProgress: job.progress,
       onProgress: (progress) => updateAnalysisSession(sessionKey, { progress }),
       onPartialResult: applyPartialResult,
       shouldFetchPartial: () => visibleRef.current,
     });
+
+    if (!waitForCompletion) {
+      void pollPromise
+        .then(applyFinalResult)
+        .catch((err: unknown) => {
+          if (err instanceof AnalysisJobCancelledError || (err as { cancelled?: boolean })?.cancelled) {
+            return;
+          }
+          console.error('Failed to complete attached analysis job', err);
+        });
+      return result ?? null;
+    }
+
+    const final = await pollPromise;
     applyFinalResult(final);
     return final;
-  }, [sessionKey, setData, applyLoadedResult, applyPartialResult, applyFinalResult, jobApi]);
+  }, [sessionKey, setData, applyLoadedResult, applyPartialResult, applyFinalResult, jobApi, syncJobFormFromJob]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -316,7 +342,7 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({
   }, [db, schema, table, granularity, dateRange]);
 
   useEffect(() => {
-    if (!pendingJobForTable) return;
+    if (!visible || !pendingJobForTable) return;
     if (pendingOpenRef.current === pendingJobForTable.id) return;
 
     const job = pendingJobForTable;
@@ -326,7 +352,8 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({
     (async () => {
       try {
         message.loading({ content: 'Загрузка результата...', key: 'loadResult' });
-        const result = await applyJobResultToView(job);
+        const waitForCompletion = job.status !== 'Running' && job.status !== 'Pending';
+        const result = await applyJobResultToView(job, { waitForCompletion });
         if (cancelled) return;
 
         if (!result?.series?.length) {
@@ -349,7 +376,8 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [pendingJobForTable?.id, applyJobResultToView, onPendingJobConsumed]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingJobForTable?.id, visible, onPendingJobConsumed]);
 
   const enrichedData = useMemo(
     () => (data?.series?.length ? enrichSpikeData(data.series) : []),
