@@ -1,10 +1,16 @@
 using System.Data;
+using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 
 namespace API.Data;
 
 public static class InternalDbSchemaUpdater
 {
+    private static readonly Regex IdentifierRegex = new(@"^[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.Compiled);
+    private static readonly Regex ColumnDefinitionRegex = new(
+        @"^INTEGER (NOT NULL DEFAULT \d+|NULL)$",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
     public static void Apply(InternalDbContext db)
     {
         db.Database.EnsureCreated();
@@ -39,7 +45,29 @@ public static class InternalDbSchemaUpdater
         if (ColumnExists(db, table, column))
             return;
 
-        db.Database.ExecuteSqlRaw($"ALTER TABLE {table} ADD COLUMN {column} {definition};");
+        ValidateColumnDefinition(definition);
+        var sql = "ALTER TABLE "
+            + QuoteSqliteIdentifier(table)
+            + " ADD COLUMN "
+            + QuoteSqliteIdentifier(column)
+            + " "
+            + definition
+            + ";";
+        db.Database.ExecuteSqlRaw(sql);
+    }
+
+    private static string QuoteSqliteIdentifier(string identifier)
+    {
+        if (!IdentifierRegex.IsMatch(identifier))
+            throw new ArgumentException($"Invalid SQLite identifier: {identifier}", nameof(identifier));
+
+        return "\"" + identifier.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
+    }
+
+    private static void ValidateColumnDefinition(string definition)
+    {
+        if (!ColumnDefinitionRegex.IsMatch(definition))
+            throw new ArgumentException($"Unsupported column definition: {definition}", nameof(definition));
     }
 
     private static bool TableExists(InternalDbContext db, string table)
@@ -68,6 +96,9 @@ public static class InternalDbSchemaUpdater
 
     private static bool ColumnExists(InternalDbContext db, string table, string column)
     {
+        if (!IdentifierRegex.IsMatch(column))
+            throw new ArgumentException($"Invalid SQLite identifier: {column}", nameof(column));
+
         var connection = db.Database.GetDbConnection();
         var wasOpen = connection.State == ConnectionState.Open;
         if (!wasOpen)
@@ -76,7 +107,7 @@ public static class InternalDbSchemaUpdater
         try
         {
             using var command = connection.CreateCommand();
-            command.CommandText = $"PRAGMA table_info({table});";
+            command.CommandText = "PRAGMA table_info(" + QuoteSqliteIdentifier(table) + ");";
             using var reader = command.ExecuteReader();
             while (reader.Read())
             {
