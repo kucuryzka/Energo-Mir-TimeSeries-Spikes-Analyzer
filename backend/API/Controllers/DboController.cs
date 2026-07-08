@@ -192,7 +192,7 @@ public class DboController : ControllerBase
     {
         var job = await _internalDb.AnalysisJobs.FindAsync(id);
         if (job == null) return NotFound();
-        if (job.Status is not ("Running" or "Completed"))
+        if (job.Status is not ("Running" or "Completed" or "Cancelled"))
             return BadRequest("Partial result is not available.");
 
         var partial = await _resultService.TryLoadPartialAsync(id);

@@ -23,6 +23,8 @@ public class AnalysisJobProcessor
     private readonly AnalysisResultService _resultService;
     private readonly IConnectionManagerService _connectionManager;
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly IAnalysisJobCancellationService _cancellation;
+    private readonly AnalysisJobCoordinatorService _coordinator;
     private readonly ILogger<AnalysisJobProcessor> _logger;
     private readonly int _progressSaveIntervalMs;
 
@@ -34,6 +36,8 @@ public class AnalysisJobProcessor
         AnalysisResultService resultService,
         IConnectionManagerService connectionManager,
         IServiceScopeFactory scopeFactory,
+        IAnalysisJobCancellationService cancellation,
+        AnalysisJobCoordinatorService coordinator,
         ILogger<AnalysisJobProcessor> logger,
         IOptions<AnalysisSettings> settings)
     {
@@ -44,6 +48,8 @@ public class AnalysisJobProcessor
         _resultService = resultService;
         _connectionManager = connectionManager;
         _scopeFactory = scopeFactory;
+        _cancellation = cancellation;
+        _coordinator = coordinator;
         _logger = logger;
         _progressSaveIntervalMs = Math.Max(settings.Value.ProgressSaveIntervalSeconds, 1) * 1000;
     }
@@ -63,7 +69,7 @@ public class AnalysisJobProcessor
         var job = await _internalDb.AnalysisJobs.FindAsync(jobId);
         if (job == null) return;
 
-        if (job.Status is "Completed" or "Failed")
+        if (job.Status is "Completed" or "Failed" or "Cancelled")
             return;
 
         var connectionInfo = _connectionManager.GetConnectionInfo(sessionToken);
@@ -76,9 +82,16 @@ public class AnalysisJobProcessor
 
         var provider = DatabaseProvider.Normalize(connectionInfo.Provider);
         var connectionString = connectionInfo.ConnectionString;
+        var cancellationToken = _cancellation.Register(jobId);
 
         try
         {
+            if (_cancellation.IsCancellationRequested(jobId))
+            {
+                await _coordinator.MarkCancelledAsync(job);
+                return;
+            }
+
             await SetRunningAsync(job);
             _resultService.DeletePartialFile(job.Id);
 
@@ -108,7 +121,8 @@ public class AnalysisJobProcessor
                     provider,
                     job.Database,
                     CreateProgressReporter(job.Id),
-                    onBatchAggregated);
+                    onBatchAggregated,
+                    cancellationToken);
             }
             else
             {
@@ -138,15 +152,25 @@ public class AnalysisJobProcessor
                     connectionString,
                     provider,
                     CreateProgressReporter(job.Id),
-                    onBatchAggregated);
+                    onBatchAggregated,
+                    cancellationToken);
             }
 
             await CompleteJobAsync(job, response);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogInformation("Analysis job {JobId} cancelled by user", jobId);
+            await _coordinator.MarkCancelledAsync(job);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Analysis job {JobId} failed", jobId);
             await FailJobAsync(job, ex);
+        }
+        finally
+        {
+            _cancellation.Unregister(jobId);
         }
     }
 

@@ -90,7 +90,8 @@ public class EmProtocolDataSource : IDataSourceStrategy, ISupportsChannels, ISup
         string connectionString,
         string provider,
         IProgress<int>? progress = null,
-        Action<IReadOnlyList<DataPoint>>? onBatchAggregated = null)
+        Action<IReadOnlyList<DataPoint>>? onBatchAggregated = null,
+        CancellationToken cancellationToken = default)
     {
         var dialect = _dialectProvider.GetDialect(provider);
         return _pipeline.ExecuteAsync(
@@ -107,7 +108,8 @@ public class EmProtocolDataSource : IDataSourceStrategy, ISupportsChannels, ISup
             provider,
             request.Database,
             progress,
-            onBatchAggregated);
+            onBatchAggregated,
+            cancellationToken);
     }
 
     public Task<List<ChannelContributionDto>> GetPointChannelBreakdownAsync(

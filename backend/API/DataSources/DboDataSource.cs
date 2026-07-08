@@ -72,7 +72,8 @@ public class DboDataSource : IDataSourceStrategy, ISupportsPointChannels
         string connectionString,
         string provider,
         IProgress<int>? progress = null,
-        Action<IReadOnlyList<DataPoint>>? onBatchAggregated = null)
+        Action<IReadOnlyList<DataPoint>>? onBatchAggregated = null,
+        CancellationToken cancellationToken = default)
     {
         var dialect = _dialectProvider.GetDialect(provider);
         var spec = BuildTableSpec(dialect);
@@ -90,7 +91,8 @@ public class DboDataSource : IDataSourceStrategy, ISupportsPointChannels
             provider,
             request.Database,
             progress,
-            onBatchAggregated);
+            onBatchAggregated,
+            cancellationToken);
     }
 
     public Task<List<ChannelContributionDto>> GetPointChannelBreakdownAsync(

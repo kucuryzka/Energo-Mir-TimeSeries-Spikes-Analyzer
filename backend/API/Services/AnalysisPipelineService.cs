@@ -40,7 +40,8 @@ public class AnalysisPipelineService
         string provider,
         string database,
         IProgress<int>? progress = null,
-        Action<IReadOnlyList<Core.Models.DataPoint>>? onBatchAggregated = null)
+        Action<IReadOnlyList<Core.Models.DataPoint>>? onBatchAggregated = null,
+        CancellationToken cancellationToken = default)
     {
         var dialect = _dialectProvider.GetDialect(provider);
         using var context = _contextFactory.Create(connectionString, provider, database);
@@ -65,6 +66,8 @@ public class AnalysisPipelineService
 
         while (currentStart < endDate)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             var currentEnd = currentStart.AddDays(batchDays);
             if (currentEnd > endDate) currentEnd = endDate;
 
