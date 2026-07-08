@@ -496,7 +496,6 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({ database, ac
 
               {activeTab === 'dbo' && objectDistribution.length > 0 && (
                 <div className="distributions-section">
-                  <div className="chart-title" style={{ marginBottom: 4 }}>Распределение</div>
                   <div className="distribution-card">
                     <DistributionChart data={objectDistribution} title="Распределение по объектам" />
                   </div>
@@ -505,7 +504,6 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({ database, ac
 
               {Object.keys(distributions).length > 0 && (
                 <div className="distributions-section">
-                  <div className="chart-title" style={{ marginBottom: 4 }}>Распределение</div>
                   {Object.entries(distributions).map(([category, items]) => {
                     const chartData = category === 'EventCode'
                       ? items.map(d => ({ ...d, category: eventCodeMap[d.category] || d.category }))
