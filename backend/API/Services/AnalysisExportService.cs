@@ -1,7 +1,8 @@
+using API.Contracts;
 using API.DataSources;
 using API.DTOs;
-using API.Models;
-using API.Sql;
+using API.Infrastructure;
+using API.Models;using API.Sql;
 using ClosedXML.Excel;
 
 namespace API.Services;
@@ -11,6 +12,8 @@ public class AnalysisExportService
     private readonly AnalysisResultService _resultService;
     private readonly AnalysisPipelineService _pipeline;
     private readonly DboDataSource _dboDataSource;
+    private readonly EmProtocolDataSource _emDataSource;
+    private readonly EventCodeLabelService _eventCodeLabels;
     private readonly ISqlDialectProvider _dialectProvider;
     private readonly IConnectionManagerService _connectionManager;
     private readonly IHttpContextAccessor _httpContextAccessor;
@@ -19,6 +22,7 @@ public class AnalysisExportService
         AnalysisResultService resultService,
         AnalysisPipelineService pipeline,
         IEnumerable<IDataSourceStrategy> dataSources,
+        EventCodeLabelService eventCodeLabels,
         ISqlDialectProvider dialectProvider,
         IConnectionManagerService connectionManager,
         IHttpContextAccessor httpContextAccessor)
@@ -26,6 +30,8 @@ public class AnalysisExportService
         _resultService = resultService;
         _pipeline = pipeline;
         _dboDataSource = dataSources.OfType<DboDataSource>().First();
+        _emDataSource = dataSources.OfType<EmProtocolDataSource>().First();
+        _eventCodeLabels = eventCodeLabels;
         _dialectProvider = dialectProvider;
         _connectionManager = connectionManager;
         _httpContextAccessor = httpContextAccessor;
@@ -79,7 +85,7 @@ public class AnalysisExportService
 
         var distribution = await ResolveDistributionAsync(job, loadDistribution, cancellationToken);
         if (distribution.Count > 0)
-            AddDistributionSheet(workbook, distribution, job.Schema);
+            AddDistributionSheet(workbook, distribution, job.Schema, _eventCodeLabels);
 
         var fileName = $"spike-analysis-{SanitizeFilePart(job.Database)}-{job.Id[..Math.Min(8, job.Id.Length)]}-{DateTime.UtcNow:yyyy-MM-dd_HHmm}.xlsx";
         var stream = new MemoryStream();
@@ -107,22 +113,18 @@ public class AnalysisExportService
                 channelId);
         }
 
-        var (connectionString, provider) = ResolveConnection();
-        var dialect = _dialectProvider.GetDialect(provider);
-
         if (job.Schema == "em_protocol")
         {
-            var spec = BuildEmTableSpec(dialect);
-            return await _pipeline.GetDistributionAsync(
-                spec,
+            return await _emDataSource.GetRecordsDistributionAsync(
+                job.Database,
                 job.StartDate,
                 job.EndDate,
                 channelId,
-                connectionString,
-                provider,
-                job.Database,
-                cancellationToken);
+                cancellationToken: cancellationToken);
         }
+
+        var (connectionString, provider) = ResolveConnection();
+        var dialect = _dialectProvider.GetDialect(provider);
 
         var genericSpec = new AnalysisTableSpec
         {
@@ -177,16 +179,21 @@ public class AnalysisExportService
     private static void AddDistributionSheet(
         XLWorkbook workbook,
         List<ChannelContributionDto> distribution,
-        string schema)
+        string schema,
+        EventCodeLabelService? eventCodeLabels = null)
     {
         var sheet = workbook.Worksheets.Add("Распределение");
+        var isEmProtocol = schema == "em_protocol";
         var idHeader = schema == "dbo" ? "ID объекта" : "ID канала";
         var nameHeader = schema == "dbo" ? "Объект" : "Канал";
 
         sheet.Cell(1, 1).Value = idHeader;
         sheet.Cell(1, 2).Value = nameHeader;
         sheet.Cell(1, 3).Value = "EventCode";
-        sheet.Cell(1, 4).Value = "Количество";
+        var countColumn = isEmProtocol ? 5 : 4;
+        if (isEmProtocol)
+            sheet.Cell(1, 4).Value = "Расшифровка EventCode";
+        sheet.Cell(1, countColumn).Value = "Количество";
         sheet.Row(1).Style.Font.Bold = true;
 
         var row = 2;
@@ -195,7 +202,9 @@ public class AnalysisExportService
             sheet.Cell(row, 1).Value = item.ChannelId;
             sheet.Cell(row, 2).Value = item.ChannelName;
             sheet.Cell(row, 3).Value = item.EventCode ?? "—";
-            sheet.Cell(row, 4).Value = item.Count;
+            if (isEmProtocol)
+                sheet.Cell(row, 4).Value = eventCodeLabels?.ResolveLabel(item.EventCode) ?? item.EventCode ?? "—";
+            sheet.Cell(row, countColumn).Value = item.Count;
             row++;
         }
 
@@ -217,7 +226,15 @@ public class AnalysisExportService
     private static string FormatBreakdown(IEnumerable<ChannelContributionDto> breakdown)
     {
         var parts = breakdown
-            .Select(cb => $"{(string.IsNullOrWhiteSpace(cb.ChannelName) ? cb.ChannelId.ToString() : cb.ChannelName)}: {cb.Count}")
+            .Select(cb =>
+            {
+                var name = cb.ChannelName;
+                if (string.IsNullOrWhiteSpace(name) || name.Trim() == cb.ChannelId.ToString())
+                    name = cb.ChannelId.ToString();
+                if (!string.IsNullOrWhiteSpace(cb.EventCode))
+                    return $"{name}: {cb.Count}";
+                return $"{name}: {cb.Count}";
+            })
             .ToList();
         return parts.Count == 0 ? "—" : string.Join("; ", parts);
     }
@@ -233,24 +250,6 @@ public class AnalysisExportService
             throw new UnauthorizedAccessException("Invalid or missing session token");
         return (info.ConnectionString, info.Provider);
     }
-
-    private static AnalysisTableSpec BuildEmTableSpec(IDatabaseDialect dialect) => new()
-    {
-        Schema = "em_protocol",
-        Table = "Records",
-        TimeColumn = "InsertTime",
-        ChannelColumn = "ChannelId",
-        FromClause = dialect.QualifyFromTable("em_protocol", "Records", "r"),
-        TableAlias = "r",
-        ChannelLookup = new ChannelLookupSpec
-        {
-            Schema = "em_protocol",
-            Table = "Channels",
-            IdColumn = "Id",
-            NameColumn = "Id",
-            EventCodeColumn = "EventCode",
-        },
-    };
 
     private static string SanitizeFilePart(string value)
     {

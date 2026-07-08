@@ -2,6 +2,7 @@ using System.Diagnostics;
 using API.Configuration;
 using API.DataSources;
 using API.DTOs;
+using API.Infrastructure;
 using API.Sql;
 using Core.Enums;
 using Core.Interfaces;
@@ -56,6 +57,7 @@ public class AnalysisPipelineService
         var seriesDict = new Dictionary<DateTime, DataPoint>();
         var distributionDict = new Dictionary<int, int>();
         var distributionNames = new Dictionary<int, string>();
+        var distributionEventCodes = new Dictionary<int, string>();
 
         var seriesSql = BuildSeriesSql(dialect, fromClause, timeExpr, timeCol, spec, channelId);
         var usePerBatchDistribution = spec.ChannelColumn != null
@@ -93,7 +95,7 @@ public class AnalysisPipelineService
                 var batchDist = await context.Database
                     .SqlQueryRaw<AggregatedResult>(distributionSql, parameters.ToArray())
                     .ToListAsync();
-                MergeDistributionBatch(distributionDict, distributionNames, batchDist);
+                MergeDistributionBatch(distributionDict, distributionNames, distributionEventCodes, batchDist);
             }
 
             daysProcessed += (currentEnd - currentStart).TotalDays;
@@ -129,7 +131,7 @@ public class AnalysisPipelineService
         {
             cancellationToken.ThrowIfCancellationRequested();
             distribution = await LoadDistributionAsync(
-                context, dialect, fromClause, timeCol, spec, startDate, endDate);
+                context, dialect, fromClause, timeCol, spec, startDate, endDate, channelId);
         }
         else
         {
@@ -140,6 +142,7 @@ public class AnalysisPipelineService
                     ChannelId = kv.Key,
                     Count = kv.Value,
                     ChannelName = distributionNames.GetValueOrDefault(kv.Key, string.Empty),
+                    EventCode = distributionEventCodes.GetValueOrDefault(kv.Key),
                 })
                 .ToList();
         }
@@ -170,7 +173,7 @@ public class AnalysisPipelineService
         string database,
         CancellationToken cancellationToken = default)
     {
-        if (spec.ChannelColumn == null || channelId.HasValue)
+        if (spec.ChannelColumn == null)
             return new List<ChannelContributionDto>();
 
         var dialect = _dialectProvider.GetDialect(provider);
@@ -179,7 +182,7 @@ public class AnalysisPipelineService
         var timeCol = dialect.QualifyColumn(spec.TableAlias, spec.TimeColumn);
 
         return await LoadDistributionAsync(
-            context, dialect, fromClause, timeCol, spec, startDate, endDate);
+            context, dialect, fromClause, timeCol, spec, startDate, endDate, channelId);
     }
 
     public async Task<List<ChannelContributionDto>> GetPointChannelBreakdownAsync(
@@ -201,7 +204,7 @@ public class AnalysisPipelineService
         var fromClause = spec.FromClause ?? dialect.QualifyFromTable(spec.Schema, spec.Table, spec.TableAlias);
         var timeCol = dialect.QualifyColumn(spec.TableAlias, spec.TimeColumn);
         var channelCol = dialect.QualifyColumn(spec.TableAlias, spec.ChannelColumn);
-        var endDate = GetBucketEnd(timestamp, granularity, customMinutes);
+        var endDate = GranularityHelper.GetBucketEnd(timestamp, granularity, customMinutes);
 
         var channelFilter = channelId.HasValue ? $" AND {channelCol} = @p2" : "";
         var lookup = BuildChannelLookupJoin(dialect, spec, channelCol);
@@ -243,11 +246,13 @@ public class AnalysisPipelineService
         string timeCol,
         AnalysisTableSpec spec,
         DateTime startDate,
-        DateTime endDate)
+        DateTime endDate,
+        int? channelId = null)
     {
-        var sql = BuildDistributionSql(dialect, fromClause, timeCol, spec);
+        var sql = BuildDistributionSql(dialect, fromClause, timeCol, spec, channelId);
+        var parameters = BuildBatchParameters(startDate, endDate, channelId);
         var rows = await context.Database
-            .SqlQueryRaw<AggregatedResult>(sql, startDate, endDate)
+            .SqlQueryRaw<AggregatedResult>(sql, parameters.ToArray())
             .ToListAsync();
 
         return rows
@@ -258,6 +263,7 @@ public class AnalysisPipelineService
                 ChannelId = r.ChannelId!.Value,
                 Count = r.Value,
                 ChannelName = r.ChannelName ?? string.Empty,
+                EventCode = r.EventCode,
             })
             .ToList();
     }
@@ -289,9 +295,11 @@ public class AnalysisPipelineService
         IDatabaseDialect dialect,
         string fromClause,
         string timeCol,
-        AnalysisTableSpec spec)
+        AnalysisTableSpec spec,
+        int? channelId = null)
     {
         var channelCol = dialect.QualifyColumn(spec.TableAlias, spec.ChannelColumn!);
+        var channelFilter = channelId.HasValue ? $" AND {channelCol} = @p2" : "";
         var lookup = BuildChannelLookupJoin(dialect, spec, channelCol);
         var nameSelect = lookup != null
             ? $", {lookup.NameExpression} AS ChannelName"
@@ -305,7 +313,7 @@ public class AnalysisPipelineService
         return $@"
             SELECT {dialect.NullTimestampExpression} AS Timestamp, {dialect.CountAggregateExpression} AS Value, {channelCol} AS ChannelId{nameSelect}{eventCodeSelect}
             FROM {fromClause}{lookup?.JoinClause ?? string.Empty}
-            WHERE {timeCol} >= @p0 AND {timeCol} < @p1
+            WHERE {timeCol} >= @p0 AND {timeCol} < @p1{channelFilter}
             GROUP BY {channelCol}{nameGroupBy}{eventCodeGroupBy}";
     }
 
@@ -369,6 +377,7 @@ public class AnalysisPipelineService
     private static void MergeDistributionBatch(
         Dictionary<int, int> dict,
         Dictionary<int, string> names,
+        Dictionary<int, string> eventCodes,
         List<AggregatedResult> batch)
     {
         foreach (var row in batch)
@@ -381,18 +390,9 @@ public class AnalysisPipelineService
 
             if (!string.IsNullOrWhiteSpace(row.ChannelName))
                 names[row.ChannelId.Value] = row.ChannelName;
+
+            if (!string.IsNullOrWhiteSpace(row.EventCode))
+                eventCodes[row.ChannelId.Value] = row.EventCode;
         }
     }
-
-    private static DateTime GetBucketEnd(DateTime timestamp, TimeGranularity granularity, int? customMinutes) =>
-        granularity switch
-        {
-            TimeGranularity.Minute => timestamp.AddMinutes(1),
-            TimeGranularity.Hour => timestamp.AddHours(1),
-            TimeGranularity.Day => timestamp.AddDays(1),
-            TimeGranularity.Week => timestamp.AddDays(7),
-            TimeGranularity.Month => timestamp.AddMonths(1),
-            TimeGranularity.Custom => timestamp.AddMinutes(customMinutes ?? 60),
-            _ => timestamp.AddHours(1)
-        };
 }
