@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Button, Popconfirm, Table, Tag } from 'antd';
+import { parseUtcTimestamp } from '../../utils/dateTimeUtils';
 import { analysisJobsApi, type AnalysisJobQueueItem } from '../../api/analysisJobsApi';
 
 interface AnalysisJobQueueProps {
@@ -32,13 +33,13 @@ function formatElapsedDuration(totalSeconds: number): string {
   const m = Math.floor((seconds % 3600) / 60);
   const s = seconds % 60;
 
-  if (h > 0) return `${h}ч ${m.toString().padStart(2, '0')}м`;
+  if (h > 0) return `${h}ч ${m.toString().padStart(2, '0')}м ${s.toString().padStart(2, '0')}с`;
   if (m > 0) return `${m}м ${s.toString().padStart(2, '0')}с`;
   return `${s}с`;
 }
 
 function getElapsedSeconds(startIso: string, nowMs: number): number {
-  const startMs = new Date(startIso).getTime();
+  const startMs = parseUtcTimestamp(startIso);
   if (Number.isNaN(startMs)) return 0;
   return Math.floor((nowMs - startMs) / 1000);
 }
