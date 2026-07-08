@@ -35,9 +35,24 @@ public class AnalysisResultService
         return HasLegacyInlineResult(job);
     }
 
+    public string? ResolveResultFilePath(AnalysisJob job)
+    {
+        if (!string.IsNullOrEmpty(job.ResultFilePath))
+        {
+            var configuredPath = Path.Combine(_resultsRoot, job.ResultFilePath);
+            if (File.Exists(configuredPath))
+                return job.ResultFilePath;
+        }
+
+        var fallbackName = $"{job.Id}.jsonl";
+        if (File.Exists(Path.Combine(_resultsRoot, fallbackName)))
+            return fallbackName;
+
+        return null;
+    }
+
     private bool HasResultFile(AnalysisJob job) =>
-        !string.IsNullOrEmpty(job.ResultFilePath)
-        && File.Exists(Path.Combine(_resultsRoot, job.ResultFilePath));
+        ResolveResultFilePath(job) != null;
 
     private static bool HasLegacyInlineResult(AnalysisJob job)
     {
@@ -93,9 +108,10 @@ public class AnalysisResultService
 
     public async Task<SpikeResponse> LoadAsync(AnalysisJob job, CancellationToken cancellationToken = default)
     {
-        if (HasResultFile(job))
+        var resultFilePath = ResolveResultFilePath(job);
+        if (resultFilePath != null)
         {
-            var series = await LoadSeriesFromFileAsync(job.ResultFilePath!, cancellationToken);
+            var series = await LoadSeriesFromFileAsync(resultFilePath, cancellationToken);
             var metadata = DeserializeMetadata(job.ResultJson);
             return new SpikeResponse
             {
@@ -192,10 +208,11 @@ public class AnalysisResultService
         AnalysisJob job,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        if (!HasResultFile(job))
+        var resultFilePath = ResolveResultFilePath(job);
+        if (resultFilePath == null)
             throw new InvalidOperationException("Analysis result file is not available.");
 
-        await foreach (var point in ReadSeriesLinesAsync(job.ResultFilePath!, cancellationToken))
+        await foreach (var point in ReadSeriesLinesAsync(resultFilePath, cancellationToken))
             yield return point;
     }
 

@@ -77,6 +77,10 @@ export const analysisJobsApi = {
         responseType: 'blob',
       });
 
+      if (!(response.data instanceof Blob) || response.data.size === 0) {
+        throw new Error('Сервер вернул пустой файл Excel');
+      }
+
       const fallbackName = `spike-analysis-${jobId}.xlsx`;
       const fileName = resolveDownloadFileName(
         response.headers['content-disposition'],
@@ -85,19 +89,31 @@ export const analysisJobsApi = {
       downloadBlob(response.data, fileName);
     } catch (error: unknown) {
       if (error && typeof error === 'object' && 'response' in error) {
-        const axiosError = error as { response?: { data?: Blob } };
+        const axiosError = error as { response?: { status?: number; data?: Blob } };
+        const status = axiosError.response?.status;
         const blob = axiosError.response?.data;
         if (blob instanceof Blob) {
           const text = await blob.text();
+          const trimmed = text.trim();
+          if (trimmed.length === 0) {
+            if (status === 404) {
+              throw new Error('Экспорт недоступен на сервере — перезапустите API');
+            }
+            if (status === 401) {
+              throw new Error('Сессия истекла — войдите заново');
+            }
+            throw new Error(`Не удалось скачать Excel (HTTP ${status ?? '?'})`);
+          }
+
           try {
-            const payload = JSON.parse(text) as { message?: string };
-            if (payload.message) {
+            const payload = JSON.parse(trimmed) as { message?: string };
+            if (payload?.message) {
               throw new Error(payload.message);
             }
-          } catch (parseError) {
-            if (parseError instanceof Error && parseError.message !== text) {
-              throw parseError;
-            }
+          } catch {
+            // Сервер мог вернуть не JSON (например HTML/пусто). Не валимся на JSON.parse.
+            const preview = trimmed.length > 250 ? `${trimmed.slice(0, 250)}…` : trimmed;
+            throw new Error(preview || 'Не удалось скачать Excel');
           }
         }
       }

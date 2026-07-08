@@ -89,11 +89,11 @@ public class AnalysisJobsController : ControllerBase
         CancellationToken cancellationToken = default)
     {
         if (!HasValidSession())
-            return Unauthorized();
+            return Unauthorized(new { message = "Invalid or missing session token" });
 
         var job = await _internalDb.AnalysisJobs.FindAsync([id], cancellationToken);
         if (job == null)
-            return NotFound();
+            return NotFound(new { message = "Задача не найдена." });
 
         if (!_resultService.CanExport(job))
             return BadRequest(new { message = "Результат анализа недоступен для экспорта." });
@@ -101,10 +101,17 @@ public class AnalysisJobsController : ControllerBase
         try
         {
             var (stream, fileName) = await _exportService.BuildExcelAsync(job, loadDistribution, cancellationToken);
-            return File(
-                stream,
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                fileName);
+            await using (stream)
+            {
+                var bytes = stream.ToArray();
+                if (bytes.Length == 0)
+                    return StatusCode(500, new { message = "Не удалось сформировать Excel: пустой файл." });
+
+                return File(
+                    bytes,
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    fileName);
+            }
         }
         catch (UnauthorizedAccessException ex)
         {
@@ -113,6 +120,10 @@ public class AnalysisJobsController : ControllerBase
         catch (InvalidOperationException ex)
         {
             return BadRequest(new { message = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { message = "Не удалось сформировать Excel.", details = ex.Message });
         }
     }
 
