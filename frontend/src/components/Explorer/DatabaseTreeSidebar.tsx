@@ -34,24 +34,26 @@ export const DatabaseTreeSidebar: React.FC<DatabaseTreeSidebarProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
-    loadInitialData();
+    let mounted = true;
+    const load = async () => {
+      setLoading(true);
+      try {
+        const dbs = await explorerApi.getDatabases();
+        if (!mounted) return;
+        setAllTreeData(dbs.map((db: string) => ({
+          title: db,
+          key: `db|${db}`,
+          icon: <DatabaseOutlined />,
+        })));
+      } catch {
+        if (mounted) message.error('Ошибка загрузки БД');
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+    void load();
+    return () => { mounted = false; };
   }, []);
-
-  const loadInitialData = async () => {
-    setLoading(true);
-    try {
-      const dbs = await explorerApi.getDatabases();
-      setAllTreeData(dbs.map((db: string) => ({
-        title: db,
-        key: `db|${db}`,
-        icon: <DatabaseOutlined />,
-      })));
-    } catch (e) {
-      message.error('Ошибка загрузки БД');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const onLoadData = async (node: any) => {
     const { key, children } = node;

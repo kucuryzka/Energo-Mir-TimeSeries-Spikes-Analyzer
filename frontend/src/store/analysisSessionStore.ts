@@ -49,8 +49,12 @@ export function subscribeAnalysisSession(key: string, listener: (snapshot: Analy
 }
 
 export function cancelAnalysisSessionJob(key: string) {
-  pollGeneration.set(key, (pollGeneration.get(key) ?? 0) + 1);
+  stopAnalysisSessionPolling(key);
   patchSession(key, { loading: false, progress: 0, error: null });
+}
+
+export function stopAnalysisSessionPolling(key: string) {
+  pollGeneration.set(key, (pollGeneration.get(key) ?? 0) + 1);
 }
 
 export function runAnalysisSessionJob(
@@ -71,6 +75,7 @@ export function runAnalysisSessionJob(
 
   return pollAnalysisJob(jobId, api, {
     ...options,
+    isCancelled: () => pollGeneration.get(key) !== generation,
     onProgress: (progress) => {
       if (pollGeneration.get(key) !== generation) return;
       patchSession(key, { progress });
@@ -103,9 +108,15 @@ export function runAnalysisSessionJob(
 }
 
 export function clearAnalysisSession(key: string) {
-  pollGeneration.set(key, (pollGeneration.get(key) ?? 0) + 1);
+  stopAnalysisSessionPolling(key);
   sessions.set(key, { ...EMPTY_SESSION });
   notify(key);
+}
+
+export function clearAllAnalysisSessions() {
+  for (const key of sessions.keys()) {
+    clearAnalysisSession(key);
+  }
 }
 
 export function updateAnalysisSession(key: string, patch: Partial<AnalysisSessionSnapshot>) {
@@ -130,6 +141,12 @@ export function useAnalysisResultData(
   const [isPartialResult, setIsPartialResult] = useState(false);
   const visibleRef = useRef(visible);
   visibleRef.current = visible;
+
+  useEffect(() => {
+    setData(null);
+    setIsPartialResult(false);
+    return () => stopAnalysisSessionPolling(sessionKey);
+  }, [sessionKey]);
 
   useEffect(() => {
     if (!visible) {

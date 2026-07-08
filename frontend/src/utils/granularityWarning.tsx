@@ -112,6 +112,3 @@ export async function confirmHeavyAnalysis(
     });
   });
 }
-
-/** @deprecated используйте confirmHeavyAnalysis */
-export const confirmMinuteGranularityAnalysis = confirmHeavyAnalysis;

@@ -54,6 +54,10 @@ export const SpikeChart: React.FC<Props> = ({
     };
   }, [sortedData, onPointClick]);
 
+  useEffect(() => () => {
+    chartRef.current?.getEchartsInstance()?.dispose();
+  }, []);
+
   const isLargeDataset = sortedData.length > 5000;
 
   const option = useMemo(() => {

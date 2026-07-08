@@ -247,33 +247,23 @@ export const TelemetryScreen: React.FC<TelemetryScreenProps> = ({ onLogout, uiTh
                 style={{ display: mainView === 'queue' ? 'none' : 'contents' }}
                 aria-hidden={mainView === 'queue'}
               >
-                {selectedDb && (
-                  <>
-                    <div
-                      className="content-view"
-                      style={{ display: genericConfig || activeTab !== 'dbo' ? 'none' : 'contents' }}
-                    >
-                      <TelemetryContent
-                        database={selectedDb}
-                        activeTab="dbo"
-                        visible={mainView !== 'queue' && !genericConfig && activeTab === 'dbo'}
-                        pendingJobOpen={pendingJobOpen}
-                        onPendingJobConsumed={handlePendingJobConsumed}
-                      />
-                    </div>
-                    <div
-                      className="content-view"
-                      style={{ display: genericConfig || activeTab !== 'em' ? 'none' : 'contents' }}
-                    >
-                      <TelemetryContent
-                        database={selectedDb}
-                        activeTab="em"
-                        visible={mainView !== 'queue' && !genericConfig && activeTab === 'em'}
-                        pendingJobOpen={pendingJobOpen}
-                        onPendingJobConsumed={handlePendingJobConsumed}
-                      />
-                    </div>
-                  </>
+                {selectedDb && !genericConfig && activeTab === 'dbo' && (
+                  <TelemetryContent
+                    database={selectedDb}
+                    activeTab="dbo"
+                    visible={mainView !== 'queue'}
+                    pendingJobOpen={pendingJobOpen}
+                    onPendingJobConsumed={handlePendingJobConsumed}
+                  />
+                )}
+                {selectedDb && !genericConfig && activeTab === 'em' && (
+                  <TelemetryContent
+                    database={selectedDb}
+                    activeTab="em"
+                    visible={mainView !== 'queue'}
+                    pendingJobOpen={pendingJobOpen}
+                    onPendingJobConsumed={handlePendingJobConsumed}
+                  />
                 )}
                 {genericConfig && (
                   <GenericAnalyzer

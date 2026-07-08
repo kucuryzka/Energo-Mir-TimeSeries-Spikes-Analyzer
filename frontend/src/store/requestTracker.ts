@@ -15,6 +15,7 @@ type Listener = () => void;
 class RequestTracker {
   private requests: Map<string, RequestRecord> = new Map();
   private listeners: Set<Listener> = new Set();
+  private static readonly MAX_REQUESTS = 200;
 
   subscribe(listener: Listener) {
     this.listeners.add(listener);
@@ -41,7 +42,17 @@ class RequestTracker {
       startTime: Date.now(),
       status: 'pending'
     });
+    this.pruneOldRequests();
     this.notify();
+  }
+
+  private pruneOldRequests() {
+    if (this.requests.size <= RequestTracker.MAX_REQUESTS) return;
+    const sorted = Array.from(this.requests.values()).sort((a, b) => a.startTime - b.startTime);
+    const removeCount = this.requests.size - RequestTracker.MAX_REQUESTS;
+    for (let i = 0; i < removeCount; i += 1) {
+      this.requests.delete(sorted[i].id);
+    }
   }
 
   endRequest(id: string, status: 'success' | 'error', errorMessage?: string) {

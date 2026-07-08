@@ -75,6 +75,7 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
 
   const visibleRef = useRef(visible);
   visibleRef.current = visible;
+  const shouldPollAnalysis = () => visibleRef.current && !document.hidden;
 
   const sessionKey = useMemo(() => `telemetry:${activeTab}:${database}`, [activeTab, database]);
   const jobApi = useMemo(() => (
@@ -194,6 +195,7 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
 
   useEffect(() => {
     if (!visible || !database) return;
+    let mounted = true;
     if (
       pendingJobOpen
       && pendingJobOpen.database === database
@@ -208,13 +210,28 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
 
     if (activeTab === 'em') {
       analyticsApi.getSources().then(list => {
+        if (!mounted) return;
         setSources(list);
         sourcesRef.current = list;
         if (list.length > 0) emSourceIdRef.current = list[0].id;
       }).catch(() => {});
     }
+    return () => { mounted = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [database, visible]);
+  }, [database, visible, activeTab]);
+
+  useEffect(() => {
+    if (visible) return;
+    setChannels([]);
+    setDistributions({});
+    setDboObjectDistribution(null);
+    setHistoryList([]);
+    setSelectedPoint(null);
+    setPointDetails([]);
+    setPointChannels([]);
+    setTablePreview(null);
+    setPreviewOpen(false);
+  }, [visible]);
 
   useEffect(() => {
     if (!visible) return;
@@ -294,7 +311,8 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
             message.loading({ content: `Анализ выполняется... (${progress}%)`, key: 'jobProgress' });
           },
           onPartialResult: applyPartialResult,
-          shouldFetchPartial: () => visibleRef.current,
+          shouldFetchPartial: shouldPollAnalysis,
+          shouldPoll: shouldPollAnalysis,
         },
       );
 
@@ -326,6 +344,7 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
       return;
     }
     setLoadingDetails(true);
+    let cancelled = false;
     const tasks: Promise<any>[] = activeTab === 'dbo'
       ? [
           analyticsApi.dbo.getPointDetails(database, selectedPoint.timestamp, granularity, granularity === 'Custom' ? customMinutes ?? undefined : undefined, channelId ?? undefined),
@@ -337,6 +356,7 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
         ];
 
     Promise.all(tasks).then(([details, breakdown]) => {
+      if (cancelled) return;
       setPointDetails(details);
       const meta = new Map(channels.map(c => [c.id, c]));
       const fallbackLabel = activeTab === 'dbo' ? 'Объект' : 'Канал';
@@ -350,8 +370,11 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
         };
       }));
     }).catch(err => {
-      console.error(err);
-    }).finally(() => setLoadingDetails(false));
+      if (!cancelled) console.error(err);
+    }).finally(() => {
+      if (!cancelled) setLoadingDetails(false);
+    });
+    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedPoint, granularity, channelId, database, activeTab, channels]);
 
@@ -451,7 +474,8 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
         updateAnalysisSession(sessionKey, { progress });
       },
       onPartialResult: applyPartialResult,
-      shouldFetchPartial: () => visibleRef.current,
+      shouldFetchPartial: shouldPollAnalysis,
+      shouldPoll: shouldPollAnalysis,
     });
 
     if (!waitForCompletion) {

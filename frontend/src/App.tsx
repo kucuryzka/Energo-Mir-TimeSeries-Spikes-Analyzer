@@ -5,6 +5,8 @@ import { ConnectionSetup } from './components/ConnectionSetup/ConnectionSetup';
 import { TelemetryScreen } from './components/TelemetryRedesign/TelemetryScreen';
 import { ShellRailProvider } from './context/ShellRailContext';
 import { QueryTrackerProvider } from './components/QueryTracker/QueryTracker';
+import { clearAllAnalysisSessions } from './store/analysisSessionStore';
+import { requestTracker } from './store/requestTracker';
 
 type AppTheme = 'light' | 'dark';
 
@@ -25,6 +27,8 @@ function App() {
   }, [uiTheme]);
 
   const handleLogout = () => {
+    clearAllAnalysisSessions();
+    requestTracker.clear();
     setToken(null);
   };
 

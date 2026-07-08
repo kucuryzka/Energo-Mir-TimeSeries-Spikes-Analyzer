@@ -55,6 +55,7 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({
 }) => {
   const visibleRef = useRef(visible);
   visibleRef.current = visible;
+  const shouldPollAnalysis = () => visibleRef.current && !document.hidden;
 
   const sessionKey = useMemo(
     () => `generic:${db}:${schema}:${table}:${timeColumn}`,
@@ -188,7 +189,8 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({
             message.loading({ content: `Анализ выполняется... (${progress}%)`, key: 'jobProgress' });
           },
           onPartialResult: applyPartialResult,
-          shouldFetchPartial: () => visibleRef.current,
+          shouldFetchPartial: shouldPollAnalysis,
+          shouldPoll: shouldPollAnalysis,
         },
       );
 
@@ -246,7 +248,7 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({
     }
   }, [db, schema, table]);
 
-  useRegisterShellRailActions({ onOpenHistory: openHistory });
+  useRegisterShellRailActions({ onOpenHistory: openHistory }, visible);
 
   const pendingJobForTable = pendingJobOpen
     && pendingJobOpen.sourceKind === 'generic'
@@ -317,7 +319,8 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({
       initialProgress: job.progress,
       onProgress: (progress) => updateAnalysisSession(sessionKey, { progress }),
       onPartialResult: applyPartialResult,
-      shouldFetchPartial: () => visibleRef.current,
+      shouldFetchPartial: shouldPollAnalysis,
+      shouldPoll: shouldPollAnalysis,
     });
 
     if (!waitForCompletion) {
@@ -338,6 +341,10 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({
   }, [sessionKey, setData, applyLoadedResult, applyPartialResult, applyFinalResult, jobApi, syncJobFormFromJob]);
 
   useEffect(() => {
+    if (!visible) {
+      setDurationEstimate(null);
+      return;
+    }
     const timer = window.setTimeout(() => {
       analysisJobsApi.getEstimate({
         database: db,
@@ -358,7 +365,7 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({
       }).catch(() => setDurationEstimate(null));
     }, 400);
     return () => window.clearTimeout(timer);
-  }, [db, schema, table, granularity, dateRange]);
+  }, [visible, db, schema, table, granularity, dateRange]);
 
   useEffect(() => {
     if (!visible || !pendingJobForTable) return;

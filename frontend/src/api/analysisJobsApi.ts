@@ -54,13 +54,6 @@ export const analysisJobsApi = {
     return response.data;
   },
 
-  getQueue: async (database?: string): Promise<AnalysisJobQueueItem[]> => {
-    const response = await apiClient.get<AnalysisJobQueueItem[]>('/analysis-jobs/queue', {
-      params: database ? { database } : undefined,
-    });
-    return response.data;
-  },
-
   cancel: async (jobId: string): Promise<void> => {
     await apiClient.post(`/analysis-jobs/${jobId}/cancel`);
   },

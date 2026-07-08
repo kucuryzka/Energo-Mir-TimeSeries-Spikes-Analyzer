@@ -1,7 +1,5 @@
 import { apiClient } from './index';
 import { apiCache } from '../store/apiCache';
-import { pollAnalysisJob } from '../utils/jobPolling';
-import type { SpikeResponse } from '../types/analytics.types';
 
 export const authApi = {
   connect: async (data: any) => {
@@ -30,13 +28,6 @@ export const explorerApi = {
 };
 
 export const genericAnalysisApi = {
-  analyze: async (data: any) => {
-    const cached = apiCache.get('/GenericAnalysis/analyze', undefined, data);
-    if (cached) return cached;
-    const res = await apiClient.post('/GenericAnalysis/analyze', data);
-    apiCache.set('/GenericAnalysis/analyze', undefined, data, res.data);
-    return res.data;
-  },
   getPointDetails: async (database: string, schema: string, table: string, timeColumn: string, timestamp: string, granularity: string, customMinutes?: number | null) => {
     const params = { database, schema, table, timeColumn, timestamp, granularity, customMinutes };
     const cached = apiCache.get('/GenericAnalysis/point-details', params, undefined);
@@ -59,22 +50,6 @@ export const genericAnalysisApi = {
   enqueueAnalysis: async (data: any) => {
     const res = await apiClient.post('/GenericAnalysis/enqueue', data);
     return res.data;
-  },
-  runAnalysis: async (
-    data: any,
-    onProgress?: (progress: number) => void,
-    onPartialResult?: (result: SpikeResponse) => void,
-  ): Promise<SpikeResponse> => {
-    const { jobId } = await genericAnalysisApi.enqueueAnalysis(data);
-    return pollAnalysisJob(
-      jobId,
-      {
-        getJobStatus: genericAnalysisApi.getJobStatus,
-        getJobResult: genericAnalysisApi.getJobResult,
-        getJobPartialResult: genericAnalysisApi.getJobPartialResult,
-      },
-      { onProgress, onPartialResult },
-    );
   },
   getJobStatus: async (id: string) => {
     const res = await apiClient.get(`/GenericAnalysis/status/${id}`);

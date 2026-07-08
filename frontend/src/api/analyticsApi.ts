@@ -1,16 +1,6 @@
 import { apiClient } from './index';
 import type { DetectSpikesRequest, SpikeResponse, ChannelDto, DataSourceDto, DistributionItemDto, ChannelContributionDto } from '../types/analytics.types';
 import { apiCache } from '../store/apiCache';
-import { pollAnalysisJob, type AnalysisJobApi } from '../utils/jobPolling';
-
-async function pollJobResult(
-  api: AnalysisJobApi,
-  jobId: string,
-  onProgress?: (progress: number) => void,
-  onPartialResult?: (result: SpikeResponse) => void,
-): Promise<SpikeResponse> {
-  return pollAnalysisJob(jobId, api, { onProgress, onPartialResult });
-}
 
 export const analyticsApi = {
   getSources: async (): Promise<DataSourceDto[]> => {
@@ -36,23 +26,6 @@ export const analyticsApi = {
         headers: { 'Content-Type': 'application/json' }
       });
       return response.data;
-    },
-    runAnalysis: async (
-      request: DetectSpikesRequest,
-      onProgress?: (progress: number) => void,
-      onPartialResult?: (result: SpikeResponse) => void,
-    ): Promise<SpikeResponse> => {
-      const { jobId } = await analyticsApi.emProtocol.enqueueAnalysis(request);
-      return pollJobResult(
-        {
-          getJobStatus: analyticsApi.emProtocol.getJobStatus,
-          getJobResult: analyticsApi.emProtocol.getJobResult,
-          getJobPartialResult: analyticsApi.emProtocol.getJobPartialResult,
-        },
-        jobId,
-        onProgress,
-        onPartialResult,
-      );
     },
     getJobStatus: async (jobId: string): Promise<any> => {
       const response = await apiClient.get<any>(`/em-protocol/status/${jobId}`);
@@ -96,23 +69,6 @@ export const analyticsApi = {
         headers: { 'Content-Type': 'application/json' }
       });
       return response.data;
-    },
-    runAnalysis: async (
-      request: DetectSpikesRequest,
-      onProgress?: (progress: number) => void,
-      onPartialResult?: (result: SpikeResponse) => void,
-    ): Promise<SpikeResponse> => {
-      const { jobId } = await analyticsApi.dbo.enqueueAnalysis(request);
-      return pollJobResult(
-        {
-          getJobStatus: analyticsApi.dbo.getJobStatus,
-          getJobResult: analyticsApi.dbo.getJobResult,
-          getJobPartialResult: analyticsApi.dbo.getJobPartialResult,
-        },
-        jobId,
-        onProgress,
-        onPartialResult,
-      );
     },
     getJobStatus: async (jobId: string): Promise<any> => {
       const response = await apiClient.get<any>(`/dbo/status/${jobId}`);

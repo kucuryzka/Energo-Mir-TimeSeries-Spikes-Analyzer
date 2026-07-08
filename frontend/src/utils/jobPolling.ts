@@ -31,6 +31,8 @@ export interface PollAnalysisJobOptions {
   attach?: boolean;
   initialProgress?: number;
   shouldFetchPartial?: () => boolean;
+  shouldPoll?: () => boolean;
+  isCancelled?: () => boolean;
 }
 
 export async function pollAnalysisJob(
@@ -44,9 +46,23 @@ export async function pollAnalysisJob(
   let lastPartialFetchAt = 0;
   let lastReportedProgress = -1;
 
+  const throwIfCancelled = () => {
+    if (options.isCancelled?.()) {
+      throw new AnalysisJobCancelledError();
+    }
+  };
+
   while (true) {
+    throwIfCancelled();
     await sleep(interval);
+    throwIfCancelled();
+
+    if (options.shouldPoll && !options.shouldPoll()) {
+      continue;
+    }
+
     const status = await api.getJobStatus(jobId);
+    throwIfCancelled();
     const progress = status.progress ?? 0;
 
     if (
