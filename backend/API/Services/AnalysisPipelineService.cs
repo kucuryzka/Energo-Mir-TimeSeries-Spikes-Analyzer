@@ -55,7 +55,10 @@ public class AnalysisPipelineService
         var distributionNames = new Dictionary<int, string>();
 
         var seriesSql = BuildSeriesSql(dialect, fromClause, timeExpr, timeCol, spec, channelId);
-        var distributionSql = spec.ChannelColumn != null && !channelId.HasValue
+        var usePerBatchDistribution = spec.ChannelColumn != null
+            && !channelId.HasValue
+            && !spec.DeferDistribution;
+        var distributionSql = usePerBatchDistribution
             ? BuildDistributionSql(dialect, fromClause, timeCol, spec)
             : null;
 
@@ -99,6 +102,26 @@ public class AnalysisPipelineService
         var groupedSeries = seriesDict.Values.OrderBy(p => p.Timestamp).ToList();
         var anomalyResults = spikeDetectionService.DetectSpikes(groupedSeries, confidence, windowSize);
 
+        List<ChannelContributionDto> distribution;
+        if (spec.ChannelColumn != null && !channelId.HasValue && spec.DeferDistribution)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            distribution = await LoadDistributionAsync(
+                context, dialect, fromClause, timeCol, spec, startDate, endDate);
+        }
+        else
+        {
+            distribution = distributionDict
+                .OrderByDescending(kv => kv.Value)
+                .Select(kv => new ChannelContributionDto
+                {
+                    ChannelId = kv.Key,
+                    Count = kv.Value,
+                    ChannelName = distributionNames.GetValueOrDefault(kv.Key, string.Empty),
+                })
+                .ToList();
+        }
+
         return new SpikeResponse
         {
             Series = anomalyResults.Select(r => new AnomalyResultDto
@@ -108,15 +131,7 @@ public class AnalysisPipelineService
                 IsSpike = r.IsSpike,
                 PValue = r.PValue
             }).ToList(),
-            Distribution = distributionDict
-                .OrderByDescending(kv => kv.Value)
-                .Select(kv => new ChannelContributionDto
-                {
-                    ChannelId = kv.Key,
-                    Count = kv.Value,
-                    ChannelName = distributionNames.GetValueOrDefault(kv.Key, string.Empty),
-                })
-                .ToList()
+            Distribution = distribution
         };
     }
 
@@ -170,6 +185,32 @@ public class AnalysisPipelineService
                 Count = r.Value,
                 ChannelName = r.ChannelName ?? string.Empty,
                 EventCode = r.EventCode,
+            })
+            .ToList();
+    }
+
+    private static async Task<List<ChannelContributionDto>> LoadDistributionAsync(
+        DbContext context,
+        IDatabaseDialect dialect,
+        string fromClause,
+        string timeCol,
+        AnalysisTableSpec spec,
+        DateTime startDate,
+        DateTime endDate)
+    {
+        var sql = BuildDistributionSql(dialect, fromClause, timeCol, spec);
+        var rows = await context.Database
+            .SqlQueryRaw<AggregatedResult>(sql, startDate, endDate)
+            .ToListAsync();
+
+        return rows
+            .Where(r => r.ChannelId.HasValue && r.ChannelId.Value != 0)
+            .OrderByDescending(r => r.Value)
+            .Select(r => new ChannelContributionDto
+            {
+                ChannelId = r.ChannelId!.Value,
+                Count = r.Value,
+                ChannelName = r.ChannelName ?? string.Empty,
             })
             .ToList();
     }

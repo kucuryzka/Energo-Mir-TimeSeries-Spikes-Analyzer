@@ -63,7 +63,8 @@ public class DboDataSource : IDataSourceStrategy, ISupportsPointChannels
             Table = "OBJECTS",
             IdColumn = "IDOBJECT",
             NameColumn = "OBJECT_NAME",
-        }
+        },
+        DeferDistribution = true,
     };
 
     public Task<SpikeResponse> ExecuteAnalysisAsync(
