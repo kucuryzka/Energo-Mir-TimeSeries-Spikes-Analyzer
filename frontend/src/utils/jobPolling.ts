@@ -2,6 +2,15 @@ import type { SpikeResponse } from '../types/analytics.types';
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+export class AnalysisJobCancelledError extends Error {
+  readonly cancelled = true;
+
+  constructor(message = 'Анализ отменён пользователем.') {
+    super(message);
+    this.name = 'AnalysisJobCancelledError';
+  }
+}
+
 export interface AnalysisJobApi {
   getJobStatus: (jobId: string) => Promise<{
     status: string;
@@ -57,6 +66,10 @@ export async function pollAnalysisJob(
 
     if (status.status === 'Failed') {
       throw new Error(status.errorMessage || 'Analysis job failed');
+    }
+
+    if (status.status === 'Cancelled') {
+      throw new AnalysisJobCancelledError(status.errorMessage);
     }
   }
 }

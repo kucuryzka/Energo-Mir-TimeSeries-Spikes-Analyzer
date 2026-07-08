@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { SpikeResponse } from '../types/analytics.types';
-import { pollAnalysisJob, type AnalysisJobApi, type PollAnalysisJobOptions } from '../utils/jobPolling';
+import { pollAnalysisJob, type AnalysisJobApi, type PollAnalysisJobOptions, AnalysisJobCancelledError } from '../utils/jobPolling';
 
 export interface AnalysisSessionSnapshot {
   loading: boolean;
@@ -48,6 +48,11 @@ export function subscribeAnalysisSession(key: string, listener: (snapshot: Analy
   };
 }
 
+export function cancelAnalysisSessionJob(key: string) {
+  pollGeneration.set(key, (pollGeneration.get(key) ?? 0) + 1);
+  patchSession(key, { loading: false, progress: 0, error: null });
+}
+
 export function runAnalysisSessionJob(
   key: string,
   jobId: string,
@@ -87,6 +92,10 @@ export function runAnalysisSessionJob(
     })
     .catch((err: unknown) => {
       if (pollGeneration.get(key) !== generation) throw err;
+      if (err instanceof AnalysisJobCancelledError) {
+        patchSession(key, { loading: false, error: null });
+        throw err;
+      }
       const message = err instanceof Error ? err.message : String(err);
       patchSession(key, { loading: false, error: message });
       throw err;
@@ -149,6 +158,20 @@ export function useAnalysisResultData(
             }
           } catch {
             // partial file may not exist yet
+          }
+          return;
+        }
+
+        if (status.status === 'Cancelled') {
+          if (!api.getJobPartialResult) return;
+          try {
+            const partial = await api.getJobPartialResult(session.jobId!);
+            if (!cancelled && partial?.series?.length) {
+              setData(partial);
+              setIsPartialResult(true);
+            }
+          } catch {
+            // no partial saved
           }
           return;
         }

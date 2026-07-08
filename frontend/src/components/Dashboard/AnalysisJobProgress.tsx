@@ -1,5 +1,5 @@
 import React from 'react';
-import { Alert, Progress, Spin } from 'antd';
+import { Alert, Button, Progress, Spin } from 'antd';
 import { LoadingOutlined } from '@ant-design/icons';
 
 interface AnalysisJobProgressProps {
@@ -7,6 +7,9 @@ interface AnalysisJobProgressProps {
   progress: number;
   isPartialResult?: boolean;
   showSpinner?: boolean;
+  jobId?: string | null;
+  onCancel?: () => void;
+  cancelling?: boolean;
 }
 
 export const AnalysisJobProgress: React.FC<AnalysisJobProgressProps> = ({
@@ -14,6 +17,9 @@ export const AnalysisJobProgress: React.FC<AnalysisJobProgressProps> = ({
   progress,
   isPartialResult = false,
   showSpinner = false,
+  jobId,
+  onCancel,
+  cancelling = false,
 }) => {
   if (!loading) return null;
 
@@ -21,7 +27,16 @@ export const AnalysisJobProgress: React.FC<AnalysisJobProgressProps> = ({
 
   return (
     <div style={{ marginBottom: 16 }}>
-      <Progress percent={progress} status="active" />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+        <div style={{ flex: 1 }}>
+          <Progress percent={progress} status="active" />
+        </div>
+        {jobId && onCancel && (
+          <Button danger size="small" onClick={onCancel} loading={cancelling}>
+            Остановить
+          </Button>
+        )}
+      </div>
       {(isPartialResult || progress > 0) && (
         <Alert
           type="info"

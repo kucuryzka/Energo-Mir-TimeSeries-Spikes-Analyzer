@@ -9,6 +9,7 @@ import { formatUtcDateTime } from '../../utils/dateTimeUtils';
 import { confirmHeavyAnalysis } from '../../utils/granularityWarning';
 import { useRegisterShellRailActions } from '../../context/ShellRailContext';
 import { AnalysisJobProgress } from '../Dashboard/AnalysisJobProgress';
+import { AnalysisJobQueue } from '../Dashboard/AnalysisJobQueue';
 import { DistributionChart } from '../Chart/DistributionChart';
 import { TelemetryControls } from './TelemetryControls';
 import type { ChannelDto, TimeGranularity, SpikePoint, ChannelContributionDto, DataSourceDto, DistributionItemDto } from '../../types/analytics.types';
@@ -18,7 +19,9 @@ import { AnomalyList } from './AnomalyList';
 import { KpiRow } from './KpiRow';
 import { loadEventCodeMap, resolveEventCodeLabel } from '../../utils/eventCodeMap';
 import { TablePreviewContent, type TablePreviewData } from '../GenericAnalyzer/TablePreviewCard';
-import { runAnalysisSessionJob, updateAnalysisSession, useAnalysisResultData } from '../../store/analysisSessionStore';
+import { runAnalysisSessionJob, updateAnalysisSession, useAnalysisResultData, cancelAnalysisSessionJob } from '../../store/analysisSessionStore';
+import { analysisJobsApi } from '../../api/analysisJobsApi';
+import { AnalysisJobCancelledError } from '../../utils/jobPolling';
 
 const { Text } = Typography;
 
@@ -79,6 +82,7 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({ database, ac
   const {
     loading,
     progress: analysisProgress,
+    jobId,
     data,
     isPartialResult,
     error,
@@ -86,6 +90,9 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({ database, ac
     applyFinalResult,
     setData,
   } = useAnalysisResultData(sessionKey, visible, jobApi);
+
+  const [cancellingJob, setCancellingJob] = useState(false);
+  const [queueRefreshKey, setQueueRefreshKey] = useState(0);
 
   const [, setSources] = useState<DataSourceDto[]>([]);
   const sourcesRef = useRef<DataSourceDto[]>([]);
@@ -154,6 +161,22 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({ database, ac
     }
     setPreviewOpen(v => !v);
   }, [previewOpen, tablePreview, loadingPreview, loadPreview]);
+
+  const handleCancelJob = useCallback(async () => {
+    if (!jobId) return;
+    setCancellingJob(true);
+    try {
+      await analysisJobsApi.cancel(jobId);
+      cancelAnalysisSessionJob(sessionKey);
+      message.info('Анализ останавливается…');
+      setQueueRefreshKey(k => k + 1);
+    } catch (e) {
+      console.error(e);
+      message.error('Не удалось отменить задачу');
+    } finally {
+      setCancellingJob(false);
+    }
+  }, [jobId, sessionKey]);
 
   useEffect(() => {
     if (!visible || !database) return;
@@ -230,11 +253,12 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({ database, ac
       message.loading({ content: 'Задача поставлена в очередь...', key: 'jobProgress' });
 
       const api = activeTab === 'dbo' ? analyticsApi.dbo : analyticsApi.emProtocol;
-      const { jobId } = await api.enqueueAnalysis(requestPayload);
+      const { jobId: enqueuedJobId } = await api.enqueueAnalysis(requestPayload);
+      setQueueRefreshKey(k => k + 1);
 
       const result = await runAnalysisSessionJob(
         sessionKey,
-        jobId,
+        enqueuedJobId,
         jobApi,
         {
           onProgress: (progress) => {
@@ -254,6 +278,11 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({ database, ac
         message.warning(`Обнаружено ${spikes.length} аномалий`);
       }
     } catch (err: any) {
+      if (err instanceof AnalysisJobCancelledError || err?.cancelled) {
+        message.info({ content: 'Анализ остановлен', key: 'jobProgress', duration: 2.5 });
+        setQueueRefreshKey(k => k + 1);
+        return;
+      }
       const errorText = err?.response?.data?.message || err?.message || String(err);
       updateAnalysisSession(sessionKey, { loading: false, error: `Ошибка при загрузке данных: ${errorText}` });
       message.error({ content: 'Сбой при запуске задачи', key: 'jobProgress', duration: 4 });
@@ -432,11 +461,21 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({ database, ac
 
       {error && <div className="telemetry-error">{error}</div>}
 
+      <AnalysisJobQueue
+        database={database}
+        currentJobId={jobId}
+        refreshKey={queueRefreshKey}
+        onCancelled={() => cancelAnalysisSessionJob(sessionKey)}
+      />
+
       <div className="telemetry-progress">
         <AnalysisJobProgress
           loading={loading}
           progress={analysisProgress}
           isPartialResult={isPartialResult}
+          jobId={jobId}
+          onCancel={handleCancelJob}
+          cancelling={cancellingJob}
         />
       </div>
 
