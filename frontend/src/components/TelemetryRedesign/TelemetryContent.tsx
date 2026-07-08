@@ -794,7 +794,6 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
 
               {Object.keys(distributions).length > 0 && (
                 <div className="distributions-section">
-                  <div className="chart-title" style={{ marginBottom: 4 }}>Распределение</div>
                   {Object.entries(distributions).map(([category, items]) => {
                     const chartData = category === 'EventCode'
                       ? items.map(d => ({ ...d, category: resolveEventCodeLabel(d.category, eventCodeMap) }))

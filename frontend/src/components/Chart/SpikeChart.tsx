@@ -1,5 +1,4 @@
-import React, { useMemo, useRef, useEffect } from 'react';
-import ReactECharts from 'echarts-for-react';
+import React, { useMemo, useRef, useState } from 'react';
 import { Switch } from 'antd';
 import type { SpikePoint } from '../../types/analytics.types';
 import dayjs from 'dayjs';
@@ -14,6 +13,68 @@ interface Props {
   onPointClick?: (point: SpikePoint) => void;
 }
 
+// Константы для SVG
+const VIEW_W = 1000;
+const VIEW_H = 260;
+const TOP_PADDING = 20;
+const BASELINE_Y = 240;
+
+interface ChartPoint {
+  x: number;
+  y: number;
+  value: number;
+  timestamp: string;
+  index: number;
+}
+
+// Построение масштаба
+function buildScale(values: number[]) {
+  const maxValue = values.length ? Math.max(...values) : 0;
+  const domainMax = maxValue > 0 ? maxValue * 1.12 : 1;
+  const usableHeight = BASELINE_Y - TOP_PADDING;
+
+  const yForValue = (v: number) => BASELINE_Y - (v / domainMax) * usableHeight;
+  const xForIndex = (i: number, n: number) => (n <= 1 ? 0 : (i / (n - 1)) * VIEW_W);
+
+  return { yForValue, xForIndex };
+}
+
+// Преобразование данных в точки
+function toChartPoints(series: { timestamp: string; value: number }[]): ChartPoint[] {
+  const values = series.map(s => s.value);
+  const { yForValue, xForIndex } = buildScale(values);
+  return series.map((s, i) => ({
+    x: xForIndex(i, series.length),
+    y: yForValue(s.value),
+    value: s.value,
+    timestamp: s.timestamp,
+    index: i,
+  }));
+}
+
+// Прямая линия через все точки
+function buildLinePath(points: ChartPoint[]): string {
+  if (points.length === 0) return '';
+  if (points.length === 1) return `M ${points[0].x.toFixed(1)} ${points[0].y.toFixed(1)}`;
+
+  let d = `M ${points[0].x.toFixed(1)} ${points[0].y.toFixed(1)}`;
+  for (let i = 1; i < points.length; i++) {
+    d += ` L ${points[i].x.toFixed(1)} ${points[i].y.toFixed(1)}`;
+  }
+  return d;
+}
+
+// Построение области под графиком
+function buildAreaPath(points: ChartPoint[]): string {
+  if (points.length === 0) return '';
+  const line = buildLinePath(points);
+  const last = points[points.length - 1];
+  const first = points[0];
+  return `${line} L ${last.x.toFixed(1)} ${BASELINE_Y} L ${first.x.toFixed(1)} ${BASELINE_Y} Z`;
+}
+
+const fmtDate = (iso: string) => dayjs(iso).format('DD.MM HH:mm');
+
 export const SpikeChart: React.FC<Props> = ({
   data,
   showMarkers = true,
@@ -23,237 +84,90 @@ export const SpikeChart: React.FC<Props> = ({
   onShowMarkersChange,
   onPointClick,
 }) => {
-  const chartRef = useRef<ReactECharts>(null);
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [hoverPoint, setHoverPoint] = useState<{ x: number; y: number; value: number; timestamp: string } | null>(null);
+  const [zoomRange, setZoomRange] = useState<[number, number]>([0, 100]);
+  const trackRef = useRef<HTMLDivElement>(null);
+  const [dragging, setDragging] = useState<'from' | 'to' | null>(null);
 
   const sortedData = useMemo(() => {
     return [...data].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
   }, [data]);
 
-  useEffect(() => {
-    if (!chartRef.current || !onPointClick) return;
-    const echartsInstance = chartRef.current.getEchartsInstance();
-    const zr = echartsInstance.getZr();
+  // Применяем зум к данным
+  const visibleData = useMemo(() => {
+    if (sortedData.length === 0) return [];
+    const n = sortedData.length;
+    const startIdx = Math.floor((zoomRange[0] / 100) * (n - 1));
+    const endIdx = Math.ceil((zoomRange[1] / 100) * (n - 1));
+    return sortedData.slice(startIdx, endIdx + 1);
+  }, [sortedData, zoomRange]);
 
-    const handleClick = (params: { offsetX: number; offsetY: number }) => {
-      const pointInPixel = [params.offsetX, params.offsetY];
-      if (echartsInstance.containPixel('grid', pointInPixel)) {
-        const pointInGrid = echartsInstance.convertFromPixel({ seriesIndex: 0 }, pointInPixel);
-        if (pointInGrid && pointInGrid.length > 0) {
-          const xIndex = Math.round(pointInGrid[0] as number);
-          if (xIndex >= 0 && xIndex < sortedData.length) {
-            const dataPoint = sortedData[xIndex];
-            if (dataPoint) onPointClick(dataPoint);
-          }
-        }
-      }
-    };
+  const points = useMemo(() => toChartPoints(visibleData), [visibleData]);
+  const linePath = useMemo(() => buildLinePath(points), [points]);
+  const areaPath = useMemo(() => buildAreaPath(points), [points]);
 
-    zr.on('click', handleClick);
-    return () => {
-      zr.off('click', handleClick);
-    };
-  }, [sortedData, onPointClick]);
+  const stats = useMemo(() => {
+    const values = visibleData.map(s => s.value);
+    if (values.length === 0) return { avg: 0, max: 0, min: 0 };
+    const avg = values.reduce((a, b) => a + b, 0) / values.length;
+    const max = Math.max(...values);
+    const min = Math.min(...values);
+    return { avg, max, min };
+  }, [visibleData]);
 
-  const isLargeDataset = sortedData.length > 5000;
+  const { yForValue } = useMemo(() => buildScale(visibleData.map(s => s.value)), [visibleData]);
 
-  const option = useMemo(() => {
-    const timestamps = sortedData.map(d => d.timestamp);
-    const values = sortedData.map(d => d.value);
-    const timeSeriesData = sortedData.map(d => [d.timestamp, d.value] as [string, number]);
+  const peakIndex = useMemo(() => {
+    if (visibleData.length === 0) return -1;
+    let idx = 0;
+    let maxV = -Infinity;
+    visibleData.forEach((s, i) => { if (s.value > maxV) { maxV = s.value; idx = i; } });
+    return idx;
+  }, [visibleData]);
 
-    const spikeMarkers = showMarkers
-      ? sortedData
-          .filter(d => d.isSpike)
-          .filter(d => (d.pValue < 0.01 ? showCriticalMarkers : showWarningMarkers))
-          .map(d => ({
-            coord: [d.timestamp, d.value] as [string, number],
-            symbol: 'circle',
-            symbolSize: d.pValue < 0.01 ? 10 : 8,
-            itemStyle: {
-              color: d.pValue < 0.01 ? '#D94A4A' : '#E8A838',
-              shadowBlur: 12,
-              shadowColor: d.pValue < 0.01 ? 'rgba(219, 74, 74, 0.6)' : 'rgba(232, 168, 56, 0.6)',
-            },
-          }))
-      : [];
+  const markers = points.filter((_p, i) => {
+    const s = visibleData[i];
+    if (!s.isSpike) return false;
+    if (s.pValue < 0.01 && !showCriticalMarkers) return false;
+    if (s.pValue >= 0.01 && !showWarningMarkers) return false;
+    return true;
+  });
 
-    return {
-      backgroundColor: 'transparent',
-      tooltip: {
-        trigger: 'axis',
-        backgroundColor: '#1A2332',
-        textStyle: { color: '#ffffff', fontSize: 12 },
-        formatter: (params: { axisValue: string }[]) => {
-          const point = params[0];
-          const dataPoint = sortedData.find(d => d.timestamp === point.axisValue);
-          if (!dataPoint) return '';
-
-          let html = `<b>${dayjs(dataPoint.timestamp).format('DD.MM.YYYY HH:mm')}</b><br/>`;
-          html += `Сообщений: <b>${dataPoint.value}</b><br/>`;
-          html += `P-Value: ${dataPoint.pValue.toFixed(4)}<br/>`;
-          html += `Доверие: ${dataPoint.confidencePercent.toFixed(1)}%<br/>`;
-
-          if (dataPoint.isSpike) {
-            const severityText =
-              dataPoint.pValue < 0.01 ? 'Критическая аномалия' : 'Предупреждение';
-            html += `<span style="color:#D94A4A;font-weight:700;">${severityText}</span>`;
-          }
-
-          return html;
-        },
-      },
-      grid: {
-        left: 60,
-        right: 30,
-        bottom: 80,
-        top: onShowMarkersChange ? 40 : 30,
-      },
-      xAxis: isLargeDataset
-        ? {
-            type: 'time',
-            axisLine: { lineStyle: { color: '#E9EEFA' } },
-            axisLabel: {
-              color: '#7A8B9E',
-              fontSize: 11,
-              rotate: 30,
-              formatter: (value: number) => dayjs(value).format('DD.MM HH:mm'),
-            },
-            splitLine: { show: false },
-            axisTick: { show: false },
-          }
-        : {
-            type: 'category',
-            data: timestamps,
-            axisLine: { lineStyle: { color: '#E9EEFA' } },
-            axisLabel: {
-              color: '#7A8B9E',
-              fontSize: 11,
-              rotate: 30,
-              formatter: (value: string) => dayjs(value).format('DD.MM HH:mm'),
-            },
-            splitLine: { show: false },
-            axisTick: { show: false },
-          },
-      yAxis: {
-        type: 'value',
-        name: 'Количество сообщений телеметрии',
-        nameLocation: 'middle',
-        nameRotate: 90,
-        nameGap: 50,
-        nameTextStyle: { color: '#7A8B9E', fontSize: 12 },
-        axisLine: { show: false },
-        axisTick: { show: false },
-        splitLine: { lineStyle: { color: '#EFF2F9', type: 'dashed' } },
-        axisLabel: { color: '#7A8B9E', fontSize: 11 },
-      },
-      series: [
-        {
-          name: 'Показатели',
-          type: 'line',
-          data: isLargeDataset ? timeSeriesData : values,
-          large: isLargeDataset,
-          sampling: isLargeDataset ? 'lttb' : undefined,
-          progressive: isLargeDataset ? 5000 : undefined,
-          progressiveThreshold: isLargeDataset ? 10000 : undefined,
-          smooth: false,
-          showSymbol: false,
-          lineStyle: {
-            color: '#4761BF',
-            width: 2.5,
-            shadowBlur: 32,
-            shadowColor: 'rgba(71, 97, 191, 0.95)',
-            shadowOffsetY: 6,
-          },
-          areaStyle: {
-            color: {
-              type: 'linear',
-              x: 0,
-              y: 0,
-              x2: 0,
-              y2: 1,
-              colorStops: [
-                { offset: 0, color: 'rgba(71, 97, 191, 0.25)' },
-                { offset: 1, color: 'rgba(71, 97, 191, 0.0)' },
-              ],
-            },
-          },
-          markPoint: spikeMarkers.length > 0 ? { data: spikeMarkers, symbolKeepAspect: true } : undefined,
-          markLine: {
-            silent: true,
-            symbol: 'none',
-            data: [
-              {
-                type: 'average',
-                name: 'Средняя',
-                label: { formatter: 'Ср.: {c}', color: '#7A8B9E', position: 'insideEndTop', fontSize: 10 },
-                lineStyle: { color: '#7A8B9E', type: 'dashed' },
-              },
-              {
-                type: 'min',
-                name: 'Минимум',
-                label: { formatter: 'Мин.: {c}', color: '#5A9E7A', position: 'insideStartTop', fontSize: 10 },
-                lineStyle: { color: '#5A9E7A', type: 'dashed' },
-              },
-              {
-                type: 'max',
-                name: 'Максимум',
-                label: { formatter: 'Макс.: {c}', color: '#C97A6E', position: 'insideEndBottom', fontSize: 10 },
-                lineStyle: { color: '#C97A6E', type: 'dashed' },
-              },
-            ],
-          },
-        },
-      ],
-      dataZoom: [
-        {
-          type: 'slider',
-          start: 0,
-          end: 100,
-          height: 28,
-          bottom: 8,
-          borderColor: '#dce2ea',
-          backgroundColor: '#f5f7fa',
-          fillerColor: 'rgba(71, 97, 191, 0.15)',
-          handleStyle: { color: '#4761BF' },
-          textStyle: { color: '#7A8B9E', fontSize: 10 },
-        },
-      ],
-      color: ['#4761BF'],
-    };
-  }, [sortedData, isLargeDataset, showMarkers, showCriticalMarkers, showWarningMarkers, onShowMarkersChange]);
-
-  const onEvents = {
-    click: (params: {
-      componentType?: string;
-      seriesType?: string;
-      name?: string;
-      dataIndex?: number;
-      data?: { coord: [string | number, number] };
-    }) => {
-      if (!onPointClick) return;
-
-      let timestamp: string | undefined;
-      if (params.componentType === 'series' && params.seriesType === 'line') {
-        if (params.name) {
-          timestamp = params.name;
-        } else if (params.dataIndex !== undefined) {
-          timestamp = sortedData[params.dataIndex]?.timestamp;
-        }
-      } else if (params.componentType === 'markPoint' && params.data?.coord) {
-        const coordX = params.data.coord[0];
-        if (typeof coordX === 'string') {
-          timestamp = coordX;
-        } else if (typeof coordX === 'number') {
-          timestamp = sortedData[coordX]?.timestamp;
-        }
-      }
-
-      if (timestamp) {
-        const point = sortedData.find(d => d.timestamp === timestamp);
-        if (point) onPointClick(point);
-      }
-    },
+  const handleMarkerEnter = (p: { x: number; y: number; value: number; timestamp: string }, id: string) => {
+    setHoveredId(id);
+    setHoverPoint(p);
   };
+  const handleMarkerLeave = () => {
+    setHoveredId(null);
+    setHoverPoint(null);
+  };
+
+  const handlePointClick = (timestamp: string) => {
+    const point = visibleData.find(d => d.timestamp === timestamp);
+    if (point && onPointClick) onPointClick(point);
+  };
+
+  const startDrag = (handle: 'from' | 'to') => (e: React.PointerEvent) => {
+    e.preventDefault();
+    setDragging(handle);
+    (e.target as Element).setPointerCapture(e.pointerId);
+  };
+
+  const onTrackPointerMove = (e: React.PointerEvent) => {
+    if (!dragging || !trackRef.current) return;
+    const rect = trackRef.current.getBoundingClientRect();
+    const pct = Math.min(100, Math.max(0, ((e.clientX - rect.left) / rect.width) * 100));
+    if (dragging === 'from') {
+      setZoomRange([Math.min(pct, zoomRange[1] - 2), zoomRange[1]]);
+    } else {
+      setZoomRange([zoomRange[0], Math.max(pct, zoomRange[0] + 2)]);
+    }
+  };
+  const endDrag = () => setDragging(null);
+
+  const firstTs = visibleData[0]?.timestamp;
+  const lastTs = visibleData[visibleData.length - 1]?.timestamp;
 
   return (
     <div style={{ position: 'relative', width: '100%' }}>
@@ -280,14 +194,166 @@ export const SpikeChart: React.FC<Props> = ({
         </div>
       )}
 
-      <ReactECharts
-        ref={chartRef}
-        option={option}
-        style={{ height: 480, width: '100%' }}
-        opts={{ renderer: 'canvas' }}
-        lazyUpdate
-        onEvents={onEvents}
-      />
+      <div className="chart-card" style={{ padding: '22px 24px 18px' }}>
+
+        <div className="chart-wrap" style={{ position: 'relative' }}>
+          <svg
+            viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
+            style={{ width: '100%', height: 'auto', aspectRatio: '1000/260', display: 'block', overflow: 'visible' }}
+          >
+            <defs>
+              <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#4761BF" stopOpacity="0.38" />
+                <stop offset="55%" stopColor="#4761BF" stopOpacity="0.1" />
+                <stop offset="100%" stopColor="#4761BF" stopOpacity="0" />
+              </linearGradient>
+              <filter id="lineGlow" x="-50%" y="-50%" width="200%" height="200%">
+                <feGaussianBlur stdDeviation="3.2" result="blur" />
+                <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+              </filter>
+            </defs>
+
+            {/* Среднее, максимум, минимум */}
+            <line x1="0" y1={yForValue(stats.avg)} x2={VIEW_W} y2={yForValue(stats.avg)} stroke="var(--chart-avg-line)" strokeWidth="1" strokeOpacity="0.6" strokeDasharray="4 4" />
+            <line x1="0" y1={yForValue(stats.max)} x2={VIEW_W} y2={yForValue(stats.max)} stroke="var(--chart-max-line)" strokeWidth="1" strokeDasharray="4 4" />
+            <line x1="0" y1={yForValue(stats.min)} x2={VIEW_W} y2={yForValue(stats.min)} stroke="var(--chart-min-line)" strokeWidth="1" strokeDasharray="4 4" />
+
+            {/* Площадь под графиком */}
+            {areaPath && <path d={areaPath} fill="url(#areaGrad)" stroke="none" />}
+            
+            {/* Линия графика */}
+            {linePath && (
+              <path
+                key={linePath}
+                d={linePath}
+                fill="none"
+                stroke="#4761BF"
+                strokeWidth="2.4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                filter="url(#lineGlow)"
+                pathLength={1}
+                className="chart-draw-line"
+              />
+            )}
+
+            {/* Анимация пульсации на пике */}
+            {showMarkers && peakIndex >= 0 && markers.some(m => m.index === peakIndex) && (
+              <circle
+                cx={points[peakIndex].x}
+                cy={points[peakIndex].y}
+                r="5"
+                fill="none"
+                stroke={visibleData[peakIndex]?.pValue < 0.01 ? '#d64933' : '#e2a339'}
+                strokeWidth="2"
+                className="peak-ring"
+              />
+            )}
+
+            {/* Маркеры аномалий */}
+            {showMarkers && markers.map(m => {
+              const s = visibleData[m.index];
+              const id = s.timestamp;
+              const isCritical = s.pValue < 0.01;
+              const color = isCritical ? '#d64933' : '#e2a339';
+              const isHovered = hoveredId === id;
+              return (
+                <g key={id}>
+                  <circle
+                    cx={m.x}
+                    cy={m.y}
+                    r="13"
+                    fill="transparent"
+                    onMouseEnter={() => handleMarkerEnter({ x: m.x, y: m.y, value: s.value, timestamp: s.timestamp }, id)}
+                    onMouseLeave={handleMarkerLeave}
+                    onClick={() => handlePointClick(s.timestamp)}
+                    style={{ cursor: 'pointer' }}
+                  />
+                  <circle
+                    cx={m.x}
+                    cy={m.y}
+                    r={isHovered ? 8.5 : 5}
+                    fill={color}
+                    stroke="#fff"
+                    strokeWidth="1.5"
+                    className="anomaly-marker"
+                    style={{ filter: 'drop-shadow(0 2px 3px rgba(20,30,60,.25))', pointerEvents: 'none' }}
+                  />
+                </g>
+              );
+            })}
+          </svg>
+
+          {/* Кастомный тултип */}
+          {hoverPoint && (
+            <div
+              className="tooltip"
+              style={{
+                left: `${(hoverPoint.x / VIEW_W) * 100}%`,
+                top: `${(hoverPoint.y / VIEW_H) * 100}%`,
+                transform: 'translate(-50%,-148%)',
+                position: 'absolute',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                pointerEvents: 'none',
+                zIndex: 5,
+              }}
+            >
+              <div className="tooltip-box" style={{
+                background: 'var(--tooltip-bg)',
+                borderRadius: '13px',
+                padding: '9px 13px',
+                boxShadow: 'var(--tooltip-shadow)',
+                whiteSpace: 'nowrap',
+              }}>
+                <div className="tooltip-value" style={{ font: '700 15px JetBrains Mono, monospace', color: 'var(--text-heading)' }}>
+                  {Math.round(hoverPoint.value)}
+                </div>
+                <div className="tooltip-date" style={{ font: '500 10.5px Manrope, sans-serif', color: 'var(--text-muted)' }}>
+                  {fmtDate(hoverPoint.timestamp)}
+                </div>
+              </div>
+              <div className="tooltip-arrow" style={{
+                width: '10px',
+                height: '10px',
+                background: 'var(--tooltip-bg)',
+                transform: 'rotate(45deg)',
+                marginTop: '-5px',
+              }} />
+            </div>
+          )}
+        </div>
+
+        {/* Зум */}
+        <div
+          className="zoom-row"
+          onPointerMove={onTrackPointerMove}
+          onPointerUp={endDrag}
+          onPointerLeave={endDrag}
+          style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: 12 }}
+        >
+          <span className="zoom-label" style={{ font: '500 10.5px JetBrains Mono, monospace', color: 'var(--line-legend-color)' }}>
+            {firstTs ? dayjs(firstTs).format('DD.MM') : ''}
+          </span>
+          <div className="zoom-track" ref={trackRef} style={{ flex: 1, height: '6px', borderRadius: '999px', background: 'var(--zoom-track-bg)', position: 'relative' }}>
+            <div className="zoom-fill" style={{ position: 'absolute', top: 0, bottom: 0, left: `${zoomRange[0]}%`, right: `${100 - zoomRange[1]}%`, background: 'rgba(61,99,221,.28)', borderRadius: '999px' }} />
+            <div
+              className="zoom-handle"
+              style={{ position: 'absolute', top: '50%', left: `${zoomRange[0]}%`, transform: 'translate(-50%,-50%)', width: '11px', height: '11px', borderRadius: '50%', background: '#3D63DD', boxShadow: '0 0 0 3px var(--zoom-handle-ring),0 1px 3px rgba(0,0,0,.2)', cursor: 'grab', touchAction: 'none' }}
+              onPointerDown={startDrag('from')}
+            />
+            <div
+              className="zoom-handle"
+              style={{ position: 'absolute', top: '50%', left: `${zoomRange[1]}%`, transform: 'translate(-50%,-50%)', width: '11px', height: '11px', borderRadius: '50%', background: '#3D63DD', boxShadow: '0 0 0 3px var(--zoom-handle-ring),0 1px 3px rgba(0,0,0,.2)', cursor: 'grab', touchAction: 'none' }}
+              onPointerDown={startDrag('to')}
+            />
+          </div>
+          <span className="zoom-label" style={{ font: '500 10.5px JetBrains Mono, monospace', color: 'var(--line-legend-color)' }}>
+            {lastTs ? dayjs(lastTs).format('DD.MM') : ''}
+          </span>
+        </div>
+      </div>
     </div>
   );
 };

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Tree, message, Spin, Typography, Button, Input } from 'antd';
-import { DatabaseOutlined, FolderOutlined, TableOutlined, FieldTimeOutlined, LogoutOutlined, SearchOutlined } from '@ant-design/icons';
+import { Tree, message, Spin, Typography, Input } from 'antd';
+import { DatabaseOutlined, FolderOutlined, TableOutlined, FieldTimeOutlined, SearchOutlined } from '@ant-design/icons';
 import { explorerApi } from '../../api/explorerApi';
 
 const { Text } = Typography;
@@ -19,7 +19,7 @@ interface DatabaseTreeSidebarProps {
   onToggleCollapse: () => void;
   onSelectStandardSchema: (db: string, schema: string) => void;
   onSelectGenericTable: (db: string, schema: string, table: string, timeCol: string) => void;
-  onLogout: () => void;
+  onLogout: () => void;  // ← можно удалить, если не используется
 }
 
 export const DatabaseTreeSidebar: React.FC<DatabaseTreeSidebarProps> = ({
@@ -27,7 +27,7 @@ export const DatabaseTreeSidebar: React.FC<DatabaseTreeSidebarProps> = ({
   onToggleCollapse: _onToggleCollapse,
   onSelectStandardSchema,
   onSelectGenericTable,
-  onLogout,
+  // onLogout, // ← закомментировать или удалить
 }) => {
   const [allTreeData, setAllTreeData] = useState<DataNode[]>([]);
   const [loading, setLoading] = useState(false);
@@ -174,6 +174,7 @@ export const DatabaseTreeSidebar: React.FC<DatabaseTreeSidebarProps> = ({
         </Typography.Text>
       </div>
 
+      {/* Только поле поиска, без кнопки выхода */}
       <div className="db-tree-sidebar__search-row">
         <Input
           className="db-tree-sidebar__search"
@@ -181,13 +182,6 @@ export const DatabaseTreeSidebar: React.FC<DatabaseTreeSidebarProps> = ({
           prefix={<SearchOutlined />}
           allowClear
           onChange={(e) => setSearchTerm(e.target.value)}
-        />
-        <Button
-          type="text"
-          className="db-tree-sidebar__logout"
-          icon={<LogoutOutlined />}
-          onClick={onLogout}
-          title="Отключиться"
         />
       </div>
 

@@ -1,7 +1,0 @@
-.stats-grid {
-  display: flex;
-  gap: 16px;
-  flex-wrap: wrap;
-  margin-bottom: 24px;
-  padding: 4px; /* Fix for cut off shadows */
-}
