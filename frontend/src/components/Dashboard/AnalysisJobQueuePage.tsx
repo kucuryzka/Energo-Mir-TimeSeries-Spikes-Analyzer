@@ -1,11 +1,13 @@
 import React from 'react';
 import { AnalysisJobQueue } from './AnalysisJobQueue';
+import type { PendingAnalysisJobOpen } from '../../utils/analysisJobLoader';
 
 interface AnalysisJobQueuePageProps {
   active: boolean;
+  onOpenJob?: (job: PendingAnalysisJobOpen) => void;
 }
 
-export const AnalysisJobQueuePage: React.FC<AnalysisJobQueuePageProps> = ({ active }) => {
+export const AnalysisJobQueuePage: React.FC<AnalysisJobQueuePageProps> = ({ active, onOpenJob }) => {
   if (!active) return null;
 
   return (
@@ -13,13 +15,14 @@ export const AnalysisJobQueuePage: React.FC<AnalysisJobQueuePageProps> = ({ acti
       <div className="analysis-queue-page__header">
         <h1 className="analysis-queue-page__title">Очередь анализа</h1>
         <p className="analysis-queue-page__subtitle">
-          Активные и ожидающие задачи. Обновление каждые 3 секунды.
+          Активные и недавно завершённые задачи. Обновление каждые 3 секунды.
         </p>
       </div>
       <AnalysisJobQueue
         enabled={active}
         showWhenEmpty
         showDatabaseColumn
+        onOpenJob={onOpenJob}
       />
     </div>
   );
