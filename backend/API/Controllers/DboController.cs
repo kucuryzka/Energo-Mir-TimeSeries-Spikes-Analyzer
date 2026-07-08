@@ -1,14 +1,12 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Mvc;
-using API.DTOs;
-using API.DataSources;
+using API.Contracts;
 using API.Data;
+using API.DataSources;
+using API.DTOs;
+using API.Infrastructure;
 using API.Models;
+using API.Services;
 using Hangfire;
-using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Mvc;
 
 namespace API.Controllers;
 
@@ -19,31 +17,28 @@ public class DboController : ControllerBase
     private readonly DboDataSource _dataSource;
     private readonly InternalDbContext _internalDb;
     private readonly IBackgroundJobClient _backgroundJobClient;
-    private readonly API.Services.IConnectionManagerService _connectionManager;
-    private readonly API.Services.AnalysisResultService _resultService;
-    private readonly Microsoft.AspNetCore.Http.IHttpContextAccessor _httpContextAccessor;
-    private readonly API.Services.TablePreviewService _tablePreview;
-    private readonly API.Services.AnalysisRequestValidator _requestValidator;
+    private readonly TablePreviewService _tablePreview;
+    private readonly AnalysisRequestValidator _requestValidator;
+    private readonly SessionContextService _session;
+    private readonly AnalysisJobQueryService _jobQueries;
 
     public DboController(
         IEnumerable<IDataSourceStrategy> dataSourceStrategies,
         InternalDbContext internalDb,
         IBackgroundJobClient backgroundJobClient,
-        API.Services.IConnectionManagerService connectionManager,
-        API.Services.AnalysisResultService resultService,
-        Microsoft.AspNetCore.Http.IHttpContextAccessor httpContextAccessor,
-        API.Services.TablePreviewService tablePreview,
-        API.Services.AnalysisRequestValidator requestValidator)
+        TablePreviewService tablePreview,
+        AnalysisRequestValidator requestValidator,
+        SessionContextService session,
+        AnalysisJobQueryService jobQueries)
     {
-        _dataSource = dataSourceStrategies.OfType<DboDataSource>().FirstOrDefault() 
-            ?? throw new Exception("DboDataSource not registered.");
+        _dataSource = dataSourceStrategies.OfType<DboDataSource>().FirstOrDefault()
+            ?? throw new InvalidOperationException("DboDataSource not registered.");
         _internalDb = internalDb;
         _backgroundJobClient = backgroundJobClient;
-        _connectionManager = connectionManager;
-        _resultService = resultService;
-        _httpContextAccessor = httpContextAccessor;
         _tablePreview = tablePreview;
         _requestValidator = requestValidator;
+        _session = session;
+        _jobQueries = jobQueries;
     }
 
     [HttpGet("objects")]
@@ -69,7 +64,7 @@ public class DboController : ControllerBase
     {
         try
         {
-            var info = RequireSession();
+            var info = _session.RequireConnection();
             var preview = await _tablePreview.LoadAsync(
                 info.ConnectionString,
                 info.Provider,
@@ -127,7 +122,7 @@ public class DboController : ControllerBase
     {
         try
         {
-            RequireSessionToken();
+            _session.RequireToken();
             var distribution = await _dataSource.GetObjectDistributionAsync(database, startDate, endDate, channelId);
             return Ok(distribution);
         }
@@ -146,7 +141,7 @@ public class DboController : ControllerBase
     {
         try
         {
-            var sessionToken = RequireSessionToken();
+            var sessionToken = _session.RequireToken();
             _requestValidator.Validate(
                 request.StartDate,
                 request.EndDate,
@@ -171,9 +166,9 @@ public class DboController : ControllerBase
             _internalDb.AnalysisJobs.Add(job);
             await _internalDb.SaveChangesAsync();
 
-            var jobId = _backgroundJobClient.Enqueue<API.Services.AnalysisJobProcessor>(
+            var jobId = _backgroundJobClient.Enqueue<AnalysisJobProcessor>(
                 p => p.ProcessSourceJobAsync(job.Id, "Dbo", sessionToken));
-            
+
             job.BackgroundJobId = jobId;
             await _internalDb.SaveChangesAsync();
 
@@ -196,98 +191,51 @@ public class DboController : ControllerBase
     [HttpGet("status/{id}")]
     public async Task<IActionResult> GetJobStatus(string id)
     {
-        var job = await _internalDb.AnalysisJobs.FindAsync(id);
+        var job = await _jobQueries.FindJobAsync(id);
         if (job == null) return NotFound();
-
-        return Ok(new { 
-            job.Id, 
-            job.Status, 
-            job.Progress, 
-            job.ErrorMessage,
-            HasResult = _resultService.HasResult(job),
-            HasPartialResult = _resultService.HasPartialResult(job.Id),
-            SeriesPointCount = job.SeriesPointCount
-        });
+        return Ok(_jobQueries.BuildStatus(job));
     }
 
     [HttpGet("partial-result/{id}")]
     public async Task<IActionResult> GetPartialJobResult(string id)
     {
-        var job = await _internalDb.AnalysisJobs.FindAsync(id);
+        var job = await _jobQueries.FindJobAsync(id);
         if (job == null) return NotFound();
-        if (job.Status is not ("Running" or "Completed" or "Cancelled"))
-            return BadRequest("Partial result is not available.");
 
-        var partial = await _resultService.TryLoadPartialAsync(id);
-        if (partial == null) return NotFound();
-
-        return Ok(partial);
+        try
+        {
+            var partial = await _jobQueries.TryLoadPartialAsync(id, job);
+            if (partial == null) return NotFound();
+            return Ok(partial);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(ex.Message);
+        }
     }
 
     [HttpGet("result/{id}")]
     public async Task<IActionResult> GetJobResult(string id)
     {
-        var job = await _internalDb.AnalysisJobs.FindAsync(id);
+        var job = await _jobQueries.FindJobAsync(id);
         if (job == null) return NotFound();
-        if (!_resultService.HasResult(job)) return BadRequest("Result is not ready or failed");
 
-        var json = await _resultService.SerializeToJsonAsync(job);
-        return Content(json, "application/json");
+        try
+        {
+            var json = await _jobQueries.SerializeResultAsync(job);
+            return Content(json, "application/json");
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(ex.Message);
+        }
     }
 
     [HttpGet("history")]
-    public async Task<IActionResult> GetHistory([FromQuery] string database)
-    {
-        var history = await _internalDb.AnalysisJobs
-            .Where(j => j.Database == database && j.Schema == "dbo")
-            .OrderByDescending(j => j.CompletedAt ?? j.CreatedAt)
-            .Select(j => new {
-                j.Id,
-                j.StartDate,
-                j.EndDate,
-                j.Granularity,
-                j.Status,
-                j.Progress,
-                j.CreatedAt,
-                j.CompletedAt,
-                j.SeriesPointCount,
-                ChannelId = j.Table == "All" ? null : j.Table
-            })
-            .ToListAsync();
-
-        return Ok(history);
-    }
+    public async Task<IActionResult> GetHistory([FromQuery] string database) =>
+        Ok(await _jobQueries.GetChannelScopedHistoryAsync(database, "dbo"));
 
     [HttpDelete("history/{id}")]
-    public async Task<IActionResult> DeleteHistoryItem(string id)
-    {
-        var job = await _internalDb.AnalysisJobs.FindAsync(id);
-        if (job == null) return NotFound();
-
-        // Optionally delete the background job from Hangfire if it's still running
-        if (!string.IsNullOrEmpty(job.BackgroundJobId))
-        {
-            _backgroundJobClient.Delete(job.BackgroundJobId);
-        }
-
-        _resultService.DeleteResultFiles(job);
-        _internalDb.AnalysisJobs.Remove(job);
-        await _internalDb.SaveChangesAsync();
-
-        return NoContent();
-    }
-
-    private string RequireSessionToken()
-    {
-        var token = _httpContextAccessor.HttpContext?.Request.Headers["X-Session-Token"].ToString();
-        if (string.IsNullOrEmpty(token) || _connectionManager.GetConnectionInfo(token) == null)
-            throw new UnauthorizedAccessException("Invalid or missing session token");
-        return token;
-    }
-
-    private API.Services.ConnectionInfo RequireSession()
-    {
-        var token = RequireSessionToken();
-        return _connectionManager.GetConnectionInfo(token)!;
-    }
+    public async Task<IActionResult> DeleteHistoryItem(string id) =>
+        await _jobQueries.DeleteJobAsync(id) ? NoContent() : NotFound();
 }

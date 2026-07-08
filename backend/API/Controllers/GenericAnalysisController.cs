@@ -1,65 +1,49 @@
-using System;
-using System.Data.Common;
-using System.Linq;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Mvc;
-using API.Services;
-using API.DTOs;
-using Core.Enums;
-using Dapper;
 using API.Data;
-using Hangfire;
-using API.Models;
 using API.DataSources;
-using Microsoft.EntityFrameworkCore;
+using API.DTOs;
+using API.Infrastructure;
+using API.Models;
+using API.Services;
+using API.Sql;
+using Core.Enums;
+using Core.Interfaces;
+using Dapper;
+using Hangfire;
+using Microsoft.AspNetCore.Mvc;
 
 namespace API.Controllers;
-
-public class GenericAnalysisRequest
-{
-    public string Database { get; set; } = string.Empty;
-    public string Schema { get; set; } = string.Empty;
-    public string Table { get; set; } = string.Empty;
-    public string TimeColumn { get; set; } = string.Empty;
-    public DateTime StartDate { get; set; }
-    public DateTime EndDate { get; set; }
-    public TimeGranularity Granularity { get; set; } = TimeGranularity.Hour;
-    public int? CustomMinutes { get; set; }
-    public double? Confidence { get; set; }
-    public int? WindowSize { get; set; }
-}
 
 [ApiController]
 [Route("api/[controller]")]
 public class GenericAnalysisController : ControllerBase
 {
-    private readonly IConnectionManagerService _connectionManager;
     private readonly InternalDbContext _internalDb;
     private readonly IBackgroundJobClient _backgroundJobClient;
     private readonly AnalysisPipelineService _pipeline;
-    private readonly API.Sql.ISqlDialectProvider _dialectProvider;
-    private readonly AnalysisResultService _resultService;
+    private readonly ISqlDialectProvider _dialectProvider;
     private readonly TablePreviewService _tablePreview;
     private readonly AnalysisRequestValidator _requestValidator;
+    private readonly SessionContextService _session;
+    private readonly AnalysisJobQueryService _jobQueries;
 
     public GenericAnalysisController(
-        IConnectionManagerService connectionManager,
         InternalDbContext internalDb,
         IBackgroundJobClient backgroundJobClient,
         AnalysisPipelineService pipeline,
-        API.Sql.ISqlDialectProvider dialectProvider,
-        AnalysisResultService resultService,
+        ISqlDialectProvider dialectProvider,
         TablePreviewService tablePreview,
-        AnalysisRequestValidator requestValidator)
+        AnalysisRequestValidator requestValidator,
+        SessionContextService session,
+        AnalysisJobQueryService jobQueries)
     {
-        _connectionManager = connectionManager;
         _internalDb = internalDb;
         _backgroundJobClient = backgroundJobClient;
         _pipeline = pipeline;
         _dialectProvider = dialectProvider;
-        _resultService = resultService;
         _tablePreview = tablePreview;
         _requestValidator = requestValidator;
+        _session = session;
+        _jobQueries = jobQueries;
     }
 
     [HttpGet("preview")]
@@ -85,30 +69,12 @@ public class GenericAnalysisController : ControllerBase
         }
     }
 
-    private async Task<TablePreviewResponse> LoadTablePreviewAsync(
-        string database,
-        string schema,
-        string table,
-        string timeColumn,
-        int limit)
-    {
-        var info = RequireSession();
-        return await _tablePreview.LoadAsync(
-            info.ConnectionString,
-            info.Provider,
-            database,
-            schema,
-            table,
-            timeColumn,
-            limit);
-    }
-
     [HttpPost("enqueue")]
     public async Task<IActionResult> EnqueueAnalysis([FromBody] GenericAnalysisRequest request)
     {
         try
         {
-            var sessionToken = RequireSessionToken();
+            var sessionToken = _session.RequireToken();
             _requestValidator.Validate(
                 request.StartDate,
                 request.EndDate,
@@ -145,89 +111,60 @@ public class GenericAnalysisController : ControllerBase
     [HttpGet("status/{id}")]
     public async Task<IActionResult> GetJobStatus(string id)
     {
-        var job = await _internalDb.AnalysisJobs.FindAsync(id);
+        var job = await _jobQueries.FindJobAsync(id);
         if (job == null) return NotFound();
-
-        return Ok(new {
-            job.Id,
-            job.Status,
-            job.Progress,
-            job.ErrorMessage,
-            HasResult = _resultService.HasResult(job),
-            HasPartialResult = _resultService.HasPartialResult(job.Id),
-            SeriesPointCount = job.SeriesPointCount
-        });
+        return Ok(_jobQueries.BuildStatus(job));
     }
 
     [HttpGet("partial-result/{id}")]
     public async Task<IActionResult> GetPartialJobResult(string id)
     {
-        var job = await _internalDb.AnalysisJobs.FindAsync(id);
+        var job = await _jobQueries.FindJobAsync(id);
         if (job == null) return NotFound();
-        if (job.Status is not ("Running" or "Completed" or "Cancelled"))
-            return BadRequest("Partial result is not available.");
 
-        var partial = await _resultService.TryLoadPartialAsync(id);
-        if (partial == null) return NotFound();
-
-        return Ok(partial);
+        try
+        {
+            var partial = await _jobQueries.TryLoadPartialAsync(id, job);
+            if (partial == null) return NotFound();
+            return Ok(partial);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(ex.Message);
+        }
     }
 
     [HttpGet("result/{id}")]
     public async Task<IActionResult> GetJobResult(string id)
     {
-        var job = await _internalDb.AnalysisJobs.FindAsync(id);
+        var job = await _jobQueries.FindJobAsync(id);
         if (job == null) return NotFound();
-        if (!_resultService.HasResult(job)) return BadRequest("Result is not ready or failed");
 
-        var json = await _resultService.SerializeToJsonAsync(job);
-        return Content(json, "application/json");
+        try
+        {
+            var json = await _jobQueries.SerializeResultAsync(job);
+            return Content(json, "application/json");
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(ex.Message);
+        }
     }
 
     [HttpGet("history")]
-    public async Task<IActionResult> GetHistory([FromQuery] string database, [FromQuery] string schema, [FromQuery] string table)
-    {
-        var history = await _internalDb.AnalysisJobs
-            .Where(j => j.Database == database && j.Schema == schema && j.Table == table)
-            .OrderByDescending(j => j.CompletedAt ?? j.CreatedAt)
-            .Select(j => new {
-                j.Id,
-                j.StartDate,
-                j.EndDate,
-                j.Granularity,
-                j.Status,
-                j.Progress,
-                j.CreatedAt,
-                j.CompletedAt,
-                j.SeriesPointCount
-            })
-            .ToListAsync();
-
-        return Ok(history);
-    }
+    public async Task<IActionResult> GetHistory([FromQuery] string database, [FromQuery] string schema, [FromQuery] string table) =>
+        Ok(await _jobQueries.GetTableScopedHistoryAsync(database, schema, table));
 
     [HttpDelete("history/{id}")]
-    public async Task<IActionResult> DeleteHistoryItem(string id)
-    {
-        var job = await _internalDb.AnalysisJobs.FindAsync(id);
-        if (job == null) return NotFound();
-
-        if (!string.IsNullOrEmpty(job.BackgroundJobId))
-            _backgroundJobClient.Delete(job.BackgroundJobId);
-
-        _resultService.DeleteResultFiles(job);
-        _internalDb.AnalysisJobs.Remove(job);
-        await _internalDb.SaveChangesAsync();
-
-        return NoContent();
-    }
+    public async Task<IActionResult> DeleteHistoryItem(string id) =>
+        await _jobQueries.DeleteJobAsync(id) ? NoContent() : NotFound();
 
     [HttpPost("analyze")]
-    public async Task<IActionResult> Analyze([FromBody] GenericAnalysisRequest request, [FromServices] Core.Interfaces.ISpikeDetectionService spikeDetectionService)
+    public async Task<IActionResult> Analyze([FromBody] GenericAnalysisRequest request, [FromServices] ISpikeDetectionService spikeDetectionService)
     {
         try
         {
-            var info = RequireSession();
+            var info = _session.RequireConnection();
             _requestValidator.Validate(
                 request.StartDate,
                 request.EndDate,
@@ -284,24 +221,14 @@ public class GenericAnalysisController : ControllerBase
     {
         try
         {
-            var info = RequireSession();
+            var info = _session.RequireConnection();
             var dialect = _dialectProvider.GetDialect(info.Provider);
-            var targetConnStr = BuildTargetConnectionString(info.ConnectionString, database);
+            var targetConnStr = DatabaseConnectionHelper.WithDatabase(info.ConnectionString, database);
 
             using var connection = DatabaseProvider.OpenConnection(info.Provider, targetConnStr);
             await connection.OpenAsync();
 
-            var endDate = granularity switch
-            {
-                TimeGranularity.Minute => timestamp.AddMinutes(1),
-                TimeGranularity.Hour => timestamp.AddHours(1),
-                TimeGranularity.Day => timestamp.AddDays(1),
-                TimeGranularity.Week => timestamp.AddDays(7),
-                TimeGranularity.Month => timestamp.AddMonths(1),
-                TimeGranularity.Custom => timestamp.AddMinutes(customMinutes ?? 60),
-                _ => timestamp.AddHours(1)
-            };
-
+            var endDate = GranularityHelper.GetBucketEnd(timestamp, granularity, customMinutes);
             var qualifiedTable = dialect.QualifyTable(schema, table);
             var qualifiedTime = dialect.QualifyColumn(null, timeColumn);
             var whereClause = $"{qualifiedTime} >= @Start AND {qualifiedTime} < @End";
@@ -320,18 +247,22 @@ public class GenericAnalysisController : ControllerBase
         }
     }
 
-    private string RequireSessionToken()
+    private async Task<TablePreviewResponse> LoadTablePreviewAsync(
+        string database,
+        string schema,
+        string table,
+        string timeColumn,
+        int limit)
     {
-        var token = Request.Headers["X-Session-Token"].ToString();
-        if (string.IsNullOrEmpty(token) || _connectionManager.GetConnectionInfo(token) == null)
-            throw new UnauthorizedAccessException("Invalid or missing session token");
-        return token;
-    }
-
-    private API.Services.ConnectionInfo RequireSession()
-    {
-        var token = RequireSessionToken();
-        return _connectionManager.GetConnectionInfo(token)!;
+        var info = _session.RequireConnection();
+        return await _tablePreview.LoadAsync(
+            info.ConnectionString,
+            info.Provider,
+            database,
+            schema,
+            table,
+            timeColumn,
+            limit);
     }
 
     private static AnalysisJob CreateJobFromRequest(GenericAnalysisRequest request) => new()
@@ -347,11 +278,4 @@ public class GenericAnalysisController : ControllerBase
         Confidence = request.Confidence,
         WindowSize = request.WindowSize
     };
-
-    private static string BuildTargetConnectionString(string connectionString, string database)
-    {
-        var connStrBuilder = new DbConnectionStringBuilder { ConnectionString = connectionString };
-        connStrBuilder["Database"] = database;
-        return connStrBuilder.ConnectionString;
-    }
 }

@@ -1,6 +1,8 @@
 using API.Configuration;
+using API.Contracts;
 using API.Data;
 using API.Infrastructure;
+using API.Services;
 using Hangfire;
 using Hangfire.Storage.SQLite;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -75,15 +77,18 @@ builder.Services.AddHangfireServer(options =>
 
 builder.Services.AddSingleton<API.Sql.ISqlDialectProvider, API.Sql.SqlDialectProvider>();
 builder.Services.AddSingleton<API.Services.IDatabaseContextFactory, API.Services.DatabaseContextFactory>();
-builder.Services.AddScoped<API.Services.AnalysisPipelineService>();
+builder.Services.AddScoped<AnalysisPipelineService>();
 
-builder.Services.AddScoped<Core.Interfaces.ITimeSeriesService, Core.Services.TimeService>();
 builder.Services.AddScoped<Core.Interfaces.ISpikeDetectionService, Core.Services.SpikeDetectionService>();
-builder.Services.AddSingleton<API.Services.IConnectionManagerService, API.Services.ConnectionManagerService>();
-builder.Services.AddSingleton<API.Services.AnalysisResultService>();
-builder.Services.AddScoped<API.Services.AnalysisExportService>();
-builder.Services.AddScoped<API.Services.TablePreviewService>();
-builder.Services.AddScoped<API.Services.AnalysisRequestValidator>();
+builder.Services.AddSingleton<IConnectionManagerService, ConnectionManagerService>();
+builder.Services.AddScoped<SessionContextService>();
+builder.Services.AddScoped<DataSourceConnectionResolver>();
+builder.Services.AddSingleton<AnalysisResultService>();
+builder.Services.AddSingleton<EventCodeLabelService>();
+builder.Services.AddScoped<AnalysisExportService>();
+builder.Services.AddScoped<TablePreviewService>();
+builder.Services.AddScoped<AnalysisRequestValidator>();
+builder.Services.AddScoped<AnalysisJobQueryService>();
 builder.Services.AddSingleton<API.Services.IAnalysisJobCancellationService, API.Services.AnalysisJobCancellationService>();
 builder.Services.AddScoped<API.Services.AnalysisJobCoordinatorService>();
 builder.Services.AddScoped<API.Services.AnalysisTimingStatsService>();

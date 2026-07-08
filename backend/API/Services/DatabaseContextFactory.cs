@@ -1,5 +1,6 @@
 using API.Configuration;
 using API.Data;
+using API.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
@@ -21,14 +22,9 @@ public class DatabaseContextFactory : IDatabaseContextFactory
 
     public AppDbContext Create(string connectionString, string provider, string? database = null)
     {
-        var connStrBuilder = new System.Data.Common.DbConnectionStringBuilder
-        {
-            ConnectionString = connectionString
-        };
-        if (!string.IsNullOrEmpty(database))
-            connStrBuilder["Database"] = database;
-
-        var targetConnStr = connStrBuilder.ConnectionString;
+        var targetConnStr = string.IsNullOrEmpty(database)
+            ? connectionString
+            : DatabaseConnectionHelper.WithDatabase(connectionString, database);
         var normalizedProvider = DatabaseProvider.Normalize(provider);
         var timeout = _settings.CommandTimeoutSeconds;
 

@@ -1,12 +1,9 @@
-using System;
-using System.Collections.Generic;
 using System.Data.Common;
-using System.Linq;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Mvc;
-using API.Services;
+using API.Infrastructure;
+using API.Models;
 using API.Sql;
 using Dapper;
+using Microsoft.AspNetCore.Mvc;
 
 namespace API.Controllers;
 
@@ -14,31 +11,23 @@ namespace API.Controllers;
 [Route("api/[controller]")]
 public class ExplorerController : ControllerBase
 {
-    private readonly IConnectionManagerService _connectionManager;
     private readonly ISqlDialectProvider _dialectProvider;
+    private readonly SessionContextService _session;
 
     public ExplorerController(
-        IConnectionManagerService connectionManager,
-        ISqlDialectProvider dialectProvider)
+        ISqlDialectProvider dialectProvider,
+        SessionContextService session)
     {
-        _connectionManager = connectionManager;
         _dialectProvider = dialectProvider;
+        _session = session;
     }
 
-    private API.Services.ConnectionInfo RequireSession()
+    private static DbConnection OpenConnection(DatabaseSessionInfo info, string? database = null)
     {
-        var token = Request.Headers["X-Session-Token"].ToString();
-        var info = _connectionManager.GetConnectionInfo(token);
-        if (info == null) throw new UnauthorizedAccessException("Invalid or missing session token");
-        return info;
-    }
-
-    private static DbConnection OpenConnection(API.Services.ConnectionInfo info, string? database = null)
-    {
-        var builder = new DbConnectionStringBuilder { ConnectionString = info.ConnectionString };
-        if (!string.IsNullOrEmpty(database))
-            builder["Database"] = database;
-        return DatabaseProvider.OpenConnection(info.Provider, builder.ConnectionString);
+        var connectionString = string.IsNullOrEmpty(database)
+            ? info.ConnectionString
+            : DatabaseConnectionHelper.WithDatabase(info.ConnectionString, database);
+        return DatabaseProvider.OpenConnection(info.Provider, connectionString);
     }
 
     [HttpGet("databases")]
@@ -46,7 +35,7 @@ public class ExplorerController : ControllerBase
     {
         try
         {
-            var info = RequireSession();
+            var info = _session.RequireConnection();
             var dialect = _dialectProvider.GetDialect(info.Provider);
             using var conn = OpenConnection(info);
             await conn.OpenAsync();
@@ -69,7 +58,7 @@ public class ExplorerController : ControllerBase
     {
         try
         {
-            var info = RequireSession();
+            var info = _session.RequireConnection();
             var dialect = _dialectProvider.GetDialect(info.Provider);
             using var conn = OpenConnection(info, database);
             await conn.OpenAsync();
@@ -92,7 +81,7 @@ public class ExplorerController : ControllerBase
     {
         try
         {
-            var info = RequireSession();
+            var info = _session.RequireConnection();
             var dialect = _dialectProvider.GetDialect(info.Provider);
             using var conn = OpenConnection(info, database);
             await conn.OpenAsync();
@@ -115,7 +104,7 @@ public class ExplorerController : ControllerBase
     {
         try
         {
-            var info = RequireSession();
+            var info = _session.RequireConnection();
             var dialect = _dialectProvider.GetDialect(info.Provider);
             using var conn = OpenConnection(info, database);
             await conn.OpenAsync();

@@ -2,7 +2,7 @@ using System.Data.Common;
 using Microsoft.Data.SqlClient;
 using Npgsql;
 
-namespace API.Services;
+namespace API.Infrastructure;
 
 public static class DatabaseProvider
 {

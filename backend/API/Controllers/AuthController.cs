@@ -1,11 +1,9 @@
-using System;
 using System.Data.Common;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Mvc;
+using API.Contracts;
 using API.DTOs;
-using API.Services;
-using Microsoft.Data.SqlClient;
-using Npgsql;
+using API.Infrastructure;
+using API.Models;
+using Microsoft.AspNetCore.Mvc;
 
 namespace API.Controllers;
 
@@ -31,7 +29,7 @@ public class AuthController : ControllerBase
             using DbConnection conn = DatabaseProvider.OpenConnection(normalizedProvider, connectionString);
             await conn.OpenAsync();
 
-            var token = _connectionManager.CreateSession(new API.Services.ConnectionInfo
+            var token = _connectionManager.CreateSession(new DatabaseSessionInfo
             {
                 Provider = normalizedProvider,
                 ConnectionString = connectionString
@@ -53,13 +51,10 @@ public class AuthController : ControllerBase
             var port = request.Port > 0 ? request.Port : 5432;
             return $"Host={request.Host};Port={port};Database={db};Username={request.Username};Password={request.Password};Timeout=15";
         }
-        else
-        {
-            var db = string.IsNullOrEmpty(request.Database) ? "master" : request.Database;
-            var port = request.Port > 0 ? request.Port : 1433;
-            // Handle host:port or host,port for SQL Server
-            var server = $"{request.Host},{port}";
-            return $"Server={server};Database={db};User Id={request.Username};Password={request.Password};TrustServerCertificate=True;MultipleActiveResultSets=true;Connection Timeout=15";
-        }
+
+        var sqlDb = string.IsNullOrEmpty(request.Database) ? "master" : request.Database;
+        var sqlPort = request.Port > 0 ? request.Port : 1433;
+        var server = $"{request.Host},{sqlPort}";
+        return $"Server={server};Database={sqlDb};User Id={request.Username};Password={request.Password};TrustServerCertificate=True;MultipleActiveResultSets=true;Connection Timeout=15";
     }
 }

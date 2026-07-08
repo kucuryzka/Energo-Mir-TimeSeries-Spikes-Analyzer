@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using API.DTOs;
+using API.Infrastructure;
 using API.Services;
 using API.Sql;
 using Core.Enums;
@@ -14,21 +15,18 @@ namespace API.DataSources;
 
 public class EmProtocolDataSource : IDataSourceStrategy, ISupportsChannels, ISupportsDistribution, ISupportsPointChannels
 {
-    private readonly IConnectionManagerService _connectionManager;
-    private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly DataSourceConnectionResolver _connectionResolver;
     private readonly AnalysisPipelineService _pipeline;
     private readonly IDatabaseContextFactory _contextFactory;
     private readonly ISqlDialectProvider _dialectProvider;
 
     public EmProtocolDataSource(
-        IConnectionManagerService connectionManager,
-        IHttpContextAccessor httpContextAccessor,
+        DataSourceConnectionResolver connectionResolver,
         AnalysisPipelineService pipeline,
         IDatabaseContextFactory contextFactory,
         ISqlDialectProvider dialectProvider)
     {
-        _connectionManager = connectionManager;
-        _httpContextAccessor = httpContextAccessor;
+        _connectionResolver = connectionResolver;
         _pipeline = pipeline;
         _contextFactory = contextFactory;
         _dialectProvider = dialectProvider;
@@ -38,16 +36,8 @@ public class EmProtocolDataSource : IDataSourceStrategy, ISupportsChannels, ISup
     public string Name => "em_protocol";
     public string[] SupportedDistributions => new[] { "EventCode" };
 
-    private (string ConnectionString, string Provider) ResolveConnection(string? connectionString, string? provider)
-    {
-        if (connectionString != null && provider != null)
-            return (connectionString, provider);
-
-        var token = _httpContextAccessor.HttpContext?.Request.Headers["X-Session-Token"].ToString();
-        var info = _connectionManager.GetConnectionInfo(token ?? "");
-        if (info == null) throw new InvalidOperationException("Invalid or missing session token");
-        return (info.ConnectionString, info.Provider);
-    }
+    private (string ConnectionString, string Provider) ResolveConnection(string? connectionString, string? provider) =>
+        _connectionResolver.Resolve(connectionString, provider);
 
     private AnalysisTableSpec BuildTableSpec(IDatabaseDialect dialect) => new()
     {
@@ -136,6 +126,28 @@ public class EmProtocolDataSource : IDataSourceStrategy, ISupportsChannels, ISup
             conn,
             prov,
             database);
+    }
+
+    public Task<List<ChannelContributionDto>> GetRecordsDistributionAsync(
+        string database,
+        DateTime startDate,
+        DateTime endDate,
+        int? channelId,
+        string? connectionString = null,
+        string? provider = null,
+        CancellationToken cancellationToken = default)
+    {
+        var (conn, prov) = ResolveConnection(connectionString, provider);
+        var dialect = _dialectProvider.GetDialect(prov);
+        return _pipeline.GetDistributionAsync(
+            BuildTableSpec(dialect),
+            startDate,
+            endDate,
+            channelId,
+            conn,
+            prov,
+            database,
+            cancellationToken);
     }
 
     public async Task<List<ChannelDto>> GetChannelsAsync(string database, string? search, int page = 1, int pageSize = 50)

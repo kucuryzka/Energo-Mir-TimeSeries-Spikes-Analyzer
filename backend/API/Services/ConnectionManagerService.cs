@@ -1,35 +1,25 @@
-using System;
 using System.Collections.Concurrent;
+using API.Contracts;
+using API.Models;
 
 namespace API.Services;
 
-public class ConnectionInfo
-{
-    public string Provider { get; set; } = "mssql"; // mssql, pgsql
-    public string ConnectionString { get; set; } = string.Empty;
-}
-
-public interface IConnectionManagerService
-{
-    string CreateSession(ConnectionInfo info);
-    ConnectionInfo? GetConnectionInfo(string token);
-    void RemoveSession(string token);
-}
-
 public class ConnectionManagerService : IConnectionManagerService
 {
-    private readonly ConcurrentDictionary<string, ConnectionInfo> _sessions = new();
+    private readonly ConcurrentDictionary<string, DatabaseSessionInfo> _sessions = new();
 
-    public string CreateSession(ConnectionInfo info)
+    public string CreateSession(DatabaseSessionInfo info)
     {
         var token = Guid.NewGuid().ToString("N");
         _sessions.TryAdd(token, info);
         return token;
     }
 
-    public ConnectionInfo? GetConnectionInfo(string token)
+    public DatabaseSessionInfo? GetConnectionInfo(string token)
     {
-        if (string.IsNullOrEmpty(token)) return null;
+        if (string.IsNullOrEmpty(token))
+            return null;
+
         _sessions.TryGetValue(token, out var info);
         return info;
     }
@@ -37,8 +27,6 @@ public class ConnectionManagerService : IConnectionManagerService
     public void RemoveSession(string token)
     {
         if (!string.IsNullOrEmpty(token))
-        {
             _sessions.TryRemove(token, out _);
-        }
     }
 }

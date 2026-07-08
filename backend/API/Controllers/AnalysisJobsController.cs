@@ -1,8 +1,8 @@
+using API.Infrastructure;
 using API.Services;
 using API.Data;
 using Core.Enums;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 
 namespace API.Controllers;
 
@@ -12,7 +12,7 @@ public class AnalysisJobsController : ControllerBase
 {
     private readonly AnalysisJobCoordinatorService _coordinator;
     private readonly AnalysisTimingStatsService _timingStats;
-    private readonly IConnectionManagerService _connectionManager;
+    private readonly SessionContextService _session;
     private readonly InternalDbContext _internalDb;
     private readonly AnalysisResultService _resultService;
     private readonly AnalysisExportService _exportService;
@@ -20,14 +20,14 @@ public class AnalysisJobsController : ControllerBase
     public AnalysisJobsController(
         AnalysisJobCoordinatorService coordinator,
         AnalysisTimingStatsService timingStats,
-        IConnectionManagerService connectionManager,
+        SessionContextService session,
         InternalDbContext internalDb,
         AnalysisResultService resultService,
         AnalysisExportService exportService)
     {
         _coordinator = coordinator;
         _timingStats = timingStats;
-        _connectionManager = connectionManager;
+        _session = session;
         _internalDb = internalDb;
         _resultService = resultService;
         _exportService = exportService;
@@ -36,7 +36,7 @@ public class AnalysisJobsController : ControllerBase
     [HttpGet("queue")]
     public async Task<IActionResult> GetQueue([FromQuery] string? database)
     {
-        if (!HasValidSession())
+        if (!_session.IsAuthenticated())
             return Unauthorized();
 
         var queue = await _coordinator.GetQueueAsync(database);
@@ -46,7 +46,7 @@ public class AnalysisJobsController : ControllerBase
     [HttpGet("overview")]
     public async Task<IActionResult> GetOverview([FromQuery] string? database, [FromQuery] int recentLimit = 50)
     {
-        if (!HasValidSession())
+        if (!_session.IsAuthenticated())
             return Unauthorized();
 
         var overview = await _coordinator.GetOverviewAsync(database, recentLimit);
@@ -62,7 +62,7 @@ public class AnalysisJobsController : ControllerBase
         [FromQuery] DateTime startDate,
         [FromQuery] DateTime endDate)
     {
-        if (!HasValidSession())
+        if (!_session.IsAuthenticated())
             return Unauthorized();
 
         var estimate = await _timingStats.EstimateAsync(database, schema, table, granularity, startDate, endDate);
@@ -72,7 +72,7 @@ public class AnalysisJobsController : ControllerBase
     [HttpPost("{id}/cancel")]
     public async Task<IActionResult> Cancel(string id)
     {
-        if (!HasValidSession())
+        if (!_session.IsAuthenticated())
             return Unauthorized();
 
         var cancelled = await _coordinator.TryCancelAsync(id);
@@ -88,7 +88,7 @@ public class AnalysisJobsController : ControllerBase
         [FromQuery] bool loadDistribution = false,
         CancellationToken cancellationToken = default)
     {
-        if (!HasValidSession())
+        if (!_session.IsAuthenticated())
             return Unauthorized(new { message = "Invalid or missing session token" });
 
         var job = await _internalDb.AnalysisJobs.FindAsync([id], cancellationToken);
@@ -125,11 +125,5 @@ public class AnalysisJobsController : ControllerBase
         {
             return StatusCode(500, new { message = "Не удалось сформировать Excel.", details = ex.Message });
         }
-    }
-
-    private bool HasValidSession()
-    {
-        var token = Request.Headers["X-Session-Token"].ToString();
-        return !string.IsNullOrEmpty(token) && _connectionManager.GetConnectionInfo(token) != null;
     }
 }

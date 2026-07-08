@@ -2,6 +2,7 @@ using System.Data;
 using System.Data.Common;
 using API.Configuration;
 using API.DTOs;
+using API.Infrastructure;
 using API.Sql;
 using Dapper;
 using Microsoft.Extensions.Options;
@@ -34,7 +35,7 @@ public class TablePreviewService
         int limit = 15)
     {
         var dialect = _dialectProvider.GetDialect(DatabaseProvider.Normalize(provider));
-        var targetConnStr = BuildTargetConnectionString(connectionString, database);
+        var targetConnStr = DatabaseConnectionHelper.WithDatabase(connectionString, database);
         var qualifiedTable = dialect.QualifyTable(schema, table);
         limit = Math.Clamp(limit, 1, 50);
         var commandTimeout = Math.Clamp(_settings.PreviewCommandTimeoutSeconds, 5, 600);
@@ -119,12 +120,5 @@ public class TablePreviewService
             return value;
         if (value is Guid guid) return guid.ToString();
         return value.ToString();
-    }
-
-    private static string BuildTargetConnectionString(string connectionString, string database)
-    {
-        var connStrBuilder = new DbConnectionStringBuilder { ConnectionString = connectionString };
-        connStrBuilder["Database"] = database;
-        return connStrBuilder.ConnectionString;
     }
 }

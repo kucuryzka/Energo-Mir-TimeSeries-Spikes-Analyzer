@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using API.DTOs;
+using API.Infrastructure;
 using API.Services;
 using API.Sql;
 using Core.Enums;
@@ -14,21 +15,18 @@ namespace API.DataSources;
 
 public class DboDataSource : IDataSourceStrategy, ISupportsPointChannels
 {
-    private readonly IConnectionManagerService _connectionManager;
-    private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly DataSourceConnectionResolver _connectionResolver;
     private readonly AnalysisPipelineService _pipeline;
     private readonly IDatabaseContextFactory _contextFactory;
     private readonly ISqlDialectProvider _dialectProvider;
 
     public DboDataSource(
-        IConnectionManagerService connectionManager,
-        IHttpContextAccessor httpContextAccessor,
+        DataSourceConnectionResolver connectionResolver,
         AnalysisPipelineService pipeline,
         IDatabaseContextFactory contextFactory,
         ISqlDialectProvider dialectProvider)
     {
-        _connectionManager = connectionManager;
-        _httpContextAccessor = httpContextAccessor;
+        _connectionResolver = connectionResolver;
         _pipeline = pipeline;
         _contextFactory = contextFactory;
         _dialectProvider = dialectProvider;
@@ -38,16 +36,8 @@ public class DboDataSource : IDataSourceStrategy, ISupportsPointChannels
     public string Name => "dbo";
     public string[] SupportedDistributions => Array.Empty<string>();
 
-    private (string ConnectionString, string Provider) ResolveConnection(string? connectionString, string? provider)
-    {
-        if (connectionString != null && provider != null)
-            return (connectionString, provider);
-
-        var token = _httpContextAccessor.HttpContext?.Request.Headers["X-Session-Token"].ToString();
-        var info = _connectionManager.GetConnectionInfo(token ?? "");
-        if (info == null) throw new InvalidOperationException("Invalid or missing session token");
-        return (info.ConnectionString, info.Provider);
-    }
+    private (string ConnectionString, string Provider) ResolveConnection(string? connectionString, string? provider) =>
+        _connectionResolver.Resolve(connectionString, provider);
 
     private AnalysisTableSpec BuildTableSpec(IDatabaseDialect dialect) => new()
     {
@@ -179,16 +169,7 @@ public class DboDataSource : IDataSourceStrategy, ISupportsPointChannels
         var dialect = _dialectProvider.GetDialect(prov);
         using var context = _contextFactory.Create(conn, prov, database);
 
-        var endDate = granularity switch
-        {
-            TimeGranularity.Minute => timestamp.AddMinutes(1),
-            TimeGranularity.Hour => timestamp.AddHours(1),
-            TimeGranularity.Day => timestamp.AddDays(1),
-            TimeGranularity.Week => timestamp.AddDays(7),
-            TimeGranularity.Month => timestamp.AddMonths(1),
-            TimeGranularity.Custom => timestamp.AddMinutes(customMinutes ?? 60),
-            _ => timestamp.AddHours(1)
-        };
+        var endDate = GranularityHelper.GetBucketEnd(timestamp, granularity, customMinutes);
 
         var meterings = dialect.QualifyFromTable("dbo", "METERINGS", "m");
         var objects = dialect.QualifyFromTable("dbo", "OBJECTS", "o");
