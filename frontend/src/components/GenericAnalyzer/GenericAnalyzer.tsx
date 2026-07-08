@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Typography, Button, message, Drawer, Table, Popconfirm, Space, Spin } from 'antd';
 import { DeleteOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
@@ -19,6 +19,7 @@ import { useRegisterShellRailActions } from '../../context/ShellRailContext';
 import { runAnalysisSessionJob, updateAnalysisSession, useAnalysisResultData, cancelAnalysisSessionJob } from '../../store/analysisSessionStore';
 import { analysisJobsApi } from '../../api/analysisJobsApi';
 import { AnalysisJobCancelledError } from '../../utils/jobPolling';
+import type { PendingAnalysisJobOpen } from '../../utils/analysisJobLoader';
 
 const { Text } = Typography;
 
@@ -37,9 +38,19 @@ interface GenericAnalyzerProps {
   table: string;
   timeColumn: string;
   onBack: () => void;
+  pendingJobOpen?: PendingAnalysisJobOpen | null;
+  onPendingJobConsumed?: () => void;
 }
 
-export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({ db, schema, table, timeColumn }) => {
+export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({
+  db,
+  schema,
+  table,
+  timeColumn,
+  onBack: _onBack,
+  pendingJobOpen,
+  onPendingJobConsumed,
+}) => {
   const sessionKey = useMemo(
     () => `generic:${db}:${schema}:${table}:${timeColumn}`,
     [db, schema, table, timeColumn],
@@ -208,9 +219,84 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({ db, schema, ta
 
   useRegisterShellRailActions({ onOpenHistory: openHistory });
 
-  const enrichedData = useMemo(() => (data?.series?.length ? enrichSpikeData(data.series) : []), [data]);
+  const pendingJobForTable = pendingJobOpen
+    && pendingJobOpen.sourceKind === 'generic'
+    && pendingJobOpen.database === db
+    && pendingJobOpen.schema === schema
+    && pendingJobOpen.table === table
+    && pendingJobOpen.timeColumn === timeColumn
+    ? pendingJobOpen
+    : null;
+
+  const pendingOpenRef = useRef<string | null>(null);
+
+  const applyJobResultToView = useCallback(async (job: PendingAnalysisJobOpen) => {
+    updateAnalysisSession(sessionKey, {
+      jobId: job.id,
+      loading: true,
+      progress: 0,
+      error: null,
+    });
+
+    const result = await genericAnalysisApi.getJobResult(job.id);
+
+    updateAnalysisSession(sessionKey, {
+      jobId: job.id,
+      loading: false,
+      progress: 100,
+      error: null,
+    });
+    setData(result);
+    setDateRange([job.startDate, job.endDate]);
+    setGranularity(job.granularity);
+    setCustomMinutes(job.customMinutes ?? null);
+
+    return result;
+  }, [sessionKey, setData]);
+
+  useEffect(() => {
+    if (!pendingJobForTable) return;
+    if (pendingOpenRef.current === pendingJobForTable.id) return;
+
+    const job = pendingJobForTable;
+    pendingOpenRef.current = job.id;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        message.loading({ content: 'Загрузка результата...', key: 'loadResult' });
+        const result = await applyJobResultToView(job);
+        if (cancelled) return;
+
+        if (!result?.series?.length) {
+          message.warning({ content: 'Результат пуст или недоступен', key: 'loadResult', duration: 3 });
+        } else {
+          message.success({ content: 'Результат загружен', key: 'loadResult', duration: 2.5 });
+        }
+        onPendingJobConsumed?.();
+      } catch {
+        if (!cancelled) {
+          message.error({ content: 'Ошибка загрузки', key: 'loadResult' });
+        }
+        pendingOpenRef.current = null;
+        onPendingJobConsumed?.();
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pendingJobForTable?.id, applyJobResultToView, onPendingJobConsumed]);
+
+  const enrichedData = useMemo(
+    () => (data?.series?.length ? enrichSpikeData(data.series) : []),
+    [data?.series],
+  );
   const spikesOnly = useMemo(() => enrichedData.filter(s => s.isSpike), [enrichedData]);
-  const stats = useMemo(() => (data?.series?.length ? getStatistics(data.series) : null), [data]);
+  const stats = useMemo(
+    () => (data?.series?.length ? getStatistics(data.series) : null),
+    [data?.series],
+  );
 
   const handlePointSelect = async (timestamp: string) => {
     const point = enrichedData.find(s => s.timestamp === timestamp);
@@ -237,15 +323,11 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({ db, schema, ta
     }
     try {
       message.loading({ content: 'Загрузка результата...', key: 'loadResult' });
-      const res = await genericAnalysisApi.getJobResult(job.id);
-      updateAnalysisSession(sessionKey, {
-        jobId: job.id,
-        loading: false,
-        progress: 100,
-        error: null,
+      await applyJobResultToView({
+        ...job,
+        customMinutes: job.customMinutes ?? null,
+        channelId: job.channelId ?? null,
       });
-      setData(res);
-      setDateRange([job.startDate, job.endDate]);
       message.success({ content: 'Результат загружен', key: 'loadResult', duration: 2.5 });
       setHistoryOpen(false);
     } catch {

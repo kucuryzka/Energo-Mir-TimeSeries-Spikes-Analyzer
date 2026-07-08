@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Drawer, Badge } from 'antd';
 import { HistoryOutlined, DashboardOutlined, ApiOutlined, UnorderedListOutlined } from '@ant-design/icons';
 import { AnalysisJobQueuePage } from '../Dashboard/AnalysisJobQueuePage';
+import type { PendingAnalysisJobOpen } from '../../utils/analysisJobLoader';
 import { DatabaseTreeSidebar } from '../Explorer/DatabaseTreeSidebar';
 import { GenericAnalyzer } from '../GenericAnalyzer/GenericAnalyzer';
 import { TelemetryContent, type TabKey } from './TelemetryContent';
@@ -31,6 +32,7 @@ export const TelemetryScreen: React.FC<TelemetryScreenProps> = ({ onLogout, uiTh
   const [mainView, setMainView] = useState<MainView>('analysis');
   const [dbDrawerOpen, setDbDrawerOpen] = useState(false);
   const [genericConfig, setGenericConfig] = useState<GenericConfig | null>(null);
+  const [pendingJobOpen, setPendingJobOpen] = useState<PendingAnalysisJobOpen | null>(null);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', uiTheme);
@@ -52,6 +54,31 @@ export const TelemetryScreen: React.FC<TelemetryScreenProps> = ({ onLogout, uiTh
     setMainView('analysis');
     setDbDrawerOpen(false);
   };
+
+  const handleOpenJobFromQueue = (job: PendingAnalysisJobOpen) => {
+    if (job.sourceKind === 'generic') {
+      if (!job.timeColumn) {
+        return;
+      }
+      setGenericConfig({
+        db: job.database,
+        schema: job.schema,
+        table: job.table,
+        timeColumn: job.timeColumn,
+      });
+      setSelectedDb('');
+    } else {
+      setGenericConfig(null);
+      setSelectedDb(job.database);
+      setActiveTab(job.sourceKind === 'em_protocol' ? 'em' : 'dbo');
+    }
+    setPendingJobOpen(job);
+    setMainView('analysis');
+  };
+
+  const handlePendingJobConsumed = useCallback(() => {
+    setPendingJobOpen(null);
+  }, []);
 
   const faviconUrl = `${import.meta.env.BASE_URL}favicon.png`;
 
@@ -148,30 +175,39 @@ export const TelemetryScreen: React.FC<TelemetryScreenProps> = ({ onLogout, uiTh
           </div>
 
           <div className="content">
-            {mainView === 'queue' ? (
-              <AnalysisJobQueuePage active />
-            ) : (
-              <>
+            {(selectedDb || genericConfig) && (
+              <div
+                className="content-view"
+                style={{ display: mainView === 'queue' ? 'none' : 'contents' }}
+                aria-hidden={mainView === 'queue'}
+              >
                 {selectedDb && (
                   <>
                     <div
                       className="content-view"
                       style={{ display: genericConfig || activeTab !== 'dbo' ? 'none' : 'contents' }}
                     >
-                      <TelemetryContent database={selectedDb} activeTab="dbo" visible={!genericConfig && activeTab === 'dbo'} />
+                      <TelemetryContent
+                        database={selectedDb}
+                        activeTab="dbo"
+                        visible={!genericConfig && activeTab === 'dbo'}
+                        pendingJobOpen={pendingJobOpen}
+                        onPendingJobConsumed={handlePendingJobConsumed}
+                      />
                     </div>
                     <div
                       className="content-view"
                       style={{ display: genericConfig || activeTab !== 'em' ? 'none' : 'contents' }}
                     >
-                      <TelemetryContent database={selectedDb} activeTab="em" visible={!genericConfig && activeTab === 'em'} />
+                      <TelemetryContent
+                        database={selectedDb}
+                        activeTab="em"
+                        visible={!genericConfig && activeTab === 'em'}
+                        pendingJobOpen={pendingJobOpen}
+                        onPendingJobConsumed={handlePendingJobConsumed}
+                      />
                     </div>
                   </>
-                )}
-                {!selectedDb && !genericConfig && (
-                  <div className="telemetry-empty" style={{ margin: 'auto' }}>
-                    Откройте панель источников данных слева и выберите базу/схему для анализа.
-                  </div>
                 )}
                 {genericConfig && (
                   <GenericAnalyzer
@@ -180,9 +216,19 @@ export const TelemetryScreen: React.FC<TelemetryScreenProps> = ({ onLogout, uiTh
                     table={genericConfig.table}
                     timeColumn={genericConfig.timeColumn}
                     onBack={() => setGenericConfig(null)}
+                    pendingJobOpen={pendingJobOpen}
+                    onPendingJobConsumed={handlePendingJobConsumed}
                   />
                 )}
-              </>
+              </div>
+            )}
+            {mainView === 'queue' && (
+              <AnalysisJobQueuePage active onOpenJob={handleOpenJobFromQueue} />
+            )}
+            {mainView !== 'queue' && !selectedDb && !genericConfig && (
+              <div className="telemetry-empty" style={{ margin: 'auto' }}>
+                Откройте панель источников данных слева и выберите базу/схему для анализа.
+              </div>
             )}
           </div>
         </div>

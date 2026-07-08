@@ -140,6 +140,9 @@ export function useAnalysisResultData(
 
   useEffect(() => {
     if (!visible || !session.jobId) return;
+    // While the poll loop is active, partial updates come from applyPartialResult only.
+    if (session.loading) return;
+    if (data?.series?.length) return;
 
     let cancelled = false;
 
@@ -190,11 +193,21 @@ export function useAnalysisResultData(
 
     load();
     return () => { cancelled = true; };
-  }, [visible, session.jobId, session.loading, session.progress, api]);
+  }, [visible, session.jobId, session.loading, api, data?.series?.length]);
+
+  const applyLoadedResult = useCallback((result: SpikeResponse, isPartial: boolean) => {
+    setData(result);
+    setIsPartialResult(isPartial);
+  }, []);
 
   const applyPartialResult = useCallback((partial: SpikeResponse) => {
     if (!visibleRef.current) return;
-    setData(partial);
+    setData(prev => {
+      const prevLen = prev?.series?.length ?? 0;
+      const nextLen = partial.series.length;
+      if (prev && nextLen <= prevLen) return prev;
+      return partial;
+    });
     setIsPartialResult(true);
   }, []);
 
@@ -211,5 +224,6 @@ export function useAnalysisResultData(
     setData,
     applyPartialResult,
     applyFinalResult,
+    applyLoadedResult,
   };
 }

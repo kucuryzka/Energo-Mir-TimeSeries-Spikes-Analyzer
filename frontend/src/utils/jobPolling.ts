@@ -27,6 +27,7 @@ export interface PollAnalysisJobOptions {
   onProgress?: (progress: number) => void;
   onPartialResult?: (result: SpikeResponse) => void;
   pollIntervalMs?: number;
+  partialIntervalMs?: number;
 }
 
 export async function pollAnalysisJob(
@@ -34,23 +35,38 @@ export async function pollAnalysisJob(
   api: AnalysisJobApi,
   options: PollAnalysisJobOptions = {},
 ): Promise<SpikeResponse> {
-  const interval = options.pollIntervalMs ?? 1500;
+  const interval = options.pollIntervalMs ?? 3000;
+  const partialInterval = options.partialIntervalMs ?? 8000;
   let lastPartialCount = 0;
+  let lastPartialFetchAt = 0;
+  let lastReportedProgress = -1;
 
   while (true) {
     await sleep(interval);
     const status = await api.getJobStatus(jobId);
-    options.onProgress?.(status.progress ?? 0);
+    const progress = status.progress ?? 0;
+
+    if (
+      progress !== lastReportedProgress
+      && (progress - lastReportedProgress >= 5 || progress >= 99 || lastReportedProgress < 0)
+    ) {
+      lastReportedProgress = progress;
+      options.onProgress?.(progress);
+    }
 
     if (status.status === 'Running' && api.getJobPartialResult) {
-      try {
-        const partial = await api.getJobPartialResult(jobId);
-        if (partial.series.length > 0 && partial.series.length !== lastPartialCount) {
-          lastPartialCount = partial.series.length;
-          options.onPartialResult?.(partial);
+      const now = Date.now();
+      if (now - lastPartialFetchAt >= partialInterval) {
+        try {
+          const partial = await api.getJobPartialResult(jobId);
+          if (partial.series.length > 0 && partial.series.length !== lastPartialCount) {
+            lastPartialCount = partial.series.length;
+            lastPartialFetchAt = now;
+            options.onPartialResult?.(partial);
+          }
+        } catch {
+          // Partial file may not exist yet after the first batch.
         }
-      } catch {
-        // Partial file may not exist yet after the first batch.
       }
     }
 

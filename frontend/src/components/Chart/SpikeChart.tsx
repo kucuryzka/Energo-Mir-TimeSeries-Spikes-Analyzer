@@ -265,6 +265,7 @@ export const SpikeChart: React.FC<Props> = ({
         option={option}
         style={{ height: 480, width: '100%' }}
         opts={{ renderer: 'canvas' }}
+        lazyUpdate
         onEvents={onEvents}
       />
     </div>

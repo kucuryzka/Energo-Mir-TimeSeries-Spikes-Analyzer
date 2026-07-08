@@ -21,6 +21,7 @@ import { TablePreviewContent, type TablePreviewData } from '../GenericAnalyzer/T
 import { runAnalysisSessionJob, updateAnalysisSession, useAnalysisResultData, cancelAnalysisSessionJob } from '../../store/analysisSessionStore';
 import { analysisJobsApi } from '../../api/analysisJobsApi';
 import { AnalysisJobCancelledError } from '../../utils/jobPolling';
+import type { PendingAnalysisJobOpen } from '../../utils/analysisJobLoader';
 
 const { Text } = Typography;
 
@@ -30,6 +31,8 @@ interface TelemetryContentProps {
   database: string;
   activeTab: TabKey;
   visible?: boolean;
+  pendingJobOpen?: PendingAnalysisJobOpen | null;
+  onPendingJobConsumed?: () => void;
 }
 
 const GRANULARITY_LABEL: Record<string, string> = {
@@ -46,7 +49,13 @@ const TABLE_PREVIEW_CONFIG: Record<TabKey, { timeColumn: string; tableLabel: str
   em: { timeColumn: 'InsertTime', tableLabel: 'em_protocol.Records' },
 };
 
-export const TelemetryContent: React.FC<TelemetryContentProps> = ({ database, activeTab, visible = true }) => {
+export const TelemetryContent: React.FC<TelemetryContentProps> = ({
+  database,
+  activeTab,
+  visible = true,
+  pendingJobOpen,
+  onPendingJobConsumed,
+}) => {
   const [granularity, setGranularity] = useState<TimeGranularity>('Hour');
   const [customMinutes, setCustomMinutes] = useState<number | null>(null);
   const [windowSize, setWindowSize] = useState<number>(30);
@@ -177,6 +186,13 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({ database, ac
 
   useEffect(() => {
     if (!visible || !database) return;
+    if (
+      pendingJobOpen
+      && pendingJobOpen.database === database
+      && pendingJobOpen.sourceKind === (activeTab === 'dbo' ? 'dbo' : 'em_protocol')
+    ) {
+      return;
+    }
     setChannelId(null);
     setChannels([]);
     setDistributions({});
@@ -336,21 +352,85 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({ database, ac
 
   useRegisterShellRailActions({ onOpenHistory: openHistory }, visible);
 
+  const pendingJobForTab = pendingJobOpen
+    && pendingJobOpen.database === database
+    && pendingJobOpen.sourceKind === (activeTab === 'dbo' ? 'dbo' : 'em_protocol')
+    ? pendingJobOpen
+    : null;
+
+  const pendingOpenRef = useRef<string | null>(null);
+
+  const applyJobResultToView = useCallback(async (job: {
+    id: string;
+    startDate: string;
+    endDate: string;
+    granularity: TimeGranularity;
+    customMinutes?: number | null;
+    channelId?: string | null;
+  }) => {
+    const api = activeTab === 'dbo' ? analyticsApi.dbo : analyticsApi.emProtocol;
+    updateAnalysisSession(sessionKey, {
+      jobId: job.id,
+      loading: true,
+      progress: 0,
+      error: null,
+    });
+
+    const result = await api.getJobResult(job.id);
+
+    updateAnalysisSession(sessionKey, {
+      jobId: job.id,
+      loading: false,
+      progress: 100,
+      error: null,
+    });
+    setData(result);
+    setDateRange([job.startDate, job.endDate]);
+    setChannelId(job.channelId ? parseInt(job.channelId, 10) : null);
+    setGranularity(job.granularity);
+    setCustomMinutes(job.customMinutes ?? null);
+
+    return result;
+  }, [activeTab, sessionKey, setData]);
+
+  useEffect(() => {
+    if (!visible || !pendingJobForTab) return;
+    if (pendingOpenRef.current === pendingJobForTab.id) return;
+
+    const job = pendingJobForTab;
+    pendingOpenRef.current = job.id;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        message.loading({ content: 'Загрузка результата...', key: 'loadResult' });
+        const result = await applyJobResultToView(job);
+        if (cancelled) return;
+
+        if (!result?.series?.length) {
+          message.warning({ content: 'Результат пуст или недоступен', key: 'loadResult', duration: 3 });
+        } else {
+          message.success({ content: 'Результат загружен', key: 'loadResult', duration: 2.5 });
+        }
+        onPendingJobConsumed?.();
+      } catch {
+        if (!cancelled) {
+          message.error({ content: 'Ошибка загрузки', key: 'loadResult' });
+        }
+        pendingOpenRef.current = null;
+        onPendingJobConsumed?.();
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pendingJobForTab?.id, visible, applyJobResultToView, onPendingJobConsumed]);
+
   const loadHistoryItem = async (job: any) => {
     try {
       message.loading({ content: 'Загрузка результата...', key: 'loadResult' });
-      const api = activeTab === 'dbo' ? analyticsApi.dbo : analyticsApi.emProtocol;
-      const result = await api.getJobResult(job.id);
-      updateAnalysisSession(sessionKey, {
-        jobId: job.id,
-        loading: false,
-        progress: 100,
-        error: null,
-      });
-      setData(result);
-      setDateRange([job.startDate, job.endDate]);
-      setChannelId(job.channelId ? parseInt(job.channelId, 10) : null);
-      setGranularity(job.granularity);
+      await applyJobResultToView(job);
       message.success({ content: 'Результат загружен', key: 'loadResult', duration: 2.5 });
       setHistoryOpen(false);
     } catch {
@@ -369,9 +449,15 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({ database, ac
     }
   };
 
-  const enrichedData = useMemo(() => (data ? enrichSpikeData(data.series) : []), [data]);
+  const enrichedData = useMemo(
+    () => (data?.series?.length ? enrichSpikeData(data.series) : []),
+    [data?.series],
+  );
   const spikesOnly = useMemo(() => enrichedData.filter(s => s.isSpike), [enrichedData]);
-  const stats = useMemo(() => (data ? getStatistics(data.series) : null), [data]);
+  const stats = useMemo(
+    () => (data?.series?.length ? getStatistics(data.series) : null),
+    [data?.series],
+  );
 
   const objectDistribution = useMemo(() => {
     if (!data?.distribution?.length) return [];
