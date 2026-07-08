@@ -1,0 +1,94 @@
+# Controllers
+
+HTTP-слой API. Все контроллеры в `API/Controllers/`, namespace `API.Controllers`.
+
+## Общие соглашения
+
+- Аутентификация: заголовок `X-Session-Token` (кроме `Auth/connect`).
+- Проверка сессии: `SessionContextService` (`RequireToken`, `RequireConnection`, `IsAuthenticated`).
+- Ошибки: mix `Unauthorized(string)` и `Unauthorized(new { message })` — постепенная унификация на JSON-объекты.
+
+## AuthController
+
+| Метод | Путь | Описание |
+|-------|------|----------|
+| POST | `/api/Auth/connect` | Проверка подключения к MSSQL/Postgres, создание сессии |
+
+Возвращает `AuthResponse.Token`. Создаёт `DatabaseSessionInfo` в `ConnectionManagerService`.
+
+## ExplorerController
+
+| Метод | Путь | Параметры |
+|-------|------|-----------|
+| GET | `/api/Explorer/databases` | — |
+| GET | `/api/Explorer/schemas` | `database` |
+| GET | `/api/Explorer/tables` | `database`, `schema` |
+| GET | `/api/Explorer/columns` | `database`, `schema`, `table` |
+
+Использует `ISqlDialectProvider` + Dapper. Для generic analyzer UI.
+
+## SourcesController
+
+| Метод | Путь | Описание |
+|-------|------|----------|
+| GET | `/api/Sources` | Список `IDataSourceStrategy` (id, name, distributions) |
+
+## DboController — `api/dbo`
+
+**Источник:** `dbo.METERINGS`, объекты `dbo.OBJECTS`.
+
+| Группа | Endpoints |
+|--------|-----------|
+| Справочники | `GET objects`, `GET distribution`, `GET preview` |
+| Детализация точки | `GET point-details`, `GET point-channels` |
+| Job lifecycle | `POST enqueue`, `GET status/{id}`, `GET partial-result/{id}`, `GET result/{id}`, `GET history`, `DELETE history/{id}` |
+
+Enqueue: `DetectSpikesRequest`, schema=`dbo`, Hangfire `ProcessSourceJobAsync(..., "Dbo", token)`.
+
+Job endpoints делегируют `AnalysisJobQueryService`.
+
+## EmProtocolController — `api/em-protocol`
+
+**Источник:** `em_protocol.Records`, каналы `em_protocol.Channels`.
+
+| Группа | Endpoints |
+|--------|-----------|
+| Справочники | `GET channels`, `GET distribution?categoryName=EventCode`, `GET preview` |
+| Детализация | `GET point-channels` |
+| Job lifecycle | те же, что у dbo |
+
+Enqueue: Hangfire id `"em_protocol"`.
+
+## GenericAnalysisController — `api/GenericAnalysis`
+
+Произвольная таблица с колонкой времени.
+
+| Метод | Путь | Особенность |
+|-------|------|-------------|
+| GET | `preview` | schema, table, timeColumn |
+| POST | `enqueue` | `GenericAnalysisRequest` → `ProcessJobAsync` |
+| POST | `analyze` | **Синхронный** анализ без Hangfire |
+| GET | `point-details` | Raw rows в интервале bucket |
+| Job lifecycle | status, result, history… | history фильтрует по schema+table |
+
+## AnalysisJobsController — `api/analysis-jobs`
+
+Единая точка для **глобальной** очереди (не привязана к одному источнику).
+
+| Метод | Путь | Описание |
+|-------|------|----------|
+| GET | `queue` | Активные job (опц. filter database) |
+| GET | `overview` | active + recent |
+| GET | `estimate` | ETA по `AnalysisTimingStatsService` |
+| POST | `{id}/cancel` | Отмена через coordinator |
+| GET | `{id}/export` | Excel, query `loadDistribution` |
+
+## Зависимости контроллеров (типичные)
+
+```
+DboController / EmProtocolController
+  → DboDataSource | EmProtocolDataSource
+  → InternalDbContext, IBackgroundJobClient
+  → SessionContextService, AnalysisJobQueryService
+  → AnalysisRequestValidator, TablePreviewService
+```
