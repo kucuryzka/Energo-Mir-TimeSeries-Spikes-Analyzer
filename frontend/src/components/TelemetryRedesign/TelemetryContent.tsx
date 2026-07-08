@@ -248,11 +248,17 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
     }
   }, [activeTab, database, dateRange]);
 
-  const fetchData = async () => {
+  const fetchData = async (periodOverride?: [string, string]) => {
+    const startDate = periodOverride?.[0] ?? dateRange[0];
+    const endDate = periodOverride?.[1] ?? dateRange[1];
+    if (periodOverride) {
+      setDateRange(periodOverride);
+    }
+
     const confirmed = await confirmHeavyAnalysis(
       granularity,
-      dateRange[0],
-      dateRange[1],
+      startDate,
+      endDate,
       granularity === 'Custom' ? customMinutes : null,
     );
     if (!confirmed) return;
@@ -269,8 +275,8 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
         customMinutes: granularity === 'Custom' ? customMinutes : null,
         confidence,
         windowSize,
-        startDate: dateRange[0],
-        endDate: dateRange[1],
+        startDate,
+        endDate,
       };
 
       message.loading({ content: 'Задача поставлена в очередь...', key: 'jobProgress' });

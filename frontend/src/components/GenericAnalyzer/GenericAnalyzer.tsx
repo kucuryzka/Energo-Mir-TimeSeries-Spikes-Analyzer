@@ -150,8 +150,14 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({
     }
   }, [jobId, sessionKey]);
 
-  const fetchData = async () => {
-    const confirmed = await confirmHeavyAnalysis(granularity, dateRange[0], dateRange[1], customMinutes);
+  const fetchData = async (periodOverride?: [string, string]) => {
+    const startDate = periodOverride?.[0] ?? dateRange[0];
+    const endDate = periodOverride?.[1] ?? dateRange[1];
+    if (periodOverride) {
+      setDateRange(periodOverride);
+    }
+
+    const confirmed = await confirmHeavyAnalysis(granularity, startDate, endDate, customMinutes);
     if (!confirmed) return;
 
     try {
@@ -160,8 +166,8 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({
         schema,
         table,
         timeColumn,
-        startDate: dateRange[0],
-        endDate: dateRange[1],
+        startDate,
+        endDate,
         granularity,
         customMinutes,
         confidence,

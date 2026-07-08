@@ -1,11 +1,15 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button, Popconfirm, Table, Tag } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
+import dayjs from 'dayjs';
+import utc from 'dayjs/plugin/utc';
 import { parseUtcTimestamp } from '../../utils/dateTimeUtils';
 import { formatDurationMs } from '../../utils/formatDuration';
 import { canOpenAnalysisJob, toPendingAnalysisJobOpen } from '../../utils/analysisJobLoader';
 import type { PendingAnalysisJobOpen } from '../../utils/analysisJobLoader';
 import { analysisJobsApi, type AnalysisJobQueueItem } from '../../api/analysisJobsApi';
+
+dayjs.extend(utc);
 
 interface AnalysisJobQueueProps {
   database?: string;
@@ -205,7 +209,7 @@ export const AnalysisJobQueue: React.FC<AnalysisJobQueueProps> = ({
         key: 'period',
         render: (_, row) => (
           <span style={{ fontSize: 12 }}>
-            {new Date(row.startDate).toLocaleDateString()} — {new Date(row.endDate).toLocaleDateString()}
+            {dayjs.utc(row.startDate).format('DD.MM.YYYY')} — {dayjs.utc(row.endDate).format('DD.MM.YYYY')}
           </span>
         ),
       },

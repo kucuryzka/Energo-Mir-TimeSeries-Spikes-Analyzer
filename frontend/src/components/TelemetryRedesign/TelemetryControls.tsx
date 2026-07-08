@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { DatePicker, InputNumber, Select, Slider } from 'antd';
 import dayjs, { type Dayjs } from 'dayjs';
 import type { ChannelDto, TimeGranularity } from '../../types/analytics.types';
@@ -26,6 +26,13 @@ const PERIOD_PRESETS: { label: string; value: [dayjs.Dayjs, dayjs.Dayjs] }[] = [
   { label: 'Последние 3 года', value: [dayjs().subtract(3, 'year').startOf('day'), dayjs().endOf('day')] },
 ];
 
+function toPickerValue(range: [string, string]): [Dayjs | null, Dayjs | null] {
+  return [
+    range[0] ? dayjs(range[0]) : null,
+    range[1] ? dayjs(range[1]) : null,
+  ];
+}
+
 export interface TelemetryControlsProps {
   activeTab: 'dbo' | 'em';
   granularity: TimeGranularity;
@@ -44,7 +51,8 @@ export interface TelemetryControlsProps {
   onSearchChannels: (search: string) => void;
   filtersOpen: boolean;
   onFiltersOpenChange: (open: boolean) => void;
-  onAnalyze: () => void;
+  /** Optional period is the picker value at click time (avoids stale parent state). */
+  onAnalyze: (period?: [string, string]) => void;
   loading: boolean;
   onExport: () => void;
   exportDisabled: boolean;
@@ -80,18 +88,19 @@ export const TelemetryControls: React.FC<TelemetryControlsProps> = ({
   estimateHint,
 }) => {
   const filtersRef = useRef<HTMLDivElement>(null);
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const [draftRange, setDraftRange] = useState<[Dayjs | null, Dayjs | null] | null>(null);
+  const isEditingPeriodRef = useRef(false);
+  const [pickerValue, setPickerValue] = useState<[Dayjs | null, Dayjs | null]>(
+    () => toPickerValue(dateRange),
+  );
   const entityLabel = activeTab === 'dbo' ? 'Объект' : 'Канал';
   const entityPlaceholder = activeTab === 'dbo' ? 'Все объекты' : 'Все каналы';
 
-  const pickerValue = useMemo(
-    () => [
-      dateRange[0] ? dayjs(dateRange[0]) : null,
-      dateRange[1] ? dayjs(dateRange[1]) : null,
-    ] as [Dayjs | null, Dayjs | null],
-    [dateRange[0], dateRange[1]],
-  );
+  // Sync from parent only when the user is not interacting with the picker.
+  // Parent re-renders during analysis must not overwrite an in-progress selection.
+  useEffect(() => {
+    if (isEditingPeriodRef.current) return;
+    setPickerValue(toPickerValue(dateRange));
+  }, [dateRange[0], dateRange[1]]);
 
   useEffect(() => {
     const onClickOutside = (e: MouseEvent) => {
@@ -110,21 +119,19 @@ export const TelemetryControls: React.FC<TelemetryControlsProps> = ({
         showTime={{ format: 'HH:mm' }}
         format="YYYY-MM-DD HH:mm"
         presets={PERIOD_PRESETS}
-        value={pickerOpen && draftRange ? draftRange : pickerValue}
-        open={pickerOpen}
+        value={pickerValue}
         onOpenChange={(open) => {
-          setPickerOpen(open);
-          if (!open) setDraftRange(null);
+          isEditingPeriodRef.current = open;
         }}
         onCalendarChange={(dates) => {
-          setDraftRange(dates as [Dayjs | null, Dayjs | null]);
+          isEditingPeriodRef.current = true;
+          setPickerValue(dates as [Dayjs | null, Dayjs | null]);
         }}
         onChange={(dates) => {
-          if (dates?.[0] && dates[1]) {
-            onDateRangeChange([dates[0].toISOString(), dates[1].toISOString()]);
-            setDraftRange(null);
-            setPickerOpen(false);
-          }
+          if (!dates?.[0] || !dates[1]) return;
+          setPickerValue([dates[0], dates[1]]);
+          isEditingPeriodRef.current = false;
+          onDateRangeChange([dates[0].toISOString(), dates[1].toISOString()]);
         }}
       />
 
@@ -202,7 +209,24 @@ export const TelemetryControls: React.FC<TelemetryControlsProps> = ({
         )}
       </div>
 
-      <button type="button" className="btn-primary" onClick={onAnalyze} disabled={loading}>
+      <button
+        type="button"
+        className="btn-primary"
+        disabled={loading}
+        onClick={() => {
+          if (pickerValue[0] && pickerValue[1]) {
+            const period: [string, string] = [
+              pickerValue[0].toISOString(),
+              pickerValue[1].toISOString(),
+            ];
+            isEditingPeriodRef.current = false;
+            onDateRangeChange(period);
+            onAnalyze(period);
+            return;
+          }
+          onAnalyze();
+        }}
+      >
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
           <circle cx="12" cy="12" r="9" /><path d="M10 8l6 4-6 4z" fill="currentColor" stroke="none" />
         </svg>
