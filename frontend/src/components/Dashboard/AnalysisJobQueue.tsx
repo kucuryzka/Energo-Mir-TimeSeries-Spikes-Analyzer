@@ -7,6 +7,12 @@ interface AnalysisJobQueueProps {
   currentJobId?: string | null;
   refreshKey?: number;
   onCancelled?: () => void;
+  /** When false, polling is disabled (component may stay mounted). */
+  enabled?: boolean;
+  /** Show placeholder when the queue is empty instead of hiding the block. */
+  showWhenEmpty?: boolean;
+  /** Show database column (useful for global queue view). */
+  showDatabaseColumn?: boolean;
 }
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -20,15 +26,36 @@ const STATUS_LABELS: Record<string, string> = {
   Running: 'Выполняется',
 };
 
+function formatElapsedDuration(totalSeconds: number): string {
+  const seconds = Math.max(0, totalSeconds);
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+
+  if (h > 0) return `${h}ч ${m.toString().padStart(2, '0')}м`;
+  if (m > 0) return `${m}м ${s.toString().padStart(2, '0')}с`;
+  return `${s}с`;
+}
+
+function getElapsedSeconds(startIso: string, nowMs: number): number {
+  const startMs = new Date(startIso).getTime();
+  if (Number.isNaN(startMs)) return 0;
+  return Math.floor((nowMs - startMs) / 1000);
+}
+
 export const AnalysisJobQueue: React.FC<AnalysisJobQueueProps> = ({
   database,
   currentJobId,
   refreshKey = 0,
   onCancelled,
+  enabled = true,
+  showWhenEmpty = false,
+  showDatabaseColumn = false,
 }) => {
   const [items, setItems] = useState<AnalysisJobQueueItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
 
   const loadQueue = useCallback(async () => {
     setLoading(true);
@@ -44,10 +71,17 @@ export const AnalysisJobQueue: React.FC<AnalysisJobQueueProps> = ({
   }, [database]);
 
   useEffect(() => {
+    if (!enabled) return;
     loadQueue();
     const timer = window.setInterval(loadQueue, 3000);
     return () => window.clearInterval(timer);
-  }, [loadQueue, refreshKey]);
+  }, [loadQueue, refreshKey, enabled]);
+
+  useEffect(() => {
+    if (items.length === 0) return;
+    const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [items.length]);
 
   const handleCancel = async (jobId: string) => {
     setCancellingId(jobId);
@@ -62,18 +96,26 @@ export const AnalysisJobQueue: React.FC<AnalysisJobQueueProps> = ({
     }
   };
 
-  if (!loading && items.length === 0) return null;
+  if (!showWhenEmpty && !loading && items.length === 0) return null;
 
   return (
-    <div className="analysis-job-queue" style={{ marginBottom: 16 }}>
-      <div style={{ fontWeight: 600, marginBottom: 8 }}>Очередь анализа</div>
+    <div className="analysis-job-queue" style={{ marginBottom: showWhenEmpty ? 0 : 16 }}>
+      {!showWhenEmpty && <div style={{ fontWeight: 600, marginBottom: 8 }}>Очередь анализа</div>}
       <Table
         size="small"
         rowKey="id"
         loading={loading}
         pagination={false}
+        locale={{ emptyText: 'Нет активных задач' }}
         dataSource={items}
         columns={[
+          ...(showDatabaseColumn
+            ? [{
+                title: 'База',
+                dataIndex: 'database',
+                render: (value: string) => <span style={{ fontSize: 12 }}>{value}</span>,
+              }]
+            : []),
           {
             title: 'Источник',
             dataIndex: 'sourceKind',
@@ -93,6 +135,18 @@ export const AnalysisJobQueue: React.FC<AnalysisJobQueueProps> = ({
             title: 'Прогресс',
             dataIndex: 'progress',
             render: (value: number) => `${value}%`,
+          },
+          {
+            title: 'Длительность',
+            key: 'duration',
+            render: (_, row) => {
+              const elapsed = formatElapsedDuration(getElapsedSeconds(row.createdAt, nowMs));
+              return (
+                <span style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
+                  {row.status === 'Pending' ? `в очереди ${elapsed}` : elapsed}
+                </span>
+              );
+            },
           },
           {
             title: 'Период',

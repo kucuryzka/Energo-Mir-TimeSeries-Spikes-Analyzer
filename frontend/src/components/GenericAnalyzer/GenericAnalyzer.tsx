@@ -10,7 +10,6 @@ import { exportSpikesToExcel } from '../../utils/exportUtils';
 import { genericAnalysisApi } from '../../api/explorerApi';
 import { TablePreviewContent, type TablePreviewData } from './TablePreviewCard';
 import { AnalysisJobProgress } from '../Dashboard/AnalysisJobProgress';
-import { AnalysisJobQueue } from '../Dashboard/AnalysisJobQueue';
 import { TelemetryControls } from '../TelemetryRedesign/TelemetryControls';
 import { KpiRow } from '../TelemetryRedesign/KpiRow';
 import { AnomalyDonut } from '../TelemetryRedesign/AnomalyDonut';
@@ -63,7 +62,6 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({ db, schema, ta
   } = useAnalysisResultData(sessionKey, true, jobApi);
 
   const [cancellingJob, setCancellingJob] = useState(false);
-  const [queueRefreshKey, setQueueRefreshKey] = useState(0);
 
   const [selectedPoint, setSelectedPoint] = useState<SpikePoint | null>(null);
   const [pointDetails, setPointDetails] = useState<any[]>([]);
@@ -125,7 +123,6 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({ db, schema, ta
       await analysisJobsApi.cancel(jobId);
       cancelAnalysisSessionJob(sessionKey);
       message.info('Анализ останавливается…');
-      setQueueRefreshKey(k => k + 1);
     } catch (e) {
       console.error(e);
       message.error('Не удалось отменить задачу');
@@ -155,7 +152,6 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({ db, schema, ta
       message.loading({ content: 'Задача поставлена в очередь...', key: 'jobProgress' });
 
       const { jobId: enqueuedJobId } = await genericAnalysisApi.enqueueAnalysis(requestData);
-      setQueueRefreshKey(k => k + 1);
 
       const result = await runAnalysisSessionJob(
         sessionKey,
@@ -180,7 +176,6 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({ db, schema, ta
     } catch (e: any) {
       if (e instanceof AnalysisJobCancelledError || e?.cancelled) {
         message.info({ content: 'Анализ остановлен', key: 'jobProgress', duration: 2.5 });
-        setQueueRefreshKey(k => k + 1);
         return;
       }
       const errorText = e.response?.data?.message || e.response?.data || e.message || String(e);
@@ -338,13 +333,6 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({ db, schema, ta
       )}
 
       {error && <div className="telemetry-error">{error}</div>}
-
-      <AnalysisJobQueue
-        database={db}
-        currentJobId={jobId}
-        refreshKey={queueRefreshKey}
-        onCancelled={() => cancelAnalysisSessionJob(sessionKey)}
-      />
 
       <div className="telemetry-progress">
         <AnalysisJobProgress

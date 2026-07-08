@@ -504,3 +504,33 @@
   vertical-align: middle;
   max-width: 220px;
 }
+
+.analysis-queue-page {
+  padding: 28px 32px 32px;
+  height: 100%;
+  overflow: auto;
+}
+
+.analysis-queue-page__header {
+  margin-bottom: 20px;
+}
+
+.analysis-queue-page__title {
+  margin: 0 0 6px;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-heading);
+}
+
+.analysis-queue-page__subtitle {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.analysis-job-queue .ant-table {
+  background: var(--list-card-bg);
+  border: 1px solid var(--border-subtle);
+  border-radius: 16px;
+  overflow: hidden;
+}

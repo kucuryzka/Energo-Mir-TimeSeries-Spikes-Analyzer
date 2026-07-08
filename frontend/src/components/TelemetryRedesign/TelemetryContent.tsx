@@ -9,7 +9,6 @@ import { formatUtcDateTime } from '../../utils/dateTimeUtils';
 import { confirmHeavyAnalysis } from '../../utils/granularityWarning';
 import { useRegisterShellRailActions } from '../../context/ShellRailContext';
 import { AnalysisJobProgress } from '../Dashboard/AnalysisJobProgress';
-import { AnalysisJobQueue } from '../Dashboard/AnalysisJobQueue';
 import { DistributionChart } from '../Chart/DistributionChart';
 import { TelemetryControls } from './TelemetryControls';
 import type { ChannelDto, TimeGranularity, SpikePoint, ChannelContributionDto, DataSourceDto, DistributionItemDto } from '../../types/analytics.types';
@@ -92,7 +91,6 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({ database, ac
   } = useAnalysisResultData(sessionKey, visible, jobApi);
 
   const [cancellingJob, setCancellingJob] = useState(false);
-  const [queueRefreshKey, setQueueRefreshKey] = useState(0);
 
   const [, setSources] = useState<DataSourceDto[]>([]);
   const sourcesRef = useRef<DataSourceDto[]>([]);
@@ -169,7 +167,6 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({ database, ac
       await analysisJobsApi.cancel(jobId);
       cancelAnalysisSessionJob(sessionKey);
       message.info('Анализ останавливается…');
-      setQueueRefreshKey(k => k + 1);
     } catch (e) {
       console.error(e);
       message.error('Не удалось отменить задачу');
@@ -254,7 +251,6 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({ database, ac
 
       const api = activeTab === 'dbo' ? analyticsApi.dbo : analyticsApi.emProtocol;
       const { jobId: enqueuedJobId } = await api.enqueueAnalysis(requestPayload);
-      setQueueRefreshKey(k => k + 1);
 
       const result = await runAnalysisSessionJob(
         sessionKey,
@@ -280,7 +276,6 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({ database, ac
     } catch (err: any) {
       if (err instanceof AnalysisJobCancelledError || err?.cancelled) {
         message.info({ content: 'Анализ остановлен', key: 'jobProgress', duration: 2.5 });
-        setQueueRefreshKey(k => k + 1);
         return;
       }
       const errorText = err?.response?.data?.message || err?.message || String(err);
@@ -460,13 +455,6 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({ database, ac
       )}
 
       {error && <div className="telemetry-error">{error}</div>}
-
-      <AnalysisJobQueue
-        database={database}
-        currentJobId={jobId}
-        refreshKey={queueRefreshKey}
-        onCancelled={() => cancelAnalysisSessionJob(sessionKey)}
-      />
 
       <div className="telemetry-progress">
         <AnalysisJobProgress

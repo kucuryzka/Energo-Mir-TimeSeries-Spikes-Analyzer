@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Drawer, Badge } from 'antd';
-import { HistoryOutlined, DashboardOutlined, ApiOutlined } from '@ant-design/icons';
+import { HistoryOutlined, DashboardOutlined, ApiOutlined, UnorderedListOutlined } from '@ant-design/icons';
+import { AnalysisJobQueuePage } from '../Dashboard/AnalysisJobQueuePage';
 import { DatabaseTreeSidebar } from '../Explorer/DatabaseTreeSidebar';
 import { GenericAnalyzer } from '../GenericAnalyzer/GenericAnalyzer';
 import { TelemetryContent, type TabKey } from './TelemetryContent';
@@ -22,9 +23,12 @@ interface GenericConfig {
   timeColumn: string;
 }
 
+type MainView = 'analysis' | 'queue';
+
 export const TelemetryScreen: React.FC<TelemetryScreenProps> = ({ onLogout, uiTheme, onToggleTheme }) => {
   const [selectedDb, setSelectedDb] = useState<string>('');
   const [activeTab, setActiveTab] = useState<TabKey>('dbo');
+  const [mainView, setMainView] = useState<MainView>('analysis');
   const [dbDrawerOpen, setDbDrawerOpen] = useState(false);
   const [genericConfig, setGenericConfig] = useState<GenericConfig | null>(null);
 
@@ -39,11 +43,13 @@ export const TelemetryScreen: React.FC<TelemetryScreenProps> = ({ onLogout, uiTh
     setGenericConfig(null);
     setSelectedDb(db);
     setActiveTab(schema === 'em_protocol' ? 'em' : 'dbo');
+    setMainView('analysis');
     setDbDrawerOpen(false);
   };
 
   const handleSelectGenericTable = (db: string, schema: string, table: string, col: string) => {
     setGenericConfig({ db, schema, table, timeColumn: col });
+    setMainView('analysis');
     setDbDrawerOpen(false);
   };
 
@@ -56,7 +62,12 @@ export const TelemetryScreen: React.FC<TelemetryScreenProps> = ({ onLogout, uiTh
         <div className="blob2" />
         <div className="shell">
           <div className="sidebar">
-            <div className="logo" title="Дашборд" onClick={() => setGenericConfig(null)} style={{ cursor: 'pointer' }}>
+            <div
+              className="logo"
+              title="Дашборд"
+              onClick={() => { setGenericConfig(null); setMainView('analysis'); }}
+              style={{ cursor: 'pointer' }}
+            >
               <span
                 role="img"
                 aria-label="Logo"
@@ -96,6 +107,14 @@ export const TelemetryScreen: React.FC<TelemetryScreenProps> = ({ onLogout, uiTh
               <HistoryOutlined style={{ fontSize: 19 }} />
             </div>
             <div
+              className={`nav-item ${mainView === 'queue' ? 'active' : ''}`}
+              title="Очередь анализа"
+              onClick={() => setMainView(v => (v === 'queue' ? 'analysis' : 'queue'))}
+              style={{ cursor: 'pointer' }}
+            >
+              <UnorderedListOutlined style={{ fontSize: 19 }} />
+            </div>
+            <div
               className="nav-item"
               title="Панель Hangfire"
               onClick={() => window.open(HANGFIRE_PATH, '_blank')}
@@ -129,35 +148,41 @@ export const TelemetryScreen: React.FC<TelemetryScreenProps> = ({ onLogout, uiTh
           </div>
 
           <div className="content">
-            {selectedDb && (
+            {mainView === 'queue' ? (
+              <AnalysisJobQueuePage active />
+            ) : (
               <>
-                <div
-                  className="content-view"
-                  style={{ display: genericConfig || activeTab !== 'dbo' ? 'none' : 'contents' }}
-                >
-                  <TelemetryContent database={selectedDb} activeTab="dbo" visible={!genericConfig && activeTab === 'dbo'} />
-                </div>
-                <div
-                  className="content-view"
-                  style={{ display: genericConfig || activeTab !== 'em' ? 'none' : 'contents' }}
-                >
-                  <TelemetryContent database={selectedDb} activeTab="em" visible={!genericConfig && activeTab === 'em'} />
-                </div>
+                {selectedDb && (
+                  <>
+                    <div
+                      className="content-view"
+                      style={{ display: genericConfig || activeTab !== 'dbo' ? 'none' : 'contents' }}
+                    >
+                      <TelemetryContent database={selectedDb} activeTab="dbo" visible={!genericConfig && activeTab === 'dbo'} />
+                    </div>
+                    <div
+                      className="content-view"
+                      style={{ display: genericConfig || activeTab !== 'em' ? 'none' : 'contents' }}
+                    >
+                      <TelemetryContent database={selectedDb} activeTab="em" visible={!genericConfig && activeTab === 'em'} />
+                    </div>
+                  </>
+                )}
+                {!selectedDb && !genericConfig && (
+                  <div className="telemetry-empty" style={{ margin: 'auto' }}>
+                    Откройте панель источников данных слева и выберите базу/схему для анализа.
+                  </div>
+                )}
+                {genericConfig && (
+                  <GenericAnalyzer
+                    db={genericConfig.db}
+                    schema={genericConfig.schema}
+                    table={genericConfig.table}
+                    timeColumn={genericConfig.timeColumn}
+                    onBack={() => setGenericConfig(null)}
+                  />
+                )}
               </>
-            )}
-            {!selectedDb && !genericConfig && (
-              <div className="telemetry-empty" style={{ margin: 'auto' }}>
-                Откройте панель источников данных слева и выберите базу/схему для анализа.
-              </div>
-            )}
-            {genericConfig && (
-              <GenericAnalyzer
-                db={genericConfig.db}
-                schema={genericConfig.schema}
-                table={genericConfig.table}
-                timeColumn={genericConfig.timeColumn}
-                onBack={() => setGenericConfig(null)}
-              />
             )}
           </div>
         </div>
