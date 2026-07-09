@@ -9,66 +9,58 @@ public class ExcelReportService
 
     public ExcelReportService(IWebHostEnvironment environment)
     {
-        _templatePath = Path.Combine(environment.ContentRootPath, "Resources", "ReportTemplate.xlsx");
+        _templatePath = Path.Combine(
+            environment.ContentRootPath,
+            "Resources",
+            "ReportTemplate.xlsx");
     }
 
-    public XLWorkbook OpenTemplate()
+    public byte[] GenerateReport(SpikeResponse response)
     {
         if (!File.Exists(_templatePath))
-            throw new FileNotFoundException($"Excel template not found: {_templatePath}");
+            throw new FileNotFoundException($"Template not found: {_templatePath}");
 
-        return new XLWorkbook(_templatePath);
-    }
-
-    public async Task<int> FillSeriesAsync(
-        XLWorkbook workbook,
-        IAsyncEnumerable<AnomalyResultDto> series,
-        CancellationToken cancellationToken = default)
-    {
-        var sheet = workbook.Worksheet("Данные")
+        using var workbook = new XLWorkbook(_templatePath);
+        var dataSheet = workbook.Worksheet("Данные")
             ?? throw new InvalidOperationException("Worksheet 'Данные' not found in report template.");
 
+        FillReport(dataSheet, response);
+
+        using var stream = new MemoryStream();
+        workbook.SaveAs(stream);
+        return stream.ToArray();
+    }
+
+    private static void FillReport(IXLWorksheet sheet, SpikeResponse response)
+    {
         var table = sheet.Tables.FirstOrDefault();
         if (table?.DataRange != null)
             table.DataRange.Clear(XLClearOptions.Contents);
 
         var row = 2;
-        await foreach (var point in series.WithCancellation(cancellationToken))
+        foreach (var point in response.Series)
         {
             sheet.Cell(row, 1).Value = point.Timestamp;
             sheet.Cell(row, 1).Style.DateFormat.Format = "dd.MM.yyyy HH:mm:ss";
             sheet.Cell(row, 2).Value = point.Value;
             sheet.Cell(row, 3).Value = point.IsSpike;
             sheet.Cell(row, 4).Value = point.PValue;
-            sheet.Cell(row, 5).Value = FormatBreakdown(point.ChannelBreakdown);
+            sheet.Cell(row, 5).Value = point.ChannelBreakdown.Count > 0
+                ? string.Join(
+                    "; ",
+                    point.ChannelBreakdown.Select(x =>
+                        $"{(string.IsNullOrWhiteSpace(x.ChannelName) ? x.ChannelId.ToString() : x.ChannelName)}: {x.Count}"))
+                : "";
             row++;
         }
 
-        var lastDataRow = row - 1;
-
-        if (table != null && lastDataRow >= 2)
+        if (table != null && row > 2)
         {
             table.Resize(sheet.Range(
                 table.RangeAddress.FirstAddress.RowNumber,
                 table.RangeAddress.FirstAddress.ColumnNumber,
-                lastDataRow,
+                row - 1,
                 table.RangeAddress.LastAddress.ColumnNumber));
         }
-
-        return lastDataRow;
-    }
-
-    private static string FormatBreakdown(IEnumerable<ChannelContributionDto> breakdown)
-    {
-        var parts = breakdown
-            .Select(cb =>
-            {
-                var name = cb.ChannelName;
-                if (string.IsNullOrWhiteSpace(name) || name.Trim() == cb.ChannelId.ToString())
-                    name = cb.ChannelId.ToString();
-                return $"{name}: {cb.Count}";
-            })
-            .ToList();
-        return parts.Count == 0 ? "" : string.Join("; ", parts);
     }
 }
