@@ -99,8 +99,6 @@ export const TelemetryControls: React.FC<TelemetryControlsProps> = ({
   const entityLabel = activeTab === 'dbo' ? 'Объект' : 'Канал';
   const entityPlaceholder = activeTab === 'dbo' ? 'Все объекты' : 'Все каналы';
 
-  // Sync from parent only when the user is not interacting with the picker.
-  // Parent re-renders during analysis must not overwrite an in-progress selection.
   useEffect(() => {
     if (isEditingPeriodRef.current) return;
     setPickerValue(toPickerValue(dateRange));

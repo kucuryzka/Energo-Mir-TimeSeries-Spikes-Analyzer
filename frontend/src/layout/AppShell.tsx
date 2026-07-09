@@ -34,8 +34,7 @@ export const AppShell: React.FC<AppShellProps> = ({ onLogout, uiTheme, onToggleT
   const [genericConfig, setGenericConfig] = useState<GenericConfig | null>(null);
   const [pendingJobOpen, setPendingJobOpen] = useState<PendingAnalysisJobOpen | null>(null);
 
-  // useLayoutEffect (не useEffect) — иначе :root получает data-theme на кадр позже,
-  // чем .page (который выставляется синхронно в JSX), и часть UI на миг остаётся в старой теме.
+
   useLayoutEffect(() => {
     document.documentElement.setAttribute('data-theme', uiTheme);
   }, [uiTheme]);
@@ -84,17 +83,14 @@ export const AppShell: React.FC<AppShellProps> = ({ onLogout, uiTheme, onToggleT
 
   const faviconUrl = `${import.meta.env.BASE_URL}favicon.png`;
 
-  // Стили для контрастности кнопок (от блеклой к яркой)
   const getNavItemStyle = (index: number, total: number) => {
-    // index: 0 - самая блеклая (История), total-1 - самая яркая (Выход)
-    const minOpacity = 0.55; // Увеличено с 0.35 до 0.55
+    const minOpacity = 0.55; 
     const maxOpacity = 1;
     const opacity = minOpacity + (index / (total - 1)) * (maxOpacity - minOpacity);
     
-    // Цвет от серого к насыщенному синему/красному (с учётом темы, иначе в тёмной теме иконки почти не видно)
     const isLogout = index === total - 1;
     const color = isLogout
-      ? '#d64933' // красный для выхода
+      ? '#d64933'
       : uiTheme === 'dark'
         ? `rgba(203, 214, 240, ${opacity})`
         : `rgba(26, 35, 50, ${opacity})`;
@@ -108,7 +104,6 @@ export const AppShell: React.FC<AppShellProps> = ({ onLogout, uiTheme, onToggleT
     } as React.CSSProperties;
   };
 
-  // Список кнопок для рендеринга с контрастностью
   const navButtons = [
     {
       key: 'history',

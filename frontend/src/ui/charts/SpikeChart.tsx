@@ -88,7 +88,6 @@ export const SpikeChart: React.FC<Props> = ({
     return values.length ? Math.max(...values) : 0;
   }, [visibleData]);
 
-  // 🔥 Подписи оси Y
   const yLabels = useMemo(() => {
     return getYAxisLabels(maxYValue, 5);
   }, [maxYValue]);
@@ -184,7 +183,7 @@ export const SpikeChart: React.FC<Props> = ({
               </filter>
             </defs>
 
-            {/* 🔥 Подпись оси Y (слева) */}
+            {/* Подпись оси Y (слева) */}
             <text
               x={18}
               y={VIEW_H / 2}
@@ -197,7 +196,7 @@ export const SpikeChart: React.FC<Props> = ({
               Количество сообщений телеметрии
             </text>
 
-            {/* 🔥 Подписи оси Y — числовые значения */}
+            {/* Подписи оси Y — числовые значения */}
             {yLabels.map((label) => {
               const y = yForValue(label);
               if (y < 0 || y > BASELINE_Y) return null;

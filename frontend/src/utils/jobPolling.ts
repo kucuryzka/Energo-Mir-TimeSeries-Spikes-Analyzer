@@ -85,7 +85,6 @@ export async function pollAnalysisJob(
             options.onPartialResult?.(partial);
           }
         } catch {
-          // Partial file may not exist yet after the first batch.
         }
       }
     }

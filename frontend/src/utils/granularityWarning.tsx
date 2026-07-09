@@ -2,7 +2,6 @@ import { Modal } from 'antd';
 import dayjs from 'dayjs';
 import type { TimeGranularity } from '../types/analytics.types';
 
-/** Порог точек в итоговой серии — выше него показываем предупреждение. */
 const HEAVY_SERIES_POINT_THRESHOLD = 100_000;
 
 const GRANULARITY_LABELS: Record<string, string> = {
@@ -20,10 +19,6 @@ function formatCount(count: number): string {
   return `~${count}`;
 }
 
-/**
- * Оценка максимального числа точек в итоговой серии (после GROUP BY в БД).
- * Пустые интервалы без данных в серию не попадают — это верхняя граница.
- */
 export function estimateSeriesPointCount(
   granularity: TimeGranularity | 'Month',
   startDate: string,

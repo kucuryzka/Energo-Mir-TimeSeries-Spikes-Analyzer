@@ -94,7 +94,6 @@ export async function loadAnalysisJobResult(
         return { result, isPartial: true };
       }
     } catch {
-      // partial may not exist yet
     }
   }
 

@@ -3,11 +3,7 @@ import { message } from 'antd';
 import { analysisJobsApi } from '../api/analysisJobsApi';
 import { cancelAnalysisSessionJob } from '../store/analysisSessionStore';
 
-/**
- * Отмена текущей задачи и экспорт результата в Excel — общая логика
- * телеметрии и generic-анализатора. Поведение и тексты сообщений идентичны
- * исходным обработчикам в этих компонентах.
- */
+
 export function useAnalysisJobActions(
   sessionKey: string,
   jobId: string | null,

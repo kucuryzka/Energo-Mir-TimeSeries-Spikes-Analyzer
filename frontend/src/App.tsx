@@ -78,8 +78,6 @@ function getThemeConfig(mode: AppTheme) {
       Drawer: {
         borderRadiusLG: 20,
       },
-      // antd's dark algorithm defaults Table cells to near-black, which clashes
-      // with this app's navy dark palette (--list-card-bg / --tab-pill-bg) — align them.
       Table: isDark
         ? {
             colorBgContainer: '#151d3a',

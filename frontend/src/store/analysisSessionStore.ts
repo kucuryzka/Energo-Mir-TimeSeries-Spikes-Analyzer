@@ -155,7 +155,6 @@ export function useAnalysisResultData(
       return;
     }
     if (!session.jobId) return;
-    // Re-attach after tab was hidden while the job kept running on the server.
     if (session.loading) {
       let cancelled = false;
       (async () => {
@@ -167,7 +166,6 @@ export function useAnalysisResultData(
             setIsPartialResult(true);
           }
         } catch {
-          // partial may not exist yet
         }
       })();
       return () => { cancelled = true; };
@@ -190,7 +188,6 @@ export function useAnalysisResultData(
               setIsPartialResult(true);
             }
           } catch {
-            // partial file may not exist yet
           }
           return;
         }
@@ -204,7 +201,6 @@ export function useAnalysisResultData(
               setIsPartialResult(true);
             }
           } catch {
-            // no partial saved
           }
           return;
         }

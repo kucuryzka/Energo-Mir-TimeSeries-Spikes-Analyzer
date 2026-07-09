@@ -20,11 +20,10 @@ const COLORS = [
   '#FF8042', '#FF9E6D', '#FFBA99', '#FFD4C4', '#FFECE3',
 ];
 
-const OTHER_COLOR = '#FFBB28'; // Жёлтый для "Других"
+const OTHER_COLOR = '#FFBB28'; 
 
 const RADIAN = Math.PI / 180;
 
-// Кастомная метка с выносками
 const renderCustomizedLabel = (props: any) => {
   const { cx, cy, midAngle, outerRadius, percent, name, index } = props;
   
@@ -39,7 +38,6 @@ const renderCustomizedLabel = (props: any) => {
   const displayName = name.length > 25 ? name.substring(0, 23) + '…' : name;
   const percentValue = (percent * 100).toFixed(1);
 
-  // Показываем только для топ-3 или если процент > 5%
   const isTop3 = index < 3;
   const isSignificant = parseFloat(percentValue) > 5;
 
@@ -51,7 +49,6 @@ const renderCustomizedLabel = (props: any) => {
   const fontSize = 11;
   const fontWeight = 600;
 
-  // Для "Других" используем жёлтый цвет
   const isOther = name === 'Другие';
   const color = isOther ? OTHER_COLOR : COLORS[index % COLORS.length];
 
@@ -99,7 +96,6 @@ export const DistributionChart: React.FC<Props> = ({ data, title }) => {
 
   const total = useMemo(() => data.reduce((acc, curr) => acc + curr.count, 0), [data]);
 
-  // Определяем топ-10 категорий (которые попадут на график)
   const top10Categories = useMemo(() => {
     return [...data]
       .sort((a, b) => b.count - a.count)
@@ -107,16 +103,12 @@ export const DistributionChart: React.FC<Props> = ({ data, title }) => {
       .map(item => item.category);
   }, [data]);
 
-  // Функция получения цвета для категории
   const getColorForCategory = (category: string): string => {
-    // Если категория "Другие" — жёлтый
     if (category === 'Другие') return OTHER_COLOR;
-    // Если категория в топ-10 — даём ей цвет по индексу
     const index = top10Categories.indexOf(category);
     if (index !== -1) {
       return COLORS[index % COLORS.length];
     }
-    // Если не в топ-10 — жёлтый (как "Другие")
     return OTHER_COLOR;
   };
 
@@ -276,7 +268,6 @@ export const DistributionChart: React.FC<Props> = ({ data, title }) => {
                 isAnimationActive={true}
               >
                 {chartData.map((entry: ChartDataItem, index: number) => {
-                  // Для "Других" — жёлтый цвет
                   const isOther = entry.name === 'Другие';
                   const color = isOther ? OTHER_COLOR : COLORS[index % COLORS.length];
                   return (

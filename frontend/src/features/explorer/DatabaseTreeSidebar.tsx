@@ -27,7 +27,7 @@ export const DatabaseTreeSidebar: React.FC<DatabaseTreeSidebarProps> = ({
   onToggleCollapse: _onToggleCollapse,
   onSelectStandardSchema,
   onSelectGenericTable,
-  // onLogout, // ← закомментировать или удалить
+
 }) => {
   const [allTreeData, setAllTreeData] = useState<DataNode[]>([]);
   const [loading, setLoading] = useState(false);
@@ -176,7 +176,6 @@ export const DatabaseTreeSidebar: React.FC<DatabaseTreeSidebarProps> = ({
         </Typography.Text>
       </div>
 
-      {/* Только поле поиска, без кнопки выхода */}
       <div className="db-tree-sidebar__search-row">
         <Input
           className="db-tree-sidebar__search"

@@ -3,12 +3,8 @@ import { message } from 'antd';
 import type { TablePreviewData } from '../ui/TablePreviewCard';
 
 /**
- * Состояние панели предпросмотра таблицы (открыта/загрузка/данные) с ленивой
- * загрузкой при первом открытии. Общее для телеметрии и generic-анализатора.
- *
- * @param fetchPreview — загрузчик образца (мемоизировать в вызывающем компоненте).
- * @param resetKey     — строковый ключ; при его смене панель сбрасывается
- *                       (эквивалент прежних reset-эффектов по смене БД/таблицы/видимости).
+ * @param fetchPreview 
+ * @param resetKey   
  */
 export function useTablePreview(
   fetchPreview: () => Promise<TablePreviewData>,

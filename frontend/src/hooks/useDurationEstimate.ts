@@ -10,14 +10,10 @@ interface UseDurationEstimateParams {
   table: string;
   granularity: TimeGranularity;
   dateRange: [string, string];
-  /** Телеметрия сохраняет прошлую оценку при скрытии, generic-анализатор — сбрасывает. */
   resetWhenHidden?: boolean;
 }
 
-/**
- * Дебаунсед-оценка ожидаемого времени анализа (подсказка у кнопки «Запустить анализ»).
- * Логика и формат строки идентичны исходным эффектам в TelemetryContent/GenericAnalyzer.
- */
+
 export function useDurationEstimate({
   enabled,
   database,
@@ -54,7 +50,6 @@ export function useDurationEstimate({
       }).catch(() => setDurationEstimate(null));
     }, 400);
     return () => window.clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, database, schema, table, granularity, dateRange]);
 
   return durationEstimate;

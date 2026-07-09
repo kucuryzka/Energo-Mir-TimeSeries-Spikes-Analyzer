@@ -1,10 +1,5 @@
 import React, { useCallback, useRef, useState } from 'react';
 
-/**
- * Состояние и обработчики нижнего ползунка-зума под графиком SpikeChart:
- * перетаскивание ручек «от»/«до» и выделение диапазона кликом по треку.
- * Вынесено из SpikeChart без изменения поведения.
- */
 export function useSpikeZoom() {
   const [zoomRange, setZoomRange] = useState<[number, number]>([0, 100]);
   const trackRef = useRef<HTMLDivElement>(null);
@@ -23,7 +18,6 @@ export function useSpikeZoom() {
     return Math.min(100, Math.max(0, ((e.clientX - rect.left) / rect.width) * 100));
   };
 
-  // Клик/зажатие в любом месте ползунка — начинает новое выделение с этой точки.
   const startTrackSelect = useCallback((e: React.PointerEvent) => {
     if (!trackRef.current) return;
     e.preventDefault();

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Form, Input, InputNumber, Button, Select, Card, Typography, message } from 'antd';
 import { authApi } from '../../api/explorerApi';
-import gzhelBg from '../../assets/gzhel.svg'; // Импорт SVG из src/assets
+import gzhelBg from '../../assets/gzhel.svg';
 
 const { Title } = Typography;
 

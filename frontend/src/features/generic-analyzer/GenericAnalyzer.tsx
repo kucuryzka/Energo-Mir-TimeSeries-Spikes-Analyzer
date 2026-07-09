@@ -321,7 +321,7 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
   }, [pendingJobForTable?.id, visible, onPendingJobConsumed]);
 
   const enrichedData = useMemo(

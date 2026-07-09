@@ -14,11 +14,6 @@ interface SpikeOverviewChartProps {
   onPointSelect: (timestamp: string) => void;
 }
 
-/**
- * Карточка «Обзор показателей»: заголовок с легендой/переключателями и сам SpikeChart.
- * Разметка идентична исходным блокам в TelemetryContent и GenericAnalyzer
- * (те же классы, инлайн-стили и цвета) — вынесена без изменения вида.
- */
 export const SpikeOverviewChart: React.FC<SpikeOverviewChartProps> = ({
   enrichedData,
   isPartialResult,

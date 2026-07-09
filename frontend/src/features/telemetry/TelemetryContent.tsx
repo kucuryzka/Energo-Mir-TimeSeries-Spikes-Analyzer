@@ -193,7 +193,6 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
       }).catch(() => {});
     }
     return () => { mounted = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [database, visible, activeTab]);
 
   useEffect(() => {
@@ -213,7 +212,6 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
     if (!visible) return;
     const timer = setTimeout(() => fetchChannels(channelSearch), 400);
     return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [channelSearch, visible]);
 
   const fetchDistributions = useCallback(async (range?: readonly [string, string]) => {
@@ -351,7 +349,6 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
       if (!cancelled) setLoadingDetails(false);
     });
     return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedPoint, granularity, channelId, database, activeTab, channels]);
 
   const pendingJobForTab = pendingJobOpen
@@ -541,7 +538,6 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingJobForTab?.id, visible, onPendingJobConsumed]);
 
   const loadHistoryItem = async (job: any) => {

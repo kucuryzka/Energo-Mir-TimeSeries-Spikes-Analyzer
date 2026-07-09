@@ -8,10 +8,7 @@
   font-family: 'Manrope', system-ui, sans-serif;
 }
 
-/* Theme tokens live on :root (not .page) so they also cascade into
-   portaled content like antd Drawers, which mount outside .page. */
 :root {
-  /* ---- Theme tokens (light defaults) ---- */
   --bg-app-gradient: linear-gradient(160deg,#dbe6fb,#eef2fb);
   --blob1: radial-gradient(circle,rgba(61,99,221,.22),transparent 70%);
   --blob2: radial-gradient(circle,rgba(226,163,57,.12),transparent 70%);
@@ -480,7 +477,6 @@
   fill: var(--text-secondary);
 }
 
-/* Database tree drawer (portaled — uses :root[data-theme] tokens) */
 .db-tree-drawer .ant-drawer-content,
 .db-tree-drawer .ant-drawer-body {
   background: var(--list-card-bg) !important;

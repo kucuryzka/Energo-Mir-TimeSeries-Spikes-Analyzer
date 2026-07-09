@@ -1,24 +1,21 @@
 import dayjs from 'dayjs';
 import type { SpikePoint } from '../../types/analytics.types';
 
-// Константы для SVG — увеличиваем отступ слева для подписей Y
 export const VIEW_W = 1000;
-export const VIEW_H = 340; // 🔥 Увеличено под вертикальные подписи дат снизу
+export const VIEW_H = 340; 
 export const TOP_PADDING = 25;
 export const BASELINE_Y = 255;
-export const LEFT_PADDING = 70; // 🔥 Увеличенный отступ слева для подписей Y
-export const CHART_W = VIEW_W - LEFT_PADDING; // Ширина самого графика
+export const LEFT_PADDING = 70;
+export const CHART_W = VIEW_W - LEFT_PADDING; 
 export const MAX_POINTS = 3000;
 
-// Диагональные подписи дат: считаем реальный горизонтальный "след" повёрнутой подписи,
-// чтобы соседние подписи не наслаивались друг на друга.
 export const X_LABEL_FONT_SIZE = 6.5;
 export const X_LABEL_ROTATE_DEG = 60;
 const X_LABEL_CHARS = 'DD.MM HH:mm'.length;
-const X_LABEL_TEXT_LENGTH = X_LABEL_CHARS * X_LABEL_FONT_SIZE * 0.62; // моноширинный шрифт
+const X_LABEL_TEXT_LENGTH = X_LABEL_CHARS * X_LABEL_FONT_SIZE * 0.62; 
 export const MIN_X_LABEL_SPACING = Math.ceil(
   X_LABEL_TEXT_LENGTH * Math.cos((X_LABEL_ROTATE_DEG * Math.PI) / 180) + 4,
-); // px между соседними подписями
+); 
 
 export interface ChartPoint {
   x: number;
@@ -28,7 +25,6 @@ export interface ChartPoint {
   index: number;
 }
 
-// LTTB сэмплирование
 export function lttbSampling(data: SpikePoint[], threshold: number): SpikePoint[] {
   if (data.length <= threshold) return data;
 
@@ -67,7 +63,6 @@ export function lttbSampling(data: SpikePoint[], threshold: number): SpikePoint[
   return sampled;
 }
 
-// Построение масштаба — с учётом отступа слева
 export function buildScale(values: number[]) {
   const maxValue = values.length ? Math.max(...values) : 0;
   const domainMax = maxValue > 0 ? maxValue * 1.12 : 1;
@@ -79,7 +74,6 @@ export function buildScale(values: number[]) {
   return { yForValue, xForIndex };
 }
 
-// Преобразование данных в точки — со смещением X
 export function toChartPoints(series: { timestamp: string; value: number }[]): ChartPoint[] {
   const values = series.map(s => s.value);
   const { yForValue, xForIndex } = buildScale(values);
@@ -92,7 +86,6 @@ export function toChartPoints(series: { timestamp: string; value: number }[]): C
   }));
 }
 
-// Прямая линия через все точки
 export function buildLinePath(points: ChartPoint[]): string {
   if (points.length === 0) return '';
   if (points.length === 1) return `M ${points[0].x.toFixed(1)} ${points[0].y.toFixed(1)}`;
@@ -110,7 +103,6 @@ export function buildLinePath(points: ChartPoint[]): string {
   return d;
 }
 
-// Построение области под графиком
 export function buildAreaPath(points: ChartPoint[]): string {
   if (points.length === 0) return '';
   const line = buildLinePath(points);
@@ -119,8 +111,6 @@ export function buildAreaPath(points: ChartPoint[]): string {
   return `${line} L ${last.x.toFixed(1)} ${BASELINE_Y} L ${first.x.toFixed(1)} ${BASELINE_Y} Z`;
 }
 
-// Функция для генерации подписей оси X — по возможности показывает каждую точку,
-// а при нехватке места равномерно прореживает так, чтобы вертикальные подписи не наезжали друг на друга.
 export function getXAxisLabels(data: SpikePoint[], maxCount: number): { timestamp: string; x: number }[] {
   if (data.length === 0) return [];
   const count = Math.max(2, Math.min(maxCount, data.length));
@@ -147,7 +137,6 @@ export function getXAxisLabels(data: SpikePoint[], maxCount: number): { timestam
   return labels;
 }
 
-// 🔥 Функция для генерации подписей оси Y
 export function getYAxisLabels(maxValue: number, count: number = 5): number[] {
   if (maxValue === 0) return [0];
   const step = Math.ceil(maxValue / count / Math.pow(10, Math.floor(Math.log10(maxValue / count)))) * Math.pow(10, Math.floor(Math.log10(maxValue / count)));

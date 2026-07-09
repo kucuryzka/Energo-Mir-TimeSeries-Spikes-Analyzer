@@ -19,8 +19,8 @@ export interface DetectSpikesRequest {
   customMinutes?: number | null;
   confidence: number;
   windowSize: number;
-  startDate: string; // ISO формат
-  endDate: string;   // ISO формат
+  startDate: string; 
+  endDate: string;
 }
 
 export interface ChannelDto {
