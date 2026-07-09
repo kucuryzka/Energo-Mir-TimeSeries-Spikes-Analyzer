@@ -813,7 +813,6 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
 
               {activeTab === 'dbo' && !channelId && stats && (
                 <div className="distributions-section">
-                  <div className="chart-title" style={{ marginBottom: 4 }}>Распределение</div>
                   {dboObjectDistribution && dboObjectDistribution.length > 0 ? (
                     <div className="distribution-card">
                       <DistributionChart data={dboObjectDistribution} title="Распределение по объектам" />
