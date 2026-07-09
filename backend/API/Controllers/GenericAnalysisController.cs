@@ -36,6 +36,7 @@ public class GenericAnalysisRequest
 public class GenericAnalysisController : ControllerBase
 {
     private readonly IConnectionManagerService _connectionManager;
+    private readonly ExcelReportService _excelReportService;
     private readonly InternalDbContext _internalDb;
     private readonly IBackgroundJobClient _backgroundJobClient;
     private readonly AnalysisPipelineService _pipeline;
@@ -52,7 +53,8 @@ public class GenericAnalysisController : ControllerBase
         API.Sql.ISqlDialectProvider dialectProvider,
         AnalysisResultService resultService,
         TablePreviewService tablePreview,
-        AnalysisRequestValidator requestValidator)
+        AnalysisRequestValidator requestValidator,
+        ExcelReportService excelReportService)
     {
         _connectionManager = connectionManager;
         _internalDb = internalDb;
@@ -62,6 +64,7 @@ public class GenericAnalysisController : ControllerBase
         _resultService = resultService;
         _tablePreview = tablePreview;
         _requestValidator = requestValidator;
+        _excelReportService = excelReportService;
     }
 
     [HttpGet("preview")]
@@ -357,5 +360,37 @@ public class GenericAnalysisController : ControllerBase
         var connStrBuilder = new DbConnectionStringBuilder { ConnectionString = connectionString };
         connStrBuilder["Database"] = database;
         return connStrBuilder.ConnectionString;
+    }
+
+    [HttpGet("export-excel/{id}")]
+    public async Task<IActionResult> ExportExcel(string id)
+    {
+        try
+        {
+            var job = await _internalDb.AnalysisJobs.FindAsync(id);
+
+            if (job == null)
+                return NotFound();
+
+            if (!_resultService.HasResult(job))
+                return BadRequest("Result is not ready.");
+
+            var response = await _resultService.LoadAsync(job);
+
+            var file = _excelReportService.GenerateReport(response);
+
+            return File(
+                file,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                $"spike-analysis-{DateTime.Now:yyyy-MM-dd_HHmm}.xlsx");
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new
+            {
+                message = "Failed to generate Excel report.",
+                details = ex.ToString()
+            });
+        }
     }
 }

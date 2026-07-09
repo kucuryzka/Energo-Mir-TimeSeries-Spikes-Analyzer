@@ -82,6 +82,7 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({ database, ac
     data,
     isPartialResult,
     error,
+    jobId,
     applyPartialResult,
     applyFinalResult,
     setData,
@@ -344,13 +345,18 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({ database, ac
     }));
   }, [data]);
 
-  const handleExport = () => {
-    if (!data?.series?.length) {
-      message.warning('Нет данных для экспорта. Сначала выполните анализ.');
+  const handleExport = async () => {
+    if (!jobId) {
+      message.warning('Нет результата анализа для экспорта.');
       return;
     }
-    exportSpikesToExcel(data);
-    message.success('Данные экспортированы в Excel');
+
+    try {
+      await exportSpikesToExcel(jobId);
+      message.success('Данные экспортированы в Excel');
+    } catch {
+      message.error('Ошибка экспорта');
+    }
   };
 
   const handlePointSelect = (timestamp: string) => {

@@ -57,6 +57,8 @@ builder.Services.AddScoped<API.Services.TablePreviewService>();
 builder.Services.AddScoped<API.Services.AnalysisRequestValidator>();
 builder.Services.AddScoped<API.Services.AnalysisJobProcessor>();
 
+builder.Services.AddScoped<API.Services.ExcelReportService>();
+
 builder.Services.AddScoped<API.DataSources.IDataSourceStrategy, API.DataSources.EmProtocolDataSource>();
 builder.Services.AddScoped<API.DataSources.IDataSourceStrategy, API.DataSources.DboDataSource>();
 builder.Services.AddHostedService<API.Services.StaleAnalysisJobCleanup>();
@@ -73,6 +75,8 @@ builder.Services.AddCors(options =>
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+
+
 
 var app = builder.Build();
 

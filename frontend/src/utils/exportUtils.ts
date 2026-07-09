@@ -1,61 +1,29 @@
-import * as XLSX from 'xlsx';
-import type { AnomalyResultDto, SpikeResponse } from '../types/analytics.types';
 import dayjs from 'dayjs';
+import { genericAnalysisApi } from '../api/explorerApi';
 
-interface ExportRow {
-  'Время среза': string;
-  'Количество сообщений': number;
-  'Статус': string;
-  'P-Value': number;
-  'Достоверность (%)': string;
-  'Каналы (детализация)': string;
-}
 
-export const exportSpikesToExcel = (
-  data: SpikeResponse | null,
+export const exportSpikesToExcel = async (
+  jobId: string,
   filename?: string
-): void => {
-  if (!data?.series?.length) {
-    return;
-  }
+): Promise<void> => {
 
-  const rows: ExportRow[] = data.series.map((point: AnomalyResultDto) => {
-    const confidence = (1 - point.pValue) * 100;
-    const status = point.isSpike
-      ? point.pValue < 0.01
-        ? 'Критическая аномалия'
-        : point.pValue < 0.05
-          ? 'Аномалия'
-          : 'Подозрительное'
-      : 'Штатный режим';
+  const blob = await genericAnalysisApi.exportExcel(jobId);
 
-    const channelDetails = (point.channelBreakdown || [])
-      .map(cb => `${cb.channelName || cb.channelId}: ${cb.count}`)
-      .join('; ');
+  const url = window.URL.createObjectURL(blob);
 
-    return {
-      'Время среза': dayjs(point.timestamp).format('DD.MM.YYYY HH:mm:ss'),
-      'Количество сообщений': point.value,
-      'Статус': status,
-      'P-Value': point.pValue,
-      'Достоверность (%)': `${confidence.toFixed(2)}%`,
-      'Каналы (детализация)': channelDetails || '—',
-    };
-  });
+  const link = document.createElement('a');
 
-  const workbook = XLSX.utils.book_new();
-  const worksheet = XLSX.utils.json_to_sheet(rows);
+  link.href = url;
 
-  const colWidths = (Object.keys(rows[0] || {}) as (keyof ExportRow)[]).map((key) => ({
-    wch: Math.max(
-      String(key).length * 2,
-      ...rows.map((row) => String(row[key] ?? '').length)
-    ),
-  }));
-  worksheet['!cols'] = colWidths;
+  link.download =
+    filename ??
+    `spike-analysis-${dayjs().format('YYYY-MM-DD_HHmm')}.xlsx`;
 
-  XLSX.utils.book_append_sheet(workbook, worksheet, 'Аномалии');
+  document.body.appendChild(link);
 
-  const defaultName = `spike-analysis-${dayjs().format('YYYY-MM-DD_HHmm')}.xlsx`;
-  XLSX.writeFile(workbook, filename || defaultName);
+  link.click();
+
+  document.body.removeChild(link);
+
+  window.URL.revokeObjectURL(url);
 };

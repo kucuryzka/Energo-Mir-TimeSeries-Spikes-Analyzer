@@ -95,5 +95,15 @@ export const genericAnalysisApi = {
   },
   deleteHistoryItem: async (jobId: string) => {
     await apiClient.delete(`/GenericAnalysis/history/${jobId}`);
-  }
+  },
+  exportExcel: async (jobId: string): Promise<Blob> => {
+    const response = await apiClient.get(
+      `/GenericAnalysis/export-excel/${jobId}`,
+      {
+        responseType: 'blob',
+      }
+    );
+
+    return response.data;
+  },
 };

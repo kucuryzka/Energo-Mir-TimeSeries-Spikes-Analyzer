@@ -51,6 +51,7 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({ db, schema, ta
     loading,
     progress: analysisProgress,
     data,
+    jobId,
     isPartialResult,
     error,
     applyPartialResult,
@@ -152,13 +153,19 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({ db, schema, ta
     }
   };
 
-  const handleExport = () => {
-    if (!data?.series?.length) {
-      message.warning('Нет данных для экспорта. Сначала выполните анализ.');
+  const handleExport = async () => {
+    if (!jobId) {
+      message.warning('Нет результата анализа для экспорта.');
       return;
     }
-    exportSpikesToExcel(data);
-    message.success('Данные экспортированы в Excel');
+
+    try {
+      await exportSpikesToExcel(jobId);
+      message.success('Данные экспортированы в Excel');
+    } catch (e) {
+      console.error('Export failed', e);
+      message.error('Ошибка экспорта данных');
+    }
   };
 
   const openHistory = useCallback(async () => {
