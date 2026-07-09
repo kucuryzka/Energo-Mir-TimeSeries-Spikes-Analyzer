@@ -49,11 +49,6 @@ builder.Services.AddControllers()
     });
 builder.Services.AddHttpContextAccessor();
 
-builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlServer(
-        builder.Configuration.GetConnectionString("DefaultConnection"),
-        sqlOptions => sqlOptions.CommandTimeout(analysisSettings.CommandTimeoutSeconds)));
-
 builder.Services.AddDbContext<InternalDbContext>(options =>
     options.UseSqlite(builder.Configuration.GetConnectionString("InternalConnection")));
 
@@ -85,6 +80,7 @@ builder.Services.AddScoped<SessionContextService>();
 builder.Services.AddScoped<DataSourceConnectionResolver>();
 builder.Services.AddSingleton<AnalysisResultService>();
 builder.Services.AddSingleton<EventCodeLabelService>();
+builder.Services.AddScoped<ExcelReportService>();
 builder.Services.AddScoped<AnalysisExportService>();
 builder.Services.AddScoped<TablePreviewService>();
 builder.Services.AddScoped<AnalysisRequestValidator>();

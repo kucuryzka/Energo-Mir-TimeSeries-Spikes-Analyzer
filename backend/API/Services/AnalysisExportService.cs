@@ -11,6 +11,7 @@ public class AnalysisExportService
 {
     private readonly AnalysisResultService _resultService;
     private readonly AnalysisPipelineService _pipeline;
+    private readonly ExcelReportService _excelReport;
     private readonly DboDataSource _dboDataSource;
     private readonly EmProtocolDataSource _emDataSource;
     private readonly EventCodeLabelService _eventCodeLabels;
@@ -20,6 +21,7 @@ public class AnalysisExportService
     public AnalysisExportService(
         AnalysisResultService resultService,
         AnalysisPipelineService pipeline,
+        ExcelReportService excelReport,
         IEnumerable<IDataSourceStrategy> dataSources,
         EventCodeLabelService eventCodeLabels,
         IConnectionManagerService connectionManager,
@@ -27,6 +29,7 @@ public class AnalysisExportService
     {
         _resultService = resultService;
         _pipeline = pipeline;
+        _excelReport = excelReport;
         _dboDataSource = dataSources.OfType<DboDataSource>().First();
         _emDataSource = dataSources.OfType<EmProtocolDataSource>().First();
         _eventCodeLabels = eventCodeLabels;
@@ -42,41 +45,15 @@ public class AnalysisExportService
         if (!_resultService.CanExport(job))
             throw new InvalidOperationException("Analysis result is not available for export.");
 
-        var breakdownHeader = job.Schema == "dbo"
-            ? "Объекты (детализация)"
-            : "Каналы (детализация)";
+        using var workbook = _excelReport.OpenTemplate();
+        var lastDataRow = await _excelReport.FillSeriesAsync(
+            workbook,
+            _resultService.EnumerateSeriesAsync(job, cancellationToken),
+            cancellationToken);
 
-        using var workbook = new XLWorkbook();
-        var seriesSheet = workbook.Worksheets.Add("Аномалии");
-
-        seriesSheet.Cell(1, 1).Value = "Время среза";
-        seriesSheet.Cell(1, 2).Value = "Количество сообщений";
-        seriesSheet.Cell(1, 3).Value = "Статус";
-        seriesSheet.Cell(1, 4).Value = "P-Value";
-        seriesSheet.Cell(1, 5).Value = "Достоверность (%)";
-        seriesSheet.Cell(1, 6).Value = breakdownHeader;
-        seriesSheet.Row(1).Style.Font.Bold = true;
-
-        var row = 2;
-        await foreach (var point in _resultService.EnumerateSeriesAsync(job, cancellationToken))
-        {
-            var confidence = (1 - point.PValue) * 100;
-            seriesSheet.Cell(row, 1).Value = point.Timestamp;
-            seriesSheet.Cell(row, 1).Style.DateFormat.Format = "dd.MM.yyyy HH:mm:ss";
-            seriesSheet.Cell(row, 2).Value = point.Value;
-            seriesSheet.Cell(row, 3).Value = FormatStatus(point);
-            seriesSheet.Cell(row, 4).Value = point.PValue;
-            seriesSheet.Cell(row, 5).Value = $"{confidence:F2}%";
-            seriesSheet.Cell(row, 6).Value = FormatBreakdown(point.ChannelBreakdown);
-            row++;
-        }
-
-        seriesSheet.Column(1).Width = 22;
-        seriesSheet.Column(2).Width = 14;
-        seriesSheet.Column(3).Width = 22;
-        seriesSheet.Column(4).Width = 12;
-        seriesSheet.Column(5).Width = 16;
-        seriesSheet.Column(6).Width = 40;
+        var chartSheet = workbook.Worksheets.FirstOrDefault(w => w.Name == "График");
+        if (chartSheet != null)
+            ExcelChartPatcher.PrepareChartWorksheet(chartSheet, lastDataRow);
 
         AddParametersSheet(workbook, job);
 
@@ -85,8 +62,10 @@ public class AnalysisExportService
             AddDistributionSheet(workbook, distribution, job.Schema, _eventCodeLabels);
 
         var fileName = $"spike-analysis-{SanitizeFilePart(job.Database)}-{job.Id[..Math.Min(8, job.Id.Length)]}-{DateTime.UtcNow:yyyy-MM-dd_HHmm}.xlsx";
-        var stream = new MemoryStream();
-        workbook.SaveAs(stream);
+        using var tempStream = new MemoryStream();
+        workbook.SaveAs(tempStream);
+        var patchedBytes = ExcelChartPatcher.Patch(tempStream.ToArray(), lastDataRow);
+        var stream = new MemoryStream(patchedBytes);
         stream.Position = 0;
         return (stream, fileName);
     }
@@ -227,34 +206,6 @@ public class AnalysisExportService
         }
 
         sheet.Columns().AdjustToContents();
-    }
-
-    private static string FormatStatus(AnomalyResultDto point)
-    {
-        if (!point.IsSpike)
-            return "Штатный режим";
-
-        if (point.PValue < 0.01)
-            return "Критическая аномалия";
-        if (point.PValue < 0.05)
-            return "Аномалия";
-        return "Подозрительное";
-    }
-
-    private static string FormatBreakdown(IEnumerable<ChannelContributionDto> breakdown)
-    {
-        var parts = breakdown
-            .Select(cb =>
-            {
-                var name = cb.ChannelName;
-                if (string.IsNullOrWhiteSpace(name) || name.Trim() == cb.ChannelId.ToString())
-                    name = cb.ChannelId.ToString();
-                if (!string.IsNullOrWhiteSpace(cb.EventCode))
-                    return $"{name}: {cb.Count}";
-                return $"{name}: {cb.Count}";
-            })
-            .ToList();
-        return parts.Count == 0 ? "—" : string.Join("; ", parts);
     }
 
     private static int? ParseChannelFilter(AnalysisJob job) =>
