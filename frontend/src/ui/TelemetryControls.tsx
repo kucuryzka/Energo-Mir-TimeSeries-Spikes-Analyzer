@@ -167,6 +167,7 @@ export const TelemetryControls: React.FC<TelemetryControlsProps> = ({
                 onChange={onGranularityChange}
                 options={GRANULARITY_OPTIONS}
                 style={{ width: '100%' }}
+                getPopupContainer={() => filtersRef.current ?? document.body}
               />
               {granularity === 'Custom' && (
                 <InputNumber
@@ -192,6 +193,7 @@ export const TelemetryControls: React.FC<TelemetryControlsProps> = ({
                   filterOption={false}
                   style={{ width: '100%' }}
                   options={channels.map(c => ({ value: c.id, label: c.name }))}
+                  getPopupContainer={() => filtersRef.current ?? document.body}
                 />
               </div>
             )}
