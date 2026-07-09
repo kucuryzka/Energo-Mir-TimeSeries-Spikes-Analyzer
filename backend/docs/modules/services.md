@@ -46,6 +46,7 @@ Hangfire worker. Точки входа:
 | `CanExport` | Completed/Cancelled + jsonl file |
 | `ResolveResultFilePath` | `ResultFilePath` или fallback `{jobId}.jsonl` |
 | `SaveAsync` / `LoadAsync` | JSONL + metadata в `ResultJson` |
+| `GetStoredDistribution` | Distribution из `ResultJson` (для export без reload) |
 | `SavePartialSeriesAsync` | Polling во время Running |
 | `EnumerateSeriesAsync` | Streaming для Excel export |
 
@@ -53,7 +54,7 @@ Hangfire worker. Точки входа:
 
 ## AnalysisJobQueryService
 
-**Новый сервис** — устраняет дублирование в трёх контроллерах.
+Общая логика status / result / history / delete для трёх контроллеров.
 
 | Метод | HTTP-аналог |
 |-------|-------------|
@@ -67,7 +68,7 @@ Hangfire worker. Точки входа:
 
 ## AnalysisJobCoordinatorService
 
-- `GetQueueAsync`, `GetOverviewAsync` — для UI очереди.
+- `GetOverviewAsync` — active + recent jobs для UI очереди.
 - `TryCancelAsync` — cancel token + Hangfire delete.
 - `ResolveSourceKind` — маппинг schema → `dbo` | `em` | `generic` для фронта.
 
@@ -75,11 +76,45 @@ Hangfire worker. Точки входа:
 
 Хранит скользящие средние длительности батчей/post-process в `AnalysisSourceTimingStats`. `EstimateAsync` → `AnalysisDurationEstimateDto`.
 
-## AnalysisExportService
+## ExcelReportService (Scoped)
 
-ClosedXML: листы «Аномалии», «Параметры», опционально «Распределение».
+Загрузка шаблона `API/Resources/ReportTemplate.xlsx` и заполнение листа **«Данные»**.
 
-`loadDistribution=true` — повторный запрос distribution из customer DB (dbo/em/generic).
+| Метод | Описание |
+|-------|----------|
+| `OpenTemplate()` | Открывает xlsx-шаблон (листы «Данные», «График») |
+| `FillSeriesAsync` | Стримит точки из JSONL в таблицу «Данные», ресайзит Excel Table |
+
+Колонки: Timestamp, Value, IsSpike, PValue, ChannelBreakdown.
+
+## ExcelChartPatcher (static)
+
+ClosedXML не умеет менять диапазоны графиков. После `SaveAs` патчит ZIP:
+
+- `xl/charts/chart1.xml` — line chart по `'Данные'!$A$2:$A$n` / `$B$2:$B$n`
+- `xl/drawings/drawing1.xml` — размер якоря на листе «График» (зависит от числа точек)
+- `PrepareChartWorksheet` — ширина колонок / высота строк на «График»
+
+## AnalysisExportService (Scoped)
+
+Оркестратор Excel-экспорта (`GET /api/analysis-jobs/{id}/export`).
+
+Поток:
+
+1. `ExcelReportService.OpenTemplate()` + `FillSeriesAsync` (серия из JSONL)
+2. `ExcelChartPatcher.PrepareChartWorksheet` на листе «График»
+3. Лист **«Параметры»** — метаданные job
+4. Опционально лист **«Распределение»** (dbo / em_protocol / generic)
+5. `ExcelChartPatcher.Patch` — фиксация графика после сохранения
+
+`loadDistribution`:
+
+| Значение | Распределение |
+|----------|---------------|
+| `false` | `GetStoredDistribution` из `ResultJson`; для dbo/em при пустом снимке — fallback из customer DB |
+| `true` | Всегда свежий запрос в customer DB за период job |
+
+Для job с фильтром по каналу/объекту лист «Распределение» не добавляется. em_protocol: подписи EventCode через `EventCodeLabelService`.
 
 ## AnalysisRequestValidator
 

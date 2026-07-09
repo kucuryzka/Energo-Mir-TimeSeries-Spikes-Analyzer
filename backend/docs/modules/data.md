@@ -39,13 +39,16 @@ InternalDbSchemaUpdater.Apply(internalDb);
 
 ## AppDbContext
 
-Маппинг `Core.Models.Record` для EF-запросов к **customer DB**.
+Тонкая обёртка `DbContext` для **customer DB**. Создаётся только через `DatabaseContextFactory.Create(connectionString, provider, database)` — не регистрируется в DI.
 
-Создаётся через `DatabaseContextFactory.Create(connectionString, provider, database)` — **не** через стандартный DI `AddDbContext` с пустым `DefaultConnection`.
+Запросы к customer DB идут через `Database.SqlQueryRaw<T>()` (Dapper/EF raw SQL), не через `DbSet`.
 
-### Record
+## Статические ресурсы API
 
-Сущность сырой телеметрии (используется pipeline при необходимости EF; основной путь — Dapper).
+| Файл | Назначение |
+|------|------------|
+| `API/Data/event_codes.csv` | Справочник EventCode → label (копируется в output) |
+| `API/Resources/ReportTemplate.xlsx` | Шаблон Excel: «Данные», «График» с нативным chart |
 
 ## Hangfire storage
 

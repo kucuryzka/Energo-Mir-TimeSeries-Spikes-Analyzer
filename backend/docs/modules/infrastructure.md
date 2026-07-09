@@ -61,6 +61,12 @@ string WithDatabase(string connectionString, string database)
 
 Подключается в `Program.cs` до `builder.Build()`.
 
+## EventCodeLabelService (Singleton)
+
+Загружает `API/Data/event_codes.csv` (fallback: `frontend/public/event_codes.csv`).
+
+`ResolveLabel(eventCode)` — человекочитаемая подпись для Excel-листа «Распределение» (em_protocol).
+
 ## HangfireDashboardAuthorizationFilter
 
 `IDashboardAuthorizationFilter` — в текущей версии разрешает доступ к Hangfire dashboard (настройте для production).

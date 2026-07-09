@@ -67,7 +67,6 @@ Enqueue: Hangfire id `"em_protocol"`.
 |-------|------|-------------|
 | GET | `preview` | schema, table, timeColumn |
 | POST | `enqueue` | `GenericAnalysisRequest` → `ProcessJobAsync` |
-| POST | `analyze` | **Синхронный** анализ без Hangfire |
 | GET | `point-details` | Raw rows в интервале bucket |
 | Job lifecycle | status, result, history… | history фильтрует по schema+table |
 
@@ -77,15 +76,19 @@ Enqueue: Hangfire id `"em_protocol"`.
 
 | Метод | Путь | Описание |
 |-------|------|----------|
-| GET | `queue` | Активные job (опц. filter database) |
 | GET | `overview` | active + recent |
 | GET | `estimate` | ETA по `AnalysisTimingStatsService` |
 | POST | `{id}/cancel` | Отмена через coordinator |
-| GET | `{id}/export` | Excel, query `loadDistribution` |
+| GET | `{id}/export` | Excel (шаблон + chart patch), query `loadDistribution` |
 
 ## Зависимости контроллеров (типичные)
 
 ```
+AnalysisJobsController
+  → AnalysisJobCoordinatorService, AnalysisTimingStatsService
+  → AnalysisExportService, AnalysisResultService, InternalDbContext
+  → SessionContextService
+
 DboController / EmProtocolController
   → DboDataSource | EmProtocolDataSource
   → InternalDbContext, IBackgroundJobClient

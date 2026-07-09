@@ -14,7 +14,7 @@ API contracts в `API/DTOs/`. JSON serialization: **camelCase**.
 | DTO | Назначение |
 |-----|------------|
 | `DetectSpikesRequest` | Enqueue для dbo / em_protocol |
-| `GenericAnalysisRequest` | Enqueue / sync analyze для generic |
+| `GenericAnalysisRequest` | Enqueue для generic analyzer |
 
 ### DetectSpikesRequest
 

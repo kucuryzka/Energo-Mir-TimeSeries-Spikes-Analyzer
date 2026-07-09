@@ -10,7 +10,7 @@ Core/
 │   └── TimeGranularity.cs
 ├── Interfaces/
 │   ├── ISpikeDetectionService.cs
-│   ├── ITimeSeriesService.cs   # legacy
+│   ├── ITimeService.cs          # legacy (ITimeSeriesService)
 │   └── IDataLoader.cs          # legacy
 ├── Models/
 │   ├── DataPoint.cs

@@ -30,14 +30,14 @@ Task<SpikeResponse> ExecuteAnalysisAsync(
 | Time column | `TIME_INSERT` |
 | Channel | `IDOBJECT` → lookup `OBJECTS` |
 
-Дополнительные методы (не в интерфейсе):
+Дополнительные методы (не в `IDataSourceStrategy`):
 
 - `GetObjectsAsync` — пагинированный список объектов
 - `GetObjectDistributionAsync` — распределение по объектам за период
 - `GetPointDetailsAsync` — строки METERINGS в bucket
 - `GetPointChannelBreakdownAsync` — делегирует pipeline
 
-`OmitDistribution = true` в `AnalysisTableSpec` — distribution считается отдельно.
+`DeferDistribution = true` в `AnalysisTableSpec` — distribution считается один раз в конце анализа и сохраняется в `ResultJson`.
 
 ## EmProtocolDataSource
 
@@ -48,11 +48,11 @@ Task<SpikeResponse> ExecuteAnalysisAsync(
 | Time | `InsertTime` |
 | Channel | `ChannelId` → `Channels` (+ EventCode) |
 
-Реализует marker-интерфейсы:
+Дополнительные методы:
 
-- `ISupportsChannels` — `GetChannelsAsync`
-- `ISupportsDistribution` — `GetDistributionAsync` по `EventCode`
-- `ISupportsPointChannels`
+- `GetChannelsAsync` — список каналов
+- `GetRecordsDistributionAsync` — распределение Records (EventCode + object name)
+- `GetPointChannelBreakdownAsync` — breakdown на точке графика
 
 ## AnalysisTableSpec / ChannelLookupSpec
 
@@ -65,6 +65,7 @@ public class AnalysisTableSpec
     public string? ChannelColumn, FromClause, TableAlias;
     public ChannelLookupSpec? ChannelLookup;
     public bool OmitDistribution;
+    public bool DeferDistribution;
 }
 ```
 
@@ -77,15 +78,7 @@ public class AnalysisTableSpec
 
 Инжектируется в оба DataSource вместо дублированного `ResolveConnection`.
 
-## Capability interfaces
-
-| Interface | Назначение | Реализация |
-|-----------|------------|------------|
-| `ISupportsChannels` | Список каналов | Em only |
-| `ISupportsDistribution` | Категориальное распределение | Em only |
-| `ISupportsPointChannels` | Breakdown на точке графика | Dbo + Em |
-
-**Будущее улучшение:** полиморфный резолв вместо `OfType<DboDataSource>()` в контроллерах.
+Контроллеры резолвят конкретный источник через `OfType<DboDataSource>()` / `OfType<EmProtocolDataSource>()`.
 
 ## Диаграмма выполнения source job
 

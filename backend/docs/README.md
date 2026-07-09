@@ -55,7 +55,7 @@ dotnet run --project backend/API/API.csproj
 2. **Постановка анализа** — `Dbo` / `em-protocol` / `GenericAnalysis` → `InternalDbContext` + Hangfire.
 3. **Выполнение** — `AnalysisJobProcessor` → `IDataSourceStrategy` или `AnalysisPipelineService` → `SpikeDetectionService`.
 4. **Результат** — JSONL в `results/`, метаданные в SQLite (`AnalysisJobs`).
-5. **Очередь и экспорт** — `AnalysisJobsController` (overview, cancel, Excel).
+5. **Очередь и экспорт** — `AnalysisJobsController` (overview, cancel, Excel из шаблона + chart patch).
 
 ## Известные ограничения
 

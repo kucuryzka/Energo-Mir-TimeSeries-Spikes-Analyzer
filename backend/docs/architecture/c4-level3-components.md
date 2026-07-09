@@ -57,7 +57,7 @@ Core                 — ML spike detection
 | `SourcesController` | `/api/Sources` | Список зарегистрированных источников |
 | `DboController` | `/api/dbo` | dbo.METERINGS: объекты, preview, enqueue, job CRUD |
 | `EmProtocolController` | `/api/em-protocol` | em_protocol: каналы, distribution, enqueue, job CRUD |
-| `GenericAnalysisController` | `/api/GenericAnalysis` | Произвольные таблицы + sync analyze |
+| `GenericAnalysisController` | `/api/GenericAnalysis` | Произвольные таблицы, enqueue, job CRUD |
 | `AnalysisJobsController` | `/api/analysis-jobs` | Очередь, overview, ETA, cancel, **export** |
 
 ## Services (ключевые)
@@ -69,7 +69,10 @@ Core                 — ML spike detection
 | `AnalysisResultService` | JSONL I/O, partial results, `HasResult` / `CanExport` |
 | `AnalysisJobQueryService` | **Общая** логика status / result / history / delete |
 | `AnalysisJobCoordinatorService` | Overview очереди, cancel, mapping source kind |
-| `AnalysisExportService` | Excel (ClosedXML) |
+| `ExcelReportService` | Шаблон xlsx, заполнение «Данные» |
+| `ExcelChartPatcher` | Post-save patch chart XML и размер на «График» |
+| `AnalysisExportService` | Оркестратор Excel export |
+| `EventCodeLabelService` | Подписи EventCode для export |
 | `ConnectionManagerService` | In-memory сессии `DatabaseSessionInfo` |
 
 ## DataSources (Strategy)
@@ -98,8 +101,8 @@ IDataSourceStrategy
 
 | Lifetime | Типы |
 |----------|------|
-| Singleton | `ISqlDialectProvider`, `IDatabaseContextFactory`, `IConnectionManagerService`, `AnalysisResultService`, `IAnalysisJobCancellationService` |
-| Scoped | Pipeline, Export, DataSources, `SessionContextService`, `AnalysisJobQueryService`, Coordinator, TimingStats |
+| Singleton | `ISqlDialectProvider`, `IDatabaseContextFactory`, `IConnectionManagerService`, `AnalysisResultService`, `EventCodeLabelService`, `IAnalysisJobCancellationService` |
+| Scoped | Pipeline, `ExcelReportService`, Export, DataSources, `SessionContextService`, `AnalysisJobQueryService`, Coordinator, TimingStats |
 | Hosted | `StaleAnalysisJobCleanup` |
 
 Удалено из DI: `ITimeSeriesService` / `TimeService` (не использовался — агрегация в SQL pipeline).
@@ -111,11 +114,12 @@ API/
 ├── Configuration/     # appsettings binding
 ├── Contracts/         # IConnectionManagerService
 ├── Controllers/
-├── Data/              # EF DbContexts
+├── Data/              # EF DbContexts, event_codes.csv
 ├── DataSources/       # Strategy + table specs
 ├── DTOs/
 ├── Infrastructure/    # cross-cutting helpers
 ├── Models/            # persistence entities + DatabaseSessionInfo
+├── Resources/         # ReportTemplate.xlsx
 ├── Services/          # application services
 └── Sql/               # dialect implementations
 ```
