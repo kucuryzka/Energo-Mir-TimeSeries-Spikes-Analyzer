@@ -1,17 +1,17 @@
 import React, { useCallback, useLayoutEffect, useState } from 'react';
 import { Drawer, Badge } from 'antd';
 import { HistoryOutlined, DashboardOutlined, ApiOutlined, UnorderedListOutlined, LogoutOutlined } from '@ant-design/icons';
-import { AnalysisJobQueuePage } from '../Dashboard/AnalysisJobQueuePage';
-import type { PendingAnalysisJobOpen } from '../../utils/analysisJobLoader';
-import { DatabaseTreeSidebar } from '../Explorer/DatabaseTreeSidebar';
-import { GenericAnalyzer } from '../GenericAnalyzer/GenericAnalyzer';
-import { TelemetryContent, type TabKey } from './TelemetryContent';
-import { useShellRail } from '../../context/ShellRailContext';
-import { useQueryTracker } from '../QueryTracker/QueryTracker';
-import { HANGFIRE_PATH } from '../../api/index';
-import './TelemetryScreen.css';
+import { AnalysisJobQueuePage } from '../features/queue/AnalysisJobQueuePage';
+import type { PendingAnalysisJobOpen } from '../utils/analysisJobLoader';
+import { DatabaseTreeSidebar } from '../features/explorer/DatabaseTreeSidebar';
+import { GenericAnalyzer } from '../features/generic-analyzer/GenericAnalyzer';
+import { TelemetryContent, type TabKey } from '../features/telemetry/TelemetryContent';
+import { useShellRail } from '../context/ShellRailContext';
+import { useQueryTracker } from '../features/query-tracker/QueryTracker';
+import { HANGFIRE_PATH } from '../api/index';
+import './AppShell.css';
 
-interface TelemetryScreenProps {
+interface AppShellProps {
   onLogout: () => void;
   uiTheme: 'light' | 'dark';
   onToggleTheme: () => void;
@@ -26,7 +26,7 @@ interface GenericConfig {
 
 type MainView = 'analysis' | 'queue';
 
-export const TelemetryScreen: React.FC<TelemetryScreenProps> = ({ onLogout, uiTheme, onToggleTheme }) => {
+export const AppShell: React.FC<AppShellProps> = ({ onLogout, uiTheme, onToggleTheme }) => {
   const [selectedDb, setSelectedDb] = useState<string>('');
   const [activeTab, setActiveTab] = useState<TabKey>('dbo');
   const [mainView, setMainView] = useState<MainView>('analysis');

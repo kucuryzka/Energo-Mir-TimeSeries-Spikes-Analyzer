@@ -6,22 +6,24 @@ import { analyticsApi } from '../../api/analyticsApi';
 import { enrichSpikeData, getStatistics } from '../../utils/spikeUtils';
 import { formatUtcDateTime } from '../../utils/dateTimeUtils';
 import { confirmHeavyAnalysis } from '../../utils/granularityWarning';
-import { useRegisterShellRailActions } from '../../context/ShellRailContext';
-import { AnalysisJobProgress } from '../Dashboard/AnalysisJobProgress';
-import { DistributionChart } from '../Chart/DistributionChart';
-import { TelemetryControls } from './TelemetryControls';
+import { AnalysisJobProgress } from '../../ui/AnalysisJobProgress';
+import { DistributionChart } from '../../ui/charts/DistributionChart';
+import { TelemetryControls } from '../../ui/TelemetryControls';
 import type { ChannelDto, TimeGranularity, SpikePoint, ChannelContributionDto, DataSourceDto, DistributionItemDto } from '../../types/analytics.types';
-import { SpikeChart } from '../Chart/SpikeChart';
-import { AnomalyDonut } from './AnomalyDonut';
-import { AnomalyList } from './AnomalyList';
-import { KpiRow } from './KpiRow';
+import { SpikeOverviewChart } from '../../ui/charts/SpikeOverviewChart';
+import { AnomalyDonut } from '../../ui/AnomalyDonut';
+import { AnomalyList } from '../../ui/AnomalyList';
+import { KpiRow } from '../../ui/KpiRow';
 import { loadEventCodeMap, resolveEventCodeLabel } from '../../utils/eventCodeMap';
-import { TablePreviewContent, type TablePreviewData } from '../GenericAnalyzer/TablePreviewCard';
-import { runAnalysisSessionJob, updateAnalysisSession, useAnalysisResultData, cancelAnalysisSessionJob } from '../../store/analysisSessionStore';
-import { analysisJobsApi } from '../../api/analysisJobsApi';
+import { TablePreviewContent } from '../../ui/TablePreviewCard';
+import { runAnalysisSessionJob, updateAnalysisSession, useAnalysisResultData } from '../../store/analysisSessionStore';
 import { AnalysisJobCancelledError } from '../../utils/jobPolling';
 import { loadAnalysisJobResult, type PendingAnalysisJobOpen } from '../../utils/analysisJobLoader';
-import { formatDurationMs } from '../../utils/formatDuration';
+import { GRANULARITY_LABEL } from '../../utils/granularityLabels';
+import { useAnalysisJobActions } from '../../hooks/useAnalysisJobActions';
+import { useDurationEstimate } from '../../hooks/useDurationEstimate';
+import { useTablePreview } from '../../hooks/useTablePreview';
+import { useAnalysisHistory } from '../../hooks/useAnalysisHistory';
 
 const { Text } = Typography;
 
@@ -34,15 +36,6 @@ interface TelemetryContentProps {
   pendingJobOpen?: PendingAnalysisJobOpen | null;
   onPendingJobConsumed?: () => void;
 }
-
-const GRANULARITY_LABEL: Record<string, string> = {
-  Minute: 'Поминутная',
-  Hour: 'Почасовая',
-  Day: 'Дневная',
-  Week: 'Недельная',
-  Month: 'Месячная',
-  Custom: 'Свой интервал',
-};
 
 const TABLE_PREVIEW_CONFIG: Record<TabKey, { timeColumn: string; tableLabel: string }> = {
   dbo: { timeColumn: 'TIME_INSERT', tableLabel: 'dbo.METERINGS' },
@@ -104,8 +97,12 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
     setData,
   } = useAnalysisResultData(sessionKey, visible, jobApi);
 
-  const [cancellingJob, setCancellingJob] = useState(false);
-  const [exporting, setExporting] = useState(false);
+  const { cancellingJob, handleCancelJob, exporting, handleExport } = useAnalysisJobActions(
+    sessionKey,
+    jobId,
+    loading,
+    isPartialResult,
+  );
 
   const [, setSources] = useState<DataSourceDto[]>([]);
   const sourcesRef = useRef<DataSourceDto[]>([]);
@@ -114,7 +111,6 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
   const [distributions, setDistributions] = useState<Record<string, DistributionItemDto[]>>({});
   const [dboObjectDistribution, setDboObjectDistribution] = useState<DistributionItemDto[] | null>(null);
   const [loadingDboDistribution, setLoadingDboDistribution] = useState(false);
-  const [durationEstimate, setDurationEstimate] = useState<string | null>(null);
   const [eventCodeMap, setEventCodeMap] = useState<Record<string, string>>({});
 
   const [selectedPoint, setSelectedPoint] = useState<SpikePoint | null>(null);
@@ -122,13 +118,37 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
   const [pointChannels, setPointChannels] = useState<ChannelContributionDto[]>([]);
   const [loadingDetails, setLoadingDetails] = useState(false);
 
-  const [historyOpen, setHistoryOpen] = useState(false);
-  const [historyList, setHistoryList] = useState<any[]>([]);
-  const [loadingHistory, setLoadingHistory] = useState(false);
+  const fetchTablePreview = useCallback(
+    () => (activeTab === 'dbo'
+      ? analyticsApi.dbo.getTablePreview(database)
+      : analyticsApi.emProtocol.getTablePreview(database)),
+    [activeTab, database],
+  );
+  const {
+    tablePreview,
+    setTablePreview,
+    loadingPreview,
+    previewOpen,
+    setPreviewOpen,
+    handlePreviewToggle,
+  } = useTablePreview(fetchTablePreview, `${database}|${activeTab}|${visible}`);
 
-  const [tablePreview, setTablePreview] = useState<TablePreviewData | null>(null);
-  const [loadingPreview, setLoadingPreview] = useState(false);
-  const [previewOpen, setPreviewOpen] = useState(false);
+  const fetchHistory = useCallback(
+    () => (activeTab === 'dbo' ? analyticsApi.dbo : analyticsApi.emProtocol).getHistory(database),
+    [activeTab, database],
+  );
+  const {
+    historyOpen,
+    setHistoryOpen,
+    historyList,
+    setHistoryList,
+    loadingHistory,
+    deleteHistoryItem,
+  } = useAnalysisHistory({
+    fetchHistory,
+    deleteHistoryApi: (jobId) => (activeTab === 'dbo' ? analyticsApi.dbo : analyticsApi.emProtocol).deleteHistoryItem(jobId),
+    visible,
+  });
 
   const fetchChannels = async (search: string = '') => {
     try {
@@ -148,50 +168,6 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
       .catch(() => console.warn('event_codes.csv not found or failed to parse'));
     return () => { mounted = false; };
   }, []);
-
-  useEffect(() => {
-    setTablePreview(null);
-    setPreviewOpen(false);
-    setLoadingPreview(false);
-  }, [database, activeTab, visible]);
-
-  const loadPreview = useCallback(async () => {
-    setLoadingPreview(true);
-    try {
-      const preview = activeTab === 'dbo'
-        ? await analyticsApi.dbo.getTablePreview(database)
-        : await analyticsApi.emProtocol.getTablePreview(database);
-      setTablePreview(preview);
-    } catch (e) {
-      console.error('Failed to load table preview', e);
-      setTablePreview(null);
-      message.error('Не удалось загрузить превью таблицы');
-    } finally {
-      setLoadingPreview(false);
-    }
-  }, [database, activeTab]);
-
-  const handlePreviewToggle = useCallback(async () => {
-    if (!previewOpen && !tablePreview && !loadingPreview) {
-      await loadPreview();
-    }
-    setPreviewOpen(v => !v);
-  }, [previewOpen, tablePreview, loadingPreview, loadPreview]);
-
-  const handleCancelJob = useCallback(async () => {
-    if (!jobId) return;
-    setCancellingJob(true);
-    try {
-      await analysisJobsApi.cancel(jobId);
-      cancelAnalysisSessionJob(sessionKey);
-      message.info('Анализ останавливается…');
-    } catch (e) {
-      console.error(e);
-      message.error('Не удалось отменить задачу');
-    } finally {
-      setCancellingJob(false);
-    }
-  }, [jobId, sessionKey]);
 
   useEffect(() => {
     if (!visible || !database) return;
@@ -231,7 +207,7 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
     setPointChannels([]);
     setTablePreview(null);
     setPreviewOpen(false);
-  }, [visible]);
+  }, [visible, setHistoryList, setTablePreview, setPreviewOpen]);
 
   useEffect(() => {
     if (!visible) return;
@@ -378,22 +354,6 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedPoint, granularity, channelId, database, activeTab, channels]);
 
-  const openHistory = useCallback(async () => {
-    setHistoryOpen(true);
-    setLoadingHistory(true);
-    try {
-      const api = activeTab === 'dbo' ? analyticsApi.dbo : analyticsApi.emProtocol;
-      const hist = await api.getHistory(database);
-      setHistoryList(hist);
-    } catch {
-      message.error('Ошибка загрузки истории');
-    } finally {
-      setLoadingHistory(false);
-    }
-  }, [activeTab, database]);
-
-  useRegisterShellRailActions({ onOpenHistory: openHistory }, visible);
-
   const pendingJobForTab = pendingJobOpen
     && pendingJobOpen.database === database
     && pendingJobOpen.sourceKind === (activeTab === 'dbo' ? 'dbo' : 'em_protocol')
@@ -537,31 +497,14 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
     }
   }, [activeTab, channelId, database, dateRange]);
 
-  useEffect(() => {
-    if (!visible) return;
-    const timer = window.setTimeout(() => {
-      const schema = activeTab === 'dbo' ? 'dbo' : 'em_protocol';
-      const table = activeTab === 'dbo' ? 'All' : 'Records';
-      analysisJobsApi.getEstimate({
-        database,
-        schema,
-        table,
-        granularity,
-        startDate: dateRange[0],
-        endDate: dateRange[1],
-      }).then((estimate) => {
-        if (estimate.confidence === 'none' || !estimate.estimatedDurationMs) {
-          setDurationEstimate(null);
-          return;
-        }
-        const suffix = estimate.confidence === 'low'
-          ? ` (мало данных, ${estimate.sampleCount})`
-          : '';
-        setDurationEstimate(`Ожидаемое время: ${formatDurationMs(estimate.estimatedDurationMs, true)}${suffix}`);
-      }).catch(() => setDurationEstimate(null));
-    }, 400);
-    return () => window.clearTimeout(timer);
-  }, [visible, database, activeTab, granularity, dateRange]);
+  const durationEstimate = useDurationEstimate({
+    enabled: visible,
+    database,
+    schema: activeTab === 'dbo' ? 'dbo' : 'em_protocol',
+    table: activeTab === 'dbo' ? 'All' : 'Records',
+    granularity,
+    dateRange,
+  });
 
   useEffect(() => {
     if (!visible || !pendingJobForTab) return;
@@ -622,17 +565,6 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
     }
   };
 
-  const deleteHistoryItem = async (jobId: string) => {
-    try {
-      const api = activeTab === 'dbo' ? analyticsApi.dbo : analyticsApi.emProtocol;
-      await api.deleteHistoryItem(jobId);
-      setHistoryList(prev => prev.filter(item => item.id !== jobId));
-      message.success('Удалено');
-    } catch {
-      message.error('Ошибка удаления');
-    }
-  };
-
   const enrichedData = useMemo(
     () => (data?.series?.length ? enrichSpikeData(data.series) : []),
     [data?.series],
@@ -642,28 +574,6 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
     () => (data?.series?.length ? getStatistics(data.series) : null),
     [data?.series],
   );
-
-  const handleExport = async (options?: { loadDistribution?: boolean }) => {
-    if (!jobId) {
-      message.warning('Нет завершённого анализа для экспорта.');
-      return;
-    }
-    if (isPartialResult || loading) {
-      message.warning('Дождитесь завершения анализа перед экспортом.');
-      return;
-    }
-
-    setExporting(true);
-    try {
-      await analysisJobsApi.downloadExport(jobId, options?.loadDistribution ?? false);
-      message.success('Данные экспортированы в Excel');
-    } catch (err: any) {
-      const errorText = err?.message || err?.response?.data?.message || 'Не удалось скачать Excel';
-      message.error(errorText);
-    } finally {
-      setExporting(false);
-    }
-  };
 
   const handlePointSelect = (timestamp: string) => {
     const point = enrichedData.find(s => s.timestamp === timestamp);
@@ -758,44 +668,17 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
             animate={!isPartialResult}
           />
 
-          <div className={`chart-card telemetry-spike-chart${isPartialResult ? ' chart-card--partial' : ''}`}>
-            <div className="chart-header">
-              <div className="chart-title-row">
-                <div className="chart-title">Обзор показателей</div>
-                {isPartialResult && <span className="chart-partial-badge">Загрузка…</span>}
-              </div>
-              <div className="chart-controls">
-                <button type="button" className={`legend-chip crit ${!showCritical ? 'off' : ''}`} onClick={() => setShowCritical(v => !v)}>
-                  <span className="dot7" style={{ background: '#d64933' }} />Критическая
-                </button>
-                <button type="button" className={`legend-chip warn ${!showWarning ? 'off' : ''}`} onClick={() => setShowWarning(v => !v)}>
-                  <span className="dot7" style={{ background: '#e2a339' }} />Предупреждение
-                </button>
-                <span className="line-legend">
-                  <span className="line-legend-item"><span className="line-swatch" style={{ borderTopColor: '#7A8B9E' }} />Среднее</span>
-                  <span className="line-legend-item"><span className="line-swatch" style={{ borderTopColor: '#C97A6E' }} />Максимум</span>
-                  <span className="line-legend-item"><span className="line-swatch" style={{ borderTopColor: '#5A9E7A' }} />Минимум</span>
-                </span>
-                <button
-                  type="button"
-                  className="switch-track"
-                  style={{ background: showMarkers ? '#3D63DD' : 'var(--switch-off)' }}
-                  onClick={() => setShowMarkers(v => !v)}
-                  title="Маркеры"
-                >
-                  <span className="switch-knob" style={{ transform: showMarkers ? 'translateX(16px)' : 'translateX(0)' }} />
-                </button>
-              </div>
-            </div>
-            <SpikeChart
-              data={enrichedData}
-              showMarkers={showMarkers && !isPartialResult}
-              showCriticalMarkers={showCritical}
-              showWarningMarkers={showWarning}
-              hideToolbar
-              onPointClick={(point) => handlePointSelect(point.timestamp)}
-            />
-          </div>
+          <SpikeOverviewChart
+            enrichedData={enrichedData}
+            isPartialResult={isPartialResult}
+            showMarkers={showMarkers}
+            setShowMarkers={setShowMarkers}
+            showCritical={showCritical}
+            setShowCritical={setShowCritical}
+            showWarning={showWarning}
+            setShowWarning={setShowWarning}
+            onPointSelect={handlePointSelect}
+          />
 
           {!loading && !isPartialResult && (
             <>

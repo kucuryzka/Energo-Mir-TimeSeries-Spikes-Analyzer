@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import { ConfigProvider, theme as antdTheme } from 'antd';
 import ruRU from 'antd/locale/ru_RU';
-import { ConnectionSetup } from './components/ConnectionSetup/ConnectionSetup';
-import { TelemetryScreen } from './components/TelemetryRedesign/TelemetryScreen';
+import { ConnectionSetup } from './features/connection/ConnectionSetup';
+import { AppShell } from './layout/AppShell';
 import { ShellRailProvider } from './context/ShellRailContext';
-import { QueryTrackerProvider } from './components/QueryTracker/QueryTracker';
+import { QueryTrackerProvider } from './features/query-tracker/QueryTracker';
 import { clearAllAnalysisSessions } from './store/analysisSessionStore';
 import { requestTracker } from './store/requestTracker';
 
@@ -46,7 +46,7 @@ function App() {
     <ConfigProvider locale={ruRU} theme={getThemeConfig(uiTheme)}>
       <ShellRailProvider>
         <QueryTrackerProvider>
-          <TelemetryScreen onLogout={handleLogout} uiTheme={uiTheme} onToggleTheme={toggleTheme} />
+          <AppShell onLogout={handleLogout} uiTheme={uiTheme} onToggleTheme={toggleTheme} />
         </QueryTrackerProvider>
       </ShellRailProvider>
     </ConfigProvider>

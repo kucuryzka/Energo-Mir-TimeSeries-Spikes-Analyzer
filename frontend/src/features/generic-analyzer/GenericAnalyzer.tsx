@@ -4,33 +4,26 @@ import { DeleteOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { formatUtcDateTime } from '../../utils/dateTimeUtils';
 import { confirmHeavyAnalysis } from '../../utils/granularityWarning';
-import { SpikeChart } from '../Chart/SpikeChart';
+import { SpikeOverviewChart } from '../../ui/charts/SpikeOverviewChart';
 import { enrichSpikeData, getStatistics } from '../../utils/spikeUtils';
 import { genericAnalysisApi } from '../../api/explorerApi';
-import { TablePreviewContent, type TablePreviewData } from './TablePreviewCard';
-import { AnalysisJobProgress } from '../Dashboard/AnalysisJobProgress';
-import { TelemetryControls } from '../TelemetryRedesign/TelemetryControls';
-import { KpiRow } from '../TelemetryRedesign/KpiRow';
-import { AnomalyDonut } from '../TelemetryRedesign/AnomalyDonut';
-import { AnomalyList } from '../TelemetryRedesign/AnomalyList';
+import { TablePreviewContent } from '../../ui/TablePreviewCard';
+import { AnalysisJobProgress } from '../../ui/AnalysisJobProgress';
+import { TelemetryControls } from '../../ui/TelemetryControls';
+import { KpiRow } from '../../ui/KpiRow';
+import { AnomalyDonut } from '../../ui/AnomalyDonut';
+import { AnomalyList } from '../../ui/AnomalyList';
 import type { TimeGranularity, SpikePoint } from '../../types/analytics.types';
-import { useRegisterShellRailActions } from '../../context/ShellRailContext';
-import { runAnalysisSessionJob, updateAnalysisSession, useAnalysisResultData, cancelAnalysisSessionJob } from '../../store/analysisSessionStore';
-import { analysisJobsApi } from '../../api/analysisJobsApi';
+import { runAnalysisSessionJob, updateAnalysisSession, useAnalysisResultData } from '../../store/analysisSessionStore';
 import { AnalysisJobCancelledError } from '../../utils/jobPolling';
 import { loadAnalysisJobResult, type PendingAnalysisJobOpen } from '../../utils/analysisJobLoader';
-import { formatDurationMs } from '../../utils/formatDuration';
+import { GRANULARITY_LABEL } from '../../utils/granularityLabels';
+import { useAnalysisJobActions } from '../../hooks/useAnalysisJobActions';
+import { useDurationEstimate } from '../../hooks/useDurationEstimate';
+import { useTablePreview } from '../../hooks/useTablePreview';
+import { useAnalysisHistory } from '../../hooks/useAnalysisHistory';
 
 const { Text } = Typography;
-
-const GRANULARITY_LABEL: Record<string, string> = {
-  Minute: 'Поминутная',
-  Hour: 'Почасовая',
-  Day: 'Дневная',
-  Week: 'Недельная',
-  Month: 'Месячная',
-  Custom: 'Свой интервал',
-};
 
 interface GenericAnalyzerProps {
   db: string;
@@ -79,8 +72,12 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({
     setData,
   } = useAnalysisResultData(sessionKey, visible, jobApi);
 
-  const [cancellingJob, setCancellingJob] = useState(false);
-  const [exporting, setExporting] = useState(false);
+  const { cancellingJob, handleCancelJob, exporting, handleExport } = useAnalysisJobActions(
+    sessionKey,
+    jobId,
+    loading,
+    isPartialResult,
+  );
 
   const [selectedPoint, setSelectedPoint] = useState<SpikePoint | null>(null);
   const [pointDetails, setPointDetails] = useState<any[]>([]);
@@ -88,7 +85,6 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({
   const [showMarkers, setShowMarkers] = useState(true);
   const [showCritical, setShowCritical] = useState(true);
   const [showWarning, setShowWarning] = useState(true);
-  const [durationEstimate, setDurationEstimate] = useState<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
 
@@ -101,55 +97,32 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({
   const [confidence, setConfidence] = useState<number>(95);
   const [windowSize, setWindowSize] = useState<number>(30);
 
-  const [tablePreview, setTablePreview] = useState<TablePreviewData | null>(null);
-  const [loadingPreview, setLoadingPreview] = useState(false);
-  const [previewOpen, setPreviewOpen] = useState(false);
+  const fetchTablePreview = useCallback(
+    () => genericAnalysisApi.getTablePreview(db, schema, table, timeColumn),
+    [db, schema, table, timeColumn],
+  );
+  const {
+    tablePreview,
+    loadingPreview,
+    previewOpen,
+    handlePreviewToggle,
+  } = useTablePreview(fetchTablePreview, `${db}|${schema}|${table}|${timeColumn}`);
 
-  const [historyOpen, setHistoryOpen] = useState(false);
-  const [historyList, setHistoryList] = useState<any[]>([]);
-  const [loadingHistory, setLoadingHistory] = useState(false);
-
-  useEffect(() => {
-    setTablePreview(null);
-    setPreviewOpen(false);
-    setLoadingPreview(false);
-  }, [db, schema, table, timeColumn]);
-
-  const loadPreview = useCallback(async () => {
-    setLoadingPreview(true);
-    try {
-      const preview = await genericAnalysisApi.getTablePreview(db, schema, table, timeColumn);
-      setTablePreview(preview);
-    } catch (e) {
-      console.error('Failed to fetch table preview', e);
-      setTablePreview(null);
-      message.error('Не удалось загрузить превью таблицы');
-    } finally {
-      setLoadingPreview(false);
-    }
-  }, [db, schema, table, timeColumn]);
-
-  const handlePreviewToggle = useCallback(async () => {
-    if (!previewOpen && !tablePreview && !loadingPreview) {
-      await loadPreview();
-    }
-    setPreviewOpen(v => !v);
-  }, [previewOpen, tablePreview, loadingPreview, loadPreview]);
-
-  const handleCancelJob = useCallback(async () => {
-    if (!jobId) return;
-    setCancellingJob(true);
-    try {
-      await analysisJobsApi.cancel(jobId);
-      cancelAnalysisSessionJob(sessionKey);
-      message.info('Анализ останавливается…');
-    } catch (e) {
-      console.error(e);
-      message.error('Не удалось отменить задачу');
-    } finally {
-      setCancellingJob(false);
-    }
-  }, [jobId, sessionKey]);
+  const fetchHistory = useCallback(
+    () => genericAnalysisApi.getHistory(db, schema, table),
+    [db, schema, table],
+  );
+  const {
+    historyOpen,
+    setHistoryOpen,
+    historyList,
+    loadingHistory,
+    deleteHistoryItem,
+  } = useAnalysisHistory({
+    fetchHistory,
+    deleteHistoryApi: (jobId) => genericAnalysisApi.deleteHistoryItem(jobId),
+    visible,
+  });
 
   const fetchData = async (periodOverride?: [string, string]) => {
     const startDate = periodOverride?.[0] ?? dateRange[0];
@@ -212,43 +185,6 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({
       message.error({ content: `Ошибка при запуске задачи: ${errorText}`, key: 'jobProgress', duration: 4 });
     }
   };
-
-  const handleExport = async (options?: { loadDistribution?: boolean }) => {
-    if (!jobId) {
-      message.warning('Нет завершённого анализа для экспорта.');
-      return;
-    }
-    if (isPartialResult || loading) {
-      message.warning('Дождитесь завершения анализа перед экспортом.');
-      return;
-    }
-
-    setExporting(true);
-    try {
-      await analysisJobsApi.downloadExport(jobId, options?.loadDistribution ?? false);
-      message.success('Данные экспортированы в Excel');
-    } catch (err: any) {
-      const errorText = err?.message || err?.response?.data?.message || 'Не удалось скачать Excel';
-      message.error(errorText);
-    } finally {
-      setExporting(false);
-    }
-  };
-
-  const openHistory = useCallback(async () => {
-    setHistoryOpen(true);
-    setLoadingHistory(true);
-    try {
-      const hist = await genericAnalysisApi.getHistory(db, schema, table);
-      setHistoryList(hist);
-    } catch {
-      message.error('Ошибка загрузки истории');
-    } finally {
-      setLoadingHistory(false);
-    }
-  }, [db, schema, table]);
-
-  useRegisterShellRailActions({ onOpenHistory: openHistory }, visible);
 
   const pendingJobForTable = pendingJobOpen
     && pendingJobOpen.sourceKind === 'generic'
@@ -340,32 +276,15 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({
     return final;
   }, [sessionKey, setData, applyLoadedResult, applyPartialResult, applyFinalResult, jobApi, syncJobFormFromJob]);
 
-  useEffect(() => {
-    if (!visible) {
-      setDurationEstimate(null);
-      return;
-    }
-    const timer = window.setTimeout(() => {
-      analysisJobsApi.getEstimate({
-        database: db,
-        schema,
-        table,
-        granularity,
-        startDate: dateRange[0],
-        endDate: dateRange[1],
-      }).then((estimate) => {
-        if (estimate.confidence === 'none' || !estimate.estimatedDurationMs) {
-          setDurationEstimate(null);
-          return;
-        }
-        const suffix = estimate.confidence === 'low'
-          ? ` (мало данных, ${estimate.sampleCount})`
-          : '';
-        setDurationEstimate(`Ожидаемое время: ${formatDurationMs(estimate.estimatedDurationMs, true)}${suffix}`);
-      }).catch(() => setDurationEstimate(null));
-    }, 400);
-    return () => window.clearTimeout(timer);
-  }, [visible, db, schema, table, granularity, dateRange]);
+  const durationEstimate = useDurationEstimate({
+    enabled: visible,
+    database: db,
+    schema,
+    table,
+    granularity,
+    dateRange,
+    resetWhenHidden: true,
+  });
 
   useEffect(() => {
     if (!visible || !pendingJobForTable) return;
@@ -449,16 +368,6 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({
       setHistoryOpen(false);
     } catch {
       message.error({ content: 'Ошибка загрузки', key: 'loadResult' });
-    }
-  };
-
-  const deleteHistoryItem = async (jobId: string) => {
-    try {
-      await genericAnalysisApi.deleteHistoryItem(jobId);
-      setHistoryList(prev => prev.filter(item => item.id !== jobId));
-      message.success('Удалено');
-    } catch {
-      message.error('Ошибка удаления');
     }
   };
 
@@ -558,44 +467,17 @@ export const GenericAnalyzer: React.FC<GenericAnalyzerProps> = ({
             animate={!isPartialResult}
           />
 
-          <div className={`chart-card telemetry-spike-chart${isPartialResult ? ' chart-card--partial' : ''}`}>
-            <div className="chart-header">
-              <div className="chart-title-row">
-                <div className="chart-title">Обзор показателей</div>
-                {isPartialResult && <span className="chart-partial-badge">Загрузка…</span>}
-              </div>
-              <div className="chart-controls">
-                <button type="button" className={`legend-chip crit ${!showCritical ? 'off' : ''}`} onClick={() => setShowCritical(v => !v)}>
-                  <span className="dot7" style={{ background: '#d64933' }} />Критическая
-                </button>
-                <button type="button" className={`legend-chip warn ${!showWarning ? 'off' : ''}`} onClick={() => setShowWarning(v => !v)}>
-                  <span className="dot7" style={{ background: '#e2a339' }} />Предупреждение
-                </button>
-                <span className="line-legend">
-                  <span className="line-legend-item"><span className="line-swatch" style={{ borderTopColor: '#7A8B9E' }} />Среднее</span>
-                  <span className="line-legend-item"><span className="line-swatch" style={{ borderTopColor: '#C97A6E' }} />Максимум</span>
-                  <span className="line-legend-item"><span className="line-swatch" style={{ borderTopColor: '#5A9E7A' }} />Минимум</span>
-                </span>
-                <button
-                  type="button"
-                  className="switch-track"
-                  style={{ background: showMarkers ? '#3D63DD' : 'var(--switch-off)' }}
-                  onClick={() => setShowMarkers(v => !v)}
-                  title="Маркеры"
-                >
-                  <span className="switch-knob" style={{ transform: showMarkers ? 'translateX(16px)' : 'translateX(0)' }} />
-                </button>
-              </div>
-            </div>
-            <SpikeChart
-              data={enrichedData}
-              showMarkers={showMarkers && !isPartialResult}
-              showCriticalMarkers={showCritical}
-              showWarningMarkers={showWarning}
-              hideToolbar
-              onPointClick={(point) => handlePointSelect(point.timestamp)}
-            />
-          </div>
+          <SpikeOverviewChart
+            enrichedData={enrichedData}
+            isPartialResult={isPartialResult}
+            showMarkers={showMarkers}
+            setShowMarkers={setShowMarkers}
+            showCritical={showCritical}
+            setShowCritical={setShowCritical}
+            showWarning={showWarning}
+            setShowWarning={setShowWarning}
+            onPointSelect={handlePointSelect}
+          />
 
           {!loading && !isPartialResult && stats.spikesCount > 0 && (
             <div className="bottom-row">

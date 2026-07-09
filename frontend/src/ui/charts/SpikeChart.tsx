@@ -1,7 +1,27 @@
-import React, { useMemo, useRef, useState, useCallback } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import { Switch } from 'antd';
 import type { SpikePoint } from '../../types/analytics.types';
 import dayjs from 'dayjs';
+import {
+  VIEW_W,
+  VIEW_H,
+  BASELINE_Y,
+  LEFT_PADDING,
+  CHART_W,
+  MAX_POINTS,
+  X_LABEL_FONT_SIZE,
+  X_LABEL_ROTATE_DEG,
+  MIN_X_LABEL_SPACING,
+  lttbSampling,
+  buildScale,
+  toChartPoints,
+  buildLinePath,
+  buildAreaPath,
+  getXAxisLabels,
+  getYAxisLabels,
+  fmtDate,
+} from './spikeChartGeometry';
+import { useSpikeZoom } from './useSpikeZoom';
 
 interface Props {
   data: SpikePoint[];
@@ -12,165 +32,6 @@ interface Props {
   onShowMarkersChange?: (value: boolean) => void;
   onPointClick?: (point: SpikePoint) => void;
 }
-
-// Константы для SVG — увеличиваем отступ слева для подписей Y
-const VIEW_W = 1000;
-const VIEW_H = 340; // 🔥 Увеличено под вертикальные подписи дат снизу
-const TOP_PADDING = 25;
-const BASELINE_Y = 255;
-const LEFT_PADDING = 70; // 🔥 Увеличенный отступ слева для подписей Y
-const CHART_W = VIEW_W - LEFT_PADDING; // Ширина самого графика
-const MAX_POINTS = 3000;
-
-// Диагональные подписи дат: считаем реальный горизонтальный "след" повёрнутой подписи,
-// чтобы соседние подписи не наслаивались друг на друга.
-const X_LABEL_FONT_SIZE = 6.5;
-const X_LABEL_ROTATE_DEG = 60;
-const X_LABEL_CHARS = 'DD.MM HH:mm'.length;
-const X_LABEL_TEXT_LENGTH = X_LABEL_CHARS * X_LABEL_FONT_SIZE * 0.62; // моноширинный шрифт
-const MIN_X_LABEL_SPACING = Math.ceil(
-  X_LABEL_TEXT_LENGTH * Math.cos((X_LABEL_ROTATE_DEG * Math.PI) / 180) + 4,
-); // px между соседними подписями
-
-interface ChartPoint {
-  x: number;
-  y: number;
-  value: number;
-  timestamp: string;
-  index: number;
-}
-
-// LTTB сэмплирование
-function lttbSampling(data: SpikePoint[], threshold: number): SpikePoint[] {
-  if (data.length <= threshold) return data;
-  
-  const bucketSize = (data.length - 2) / (threshold - 2);
-  const sampled: SpikePoint[] = [];
-  
-  sampled.push(data[0]);
-  
-  for (let i = 0; i < threshold - 2; i++) {
-    const start = Math.floor((i + 1) * bucketSize);
-    const end = Math.floor((i + 2) * bucketSize);
-    const bucket = data.slice(start, end);
-    
-    if (bucket.length === 0) continue;
-    
-    let maxArea = -1;
-    let maxIdx = 0;
-    const prev = sampled[sampled.length - 1];
-    const next = data[Math.min(end, data.length - 1)];
-    
-    for (let j = 0; j < bucket.length; j++) {
-      const area = Math.abs(
-        (prev.value - next.value) * (bucket[j].value - prev.value) -
-        (prev.value - bucket[j].value) * (next.value - prev.value)
-      );
-      if (area > maxArea) {
-        maxArea = area;
-        maxIdx = j;
-      }
-    }
-    
-    sampled.push(bucket[maxIdx]);
-  }
-  
-  sampled.push(data[data.length - 1]);
-  return sampled;
-}
-
-// Построение масштаба — с учётом отступа слева
-function buildScale(values: number[]) {
-  const maxValue = values.length ? Math.max(...values) : 0;
-  const domainMax = maxValue > 0 ? maxValue * 1.12 : 1;
-  const usableHeight = BASELINE_Y - TOP_PADDING;
-
-  const yForValue = (v: number) => BASELINE_Y - (v / domainMax) * usableHeight;
-  const xForIndex = (i: number, n: number) => (n <= 1 ? 0 : (i / (n - 1)) * CHART_W);
-
-  return { yForValue, xForIndex };
-}
-
-// Преобразование данных в точки — со смещением X
-function toChartPoints(series: { timestamp: string; value: number }[]): ChartPoint[] {
-  const values = series.map(s => s.value);
-  const { yForValue, xForIndex } = buildScale(values);
-  return series.map((s, i) => ({
-    x: xForIndex(i, series.length) + LEFT_PADDING,
-    y: yForValue(s.value),
-    value: s.value,
-    timestamp: s.timestamp,
-    index: i,
-  }));
-}
-
-// Прямая линия через все точки
-function buildLinePath(points: ChartPoint[]): string {
-  if (points.length === 0) return '';
-  if (points.length === 1) return `M ${points[0].x.toFixed(1)} ${points[0].y.toFixed(1)}`;
-
-  let d = `M ${points[0].x.toFixed(1)} ${points[0].y.toFixed(1)}`;
-  
-  const step = points.length > 2000 ? Math.max(1, Math.floor(points.length / 1500)) : 1;
-  
-  for (let i = step; i < points.length; i += step) {
-    d += ` L ${points[i].x.toFixed(1)} ${points[i].y.toFixed(1)}`;
-  }
-  const last = points[points.length - 1];
-  d += ` L ${last.x.toFixed(1)} ${last.y.toFixed(1)}`;
-  
-  return d;
-}
-
-// Построение области под графиком
-function buildAreaPath(points: ChartPoint[]): string {
-  if (points.length === 0) return '';
-  const line = buildLinePath(points);
-  const last = points[points.length - 1];
-  const first = points[0];
-  return `${line} L ${last.x.toFixed(1)} ${BASELINE_Y} L ${first.x.toFixed(1)} ${BASELINE_Y} Z`;
-}
-
-// Функция для генерации подписей оси X — по возможности показывает каждую точку,
-// а при нехватке места равномерно прореживает так, чтобы вертикальные подписи не наезжали друг на друга.
-function getXAxisLabels(data: SpikePoint[], maxCount: number): { timestamp: string; x: number }[] {
-  if (data.length === 0) return [];
-  const count = Math.max(2, Math.min(maxCount, data.length));
-
-  if (data.length <= count) {
-    return data.map((d, i) => ({
-      timestamp: dayjs(d.timestamp).format('DD.MM HH:mm'),
-      x: data.length === 1 ? LEFT_PADDING : (i / (data.length - 1)) * CHART_W + LEFT_PADDING,
-    }));
-  }
-
-  const step = (data.length - 1) / (count - 1);
-  const seenIdx = new Set<number>();
-  const labels: { timestamp: string; x: number }[] = [];
-  for (let k = 0; k < count; k += 1) {
-    const idx = Math.round(k * step);
-    if (seenIdx.has(idx)) continue;
-    seenIdx.add(idx);
-    labels.push({
-      timestamp: dayjs(data[idx].timestamp).format('DD.MM HH:mm'),
-      x: (idx / (data.length - 1)) * CHART_W + LEFT_PADDING,
-    });
-  }
-  return labels;
-}
-
-// 🔥 Функция для генерации подписей оси Y
-function getYAxisLabels(maxValue: number, count: number = 5): number[] {
-  if (maxValue === 0) return [0];
-  const step = Math.ceil(maxValue / count / Math.pow(10, Math.floor(Math.log10(maxValue / count)))) * Math.pow(10, Math.floor(Math.log10(maxValue / count)));
-  const labels = [];
-  for (let v = 0; v <= maxValue + step; v += step) {
-    labels.push(v);
-  }
-  return labels;
-}
-
-const fmtDate = (iso: string) => dayjs(iso).format('DD.MM HH:mm');
 
 export const SpikeChart: React.FC<Props> = ({
   data,
@@ -183,10 +44,7 @@ export const SpikeChart: React.FC<Props> = ({
 }) => {
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [hoverPoint, setHoverPoint] = useState<{ x: number; y: number; value: number; timestamp: string } | null>(null);
-  const [zoomRange, setZoomRange] = useState<[number, number]>([0, 100]);
-  const trackRef = useRef<HTMLDivElement>(null);
-  const [dragging, setDragging] = useState<'from' | 'to' | 'select' | null>(null);
-  const [selectAnchor, setSelectAnchor] = useState<number | null>(null);
+  const { zoomRange, trackRef, startDrag, startTrackSelect, onTrackPointerMove, endDrag } = useSpikeZoom();
 
   const sortedData = useMemo(() => {
     return [...data].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
@@ -268,46 +126,6 @@ export const SpikeChart: React.FC<Props> = ({
     if (point && onPointClick) onPointClick(point);
   }, [visibleData, onPointClick]);
 
-  const startDrag = useCallback((handle: 'from' | 'to') => (e: React.PointerEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragging(handle);
-    (e.target as Element).setPointerCapture(e.pointerId);
-  }, []);
-
-  const pctFromEvent = (e: React.PointerEvent) => {
-    const rect = trackRef.current!.getBoundingClientRect();
-    return Math.min(100, Math.max(0, ((e.clientX - rect.left) / rect.width) * 100));
-  };
-
-  // Клик/зажатие в любом месте ползунка — начинает новое выделение с этой точки.
-  const startTrackSelect = useCallback((e: React.PointerEvent) => {
-    if (!trackRef.current) return;
-    e.preventDefault();
-    const pct = pctFromEvent(e);
-    setSelectAnchor(pct);
-    setZoomRange([pct, pct]);
-    setDragging('select');
-    (e.target as Element).setPointerCapture(e.pointerId);
-  }, []);
-
-  const onTrackPointerMove = useCallback((e: React.PointerEvent) => {
-    if (!dragging || !trackRef.current) return;
-    const pct = pctFromEvent(e);
-    if (dragging === 'from') {
-      setZoomRange([Math.min(pct, zoomRange[1] - 2), zoomRange[1]]);
-    } else if (dragging === 'to') {
-      setZoomRange([zoomRange[0], Math.max(pct, zoomRange[0] + 2)]);
-    } else if (dragging === 'select' && selectAnchor !== null) {
-      setZoomRange([Math.min(pct, selectAnchor), Math.max(pct, selectAnchor)]);
-    }
-  }, [dragging, zoomRange, selectAnchor]);
-
-  const endDrag = useCallback(() => {
-    setDragging(null);
-    setSelectAnchor(null);
-  }, []);
-
   const firstTs = visibleData[0]?.timestamp;
   const lastTs = visibleData[visibleData.length - 1]?.timestamp;
   const isSampled = sortedData.length > MAX_POINTS;
@@ -335,9 +153,9 @@ export const SpikeChart: React.FC<Props> = ({
             style={{ background: showMarkers ? '#4761BF' : undefined }}
           />
           {isSampled && (
-            <span style={{ 
-              fontSize: 10, 
-              color: '#E8A838', 
+            <span style={{
+              fontSize: 10,
+              color: '#E8A838',
               background: 'rgba(232,168,56,0.12)',
               padding: '2px 8px',
               borderRadius: 999,
@@ -449,7 +267,7 @@ export const SpikeChart: React.FC<Props> = ({
 
             {/* Площадь под графиком */}
             {areaPath && <path d={areaPath} fill="url(#areaGrad)" stroke="none" />}
-            
+
             {/* Линия графика */}
             {linePath && (
               <path

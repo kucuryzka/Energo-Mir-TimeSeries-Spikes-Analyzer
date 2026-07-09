@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { DatePicker, InputNumber, Select, Slider } from 'antd';
 import dayjs, { type Dayjs } from 'dayjs';
-import type { ChannelDto, TimeGranularity } from '../../types/analytics.types';
+import type { ChannelDto, TimeGranularity } from '../types/analytics.types';
 
 const { RangePicker } = DatePicker;
 

@@ -1,6 +1,6 @@
 import React from 'react';
 import dayjs from 'dayjs';
-import type { SpikePoint } from '../../types/analytics.types';
+import type { SpikePoint } from '../types/analytics.types';
 
 interface AnomalyListProps {
   spikes: SpikePoint[];
