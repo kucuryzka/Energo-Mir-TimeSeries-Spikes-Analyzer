@@ -78,6 +78,18 @@ function getThemeConfig(mode: AppTheme) {
       Drawer: {
         borderRadiusLG: 20,
       },
+      // antd's dark algorithm defaults Table cells to near-black, which clashes
+      // with this app's navy dark palette (--list-card-bg / --tab-pill-bg) — align them.
+      Table: isDark
+        ? {
+            colorBgContainer: '#151d3a',
+            headerBg: '#1a2140',
+            headerColor: '#edf0fa',
+            colorText: '#edf0fa',
+            rowHoverBg: 'rgba(61,99,221,0.14)',
+            borderColor: 'rgba(255,255,255,.09)',
+          }
+        : undefined,
     },
   };
 }

@@ -15,12 +15,22 @@ interface Props {
 
 // Константы для SVG — увеличиваем отступ слева для подписей Y
 const VIEW_W = 1000;
-const VIEW_H = 280;
+const VIEW_H = 340; // 🔥 Увеличено под вертикальные подписи дат снизу
 const TOP_PADDING = 25;
 const BASELINE_Y = 255;
 const LEFT_PADDING = 70; // 🔥 Увеличенный отступ слева для подписей Y
 const CHART_W = VIEW_W - LEFT_PADDING; // Ширина самого графика
 const MAX_POINTS = 3000;
+
+// Диагональные подписи дат: считаем реальный горизонтальный "след" повёрнутой подписи,
+// чтобы соседние подписи не наслаивались друг на друга.
+const X_LABEL_FONT_SIZE = 6.5;
+const X_LABEL_ROTATE_DEG = 60;
+const X_LABEL_CHARS = 'DD.MM HH:mm'.length;
+const X_LABEL_TEXT_LENGTH = X_LABEL_CHARS * X_LABEL_FONT_SIZE * 0.62; // моноширинный шрифт
+const MIN_X_LABEL_SPACING = Math.ceil(
+  X_LABEL_TEXT_LENGTH * Math.cos((X_LABEL_ROTATE_DEG * Math.PI) / 180) + 4,
+); // px между соседними подписями
 
 interface ChartPoint {
   x: number;
@@ -121,29 +131,31 @@ function buildAreaPath(points: ChartPoint[]): string {
   return `${line} L ${last.x.toFixed(1)} ${BASELINE_Y} L ${first.x.toFixed(1)} ${BASELINE_Y} Z`;
 }
 
-// Функция для генерации подписей оси X
-function getXAxisLabels(data: SpikePoint[], count: number = 6): { timestamp: string; x: number }[] {
+// Функция для генерации подписей оси X — по возможности показывает каждую точку,
+// а при нехватке места равномерно прореживает так, чтобы вертикальные подписи не наезжали друг на друга.
+function getXAxisLabels(data: SpikePoint[], maxCount: number): { timestamp: string; x: number }[] {
   if (data.length === 0) return [];
+  const count = Math.max(2, Math.min(maxCount, data.length));
+
   if (data.length <= count) {
     return data.map((d, i) => ({
       timestamp: dayjs(d.timestamp).format('DD.MM HH:mm'),
-      x: (i / (data.length - 1)) * CHART_W + LEFT_PADDING,
+      x: data.length === 1 ? LEFT_PADDING : (i / (data.length - 1)) * CHART_W + LEFT_PADDING,
     }));
   }
-  
-  const step = Math.floor(data.length / count);
-  const labels = [];
-  for (let i = 0; i < data.length && labels.length < count; i += step) {
+
+  const step = (data.length - 1) / (count - 1);
+  const seenIdx = new Set<number>();
+  const labels: { timestamp: string; x: number }[] = [];
+  for (let k = 0; k < count; k += 1) {
+    const idx = Math.round(k * step);
+    if (seenIdx.has(idx)) continue;
+    seenIdx.add(idx);
     labels.push({
-      timestamp: dayjs(data[i].timestamp).format('DD.MM HH:mm'),
-      x: (i / (data.length - 1)) * CHART_W + LEFT_PADDING,
+      timestamp: dayjs(data[idx].timestamp).format('DD.MM HH:mm'),
+      x: (idx / (data.length - 1)) * CHART_W + LEFT_PADDING,
     });
   }
-  const last = data[data.length - 1];
-  labels.push({
-    timestamp: dayjs(last.timestamp).format('DD.MM HH:mm'),
-    x: CHART_W + LEFT_PADDING,
-  });
   return labels;
 }
 
@@ -173,7 +185,8 @@ export const SpikeChart: React.FC<Props> = ({
   const [hoverPoint, setHoverPoint] = useState<{ x: number; y: number; value: number; timestamp: string } | null>(null);
   const [zoomRange, setZoomRange] = useState<[number, number]>([0, 100]);
   const trackRef = useRef<HTMLDivElement>(null);
-  const [dragging, setDragging] = useState<'from' | 'to' | null>(null);
+  const [dragging, setDragging] = useState<'from' | 'to' | 'select' | null>(null);
+  const [selectAnchor, setSelectAnchor] = useState<number | null>(null);
 
   const sortedData = useMemo(() => {
     return [...data].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
@@ -197,7 +210,8 @@ export const SpikeChart: React.FC<Props> = ({
   const areaPath = useMemo(() => buildAreaPath(points), [points]);
 
   const xLabels = useMemo(() => {
-    return getXAxisLabels(visibleData, 6);
+    const maxCount = Math.max(2, Math.floor(CHART_W / MIN_X_LABEL_SPACING));
+    return getXAxisLabels(visibleData, maxCount);
   }, [visibleData]);
 
   const stats = useMemo(() => {
@@ -256,22 +270,43 @@ export const SpikeChart: React.FC<Props> = ({
 
   const startDrag = useCallback((handle: 'from' | 'to') => (e: React.PointerEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     setDragging(handle);
+    (e.target as Element).setPointerCapture(e.pointerId);
+  }, []);
+
+  const pctFromEvent = (e: React.PointerEvent) => {
+    const rect = trackRef.current!.getBoundingClientRect();
+    return Math.min(100, Math.max(0, ((e.clientX - rect.left) / rect.width) * 100));
+  };
+
+  // Клик/зажатие в любом месте ползунка — начинает новое выделение с этой точки.
+  const startTrackSelect = useCallback((e: React.PointerEvent) => {
+    if (!trackRef.current) return;
+    e.preventDefault();
+    const pct = pctFromEvent(e);
+    setSelectAnchor(pct);
+    setZoomRange([pct, pct]);
+    setDragging('select');
     (e.target as Element).setPointerCapture(e.pointerId);
   }, []);
 
   const onTrackPointerMove = useCallback((e: React.PointerEvent) => {
     if (!dragging || !trackRef.current) return;
-    const rect = trackRef.current.getBoundingClientRect();
-    const pct = Math.min(100, Math.max(0, ((e.clientX - rect.left) / rect.width) * 100));
+    const pct = pctFromEvent(e);
     if (dragging === 'from') {
       setZoomRange([Math.min(pct, zoomRange[1] - 2), zoomRange[1]]);
-    } else {
+    } else if (dragging === 'to') {
       setZoomRange([zoomRange[0], Math.max(pct, zoomRange[0] + 2)]);
+    } else if (dragging === 'select' && selectAnchor !== null) {
+      setZoomRange([Math.min(pct, selectAnchor), Math.max(pct, selectAnchor)]);
     }
-  }, [dragging, zoomRange]);
+  }, [dragging, zoomRange, selectAnchor]);
 
-  const endDrag = useCallback(() => setDragging(null), []);
+  const endDrag = useCallback(() => {
+    setDragging(null);
+    setSelectAnchor(null);
+  }, []);
 
   const firstTs = visibleData[0]?.timestamp;
   const lastTs = visibleData[visibleData.length - 1]?.timestamp;
@@ -317,7 +352,7 @@ export const SpikeChart: React.FC<Props> = ({
         <div className="chart-wrap" style={{ position: 'relative' }}>
           <svg
             viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
-            style={{ width: '100%', height: 'auto', aspectRatio: '1000/280', display: 'block', overflow: 'visible' }}
+            style={{ width: '100%', height: 'auto', aspectRatio: `${VIEW_W}/${VIEW_H}`, display: 'block', overflow: 'visible' }}
           >
             <defs>
               <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
@@ -366,7 +401,7 @@ export const SpikeChart: React.FC<Props> = ({
                     y1={y}
                     x2={VIEW_W}
                     y2={y}
-                    stroke="#EFF2F9"
+                    stroke="var(--chart-grid-line)"
                     strokeWidth="1"
                     strokeDasharray="3 3"
                     opacity="0.4"
@@ -436,10 +471,10 @@ export const SpikeChart: React.FC<Props> = ({
               <circle
                 cx={points[peakIndex].x}
                 cy={points[peakIndex].y}
-                r="5"
+                r="3.5"
                 fill="none"
                 stroke={visibleData[peakIndex]?.pValue < 0.01 ? '#d64933' : '#e2a339'}
-                strokeWidth="2"
+                strokeWidth="1.5"
                 className="peak-ring"
               />
             )}
@@ -466,10 +501,8 @@ export const SpikeChart: React.FC<Props> = ({
                   <circle
                     cx={m.x}
                     cy={m.y}
-                    r={isHovered ? 8.5 : 5}
+                    r={isHovered ? 6 : 3.5}
                     fill={color}
-                    stroke="#fff"
-                    strokeWidth="1.5"
                     className="anomaly-marker"
                     style={{ filter: 'drop-shadow(0 2px 3px rgba(20,30,60,.25))', pointerEvents: 'none' }}
                   />
@@ -477,16 +510,17 @@ export const SpikeChart: React.FC<Props> = ({
               );
             })}
 
-            {/* Подписи оси X */}
+            {/* Подписи оси X — вертикальные "столбики" дат */}
             {xLabels.map((label, index) => (
               <g key={index}>
                 <text
                   x={label.x}
-                  y={BASELINE_Y + 20}
-                  textAnchor="middle"
+                  y={BASELINE_Y + 14}
+                  textAnchor="end"
                   fill="#7A8B9E"
-                  fontSize="9"
+                  fontSize={X_LABEL_FONT_SIZE}
                   fontFamily="JetBrains Mono, monospace"
+                  transform={`rotate(-${X_LABEL_ROTATE_DEG}, ${label.x}, ${BASELINE_Y + 14})`}
                 >
                   {label.timestamp}
                 </text>
@@ -507,7 +541,7 @@ export const SpikeChart: React.FC<Props> = ({
             <div
               className="tooltip"
               style={{
-                left: `${((hoverPoint.x - LEFT_PADDING) / CHART_W) * 100}%`,
+                left: `${(hoverPoint.x / VIEW_W) * 100}%`,
                 top: `${(hoverPoint.y / VIEW_H) * 100}%`,
                 transform: 'translate(-50%,-148%)',
                 position: 'absolute',
@@ -554,7 +588,12 @@ export const SpikeChart: React.FC<Props> = ({
           <span className="zoom-label" style={{ font: '500 10.5px JetBrains Mono, monospace', color: 'var(--line-legend-color)' }}>
             {firstTs ? dayjs(firstTs).format('DD.MM') : ''}
           </span>
-          <div className="zoom-track" ref={trackRef} style={{ flex: 1, height: '6px', borderRadius: '999px', background: 'var(--zoom-track-bg)', position: 'relative' }}>
+          <div
+            className="zoom-track"
+            ref={trackRef}
+            onPointerDown={startTrackSelect}
+            style={{ flex: 1, height: '6px', borderRadius: '999px', background: 'var(--zoom-track-bg)', position: 'relative', cursor: 'pointer', touchAction: 'none' }}
+          >
             <div className="zoom-fill" style={{ position: 'absolute', top: 0, bottom: 0, left: `${zoomRange[0]}%`, right: `${100 - zoomRange[1]}%`, background: 'rgba(61,99,221,.28)', borderRadius: '999px' }} />
             <div
               className="zoom-handle"

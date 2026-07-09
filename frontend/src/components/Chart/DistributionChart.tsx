@@ -77,13 +77,13 @@ const renderCustomizedLabel = (props: any) => {
       <text
         x={isLeft ? x - 10 : x + 10}
         y={y}
-        fill="#1A2332"
+        fill="var(--text-heading)"
         textAnchor={isLeft ? 'end' : 'start'}
         dominantBaseline="central"
         fontSize={fontSize}
         fontWeight={fontWeight}
         style={{
-          textShadow: '0 1px 4px rgba(255,255,255,0.9)',
+          textShadow: '0 1px 4px var(--pie-label-shadow)',
           pointerEvents: 'none',
           letterSpacing: '0.3px',
         }}
@@ -339,7 +339,9 @@ export const DistributionChart: React.FC<Props> = ({ data, title }) => {
             style={{
               borderRadius: 16,
               overflow: 'hidden',
-              background: 'var(--list-card-bg)',
+              background: 'var(--table-surface-bg)',
+              border: '1px solid var(--border-subtle)',
+              boxShadow: '0 8px 24px rgba(0,0,0,.15)',
             }}
             components={{
               header: {

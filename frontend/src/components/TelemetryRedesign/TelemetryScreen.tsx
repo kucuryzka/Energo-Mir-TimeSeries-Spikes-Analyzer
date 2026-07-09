@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useLayoutEffect, useState } from 'react';
 import { Drawer, Badge } from 'antd';
 import { HistoryOutlined, DashboardOutlined, ApiOutlined, UnorderedListOutlined, LogoutOutlined } from '@ant-design/icons';
 import { AnalysisJobQueuePage } from '../Dashboard/AnalysisJobQueuePage';
@@ -34,7 +34,9 @@ export const TelemetryScreen: React.FC<TelemetryScreenProps> = ({ onLogout, uiTh
   const [genericConfig, setGenericConfig] = useState<GenericConfig | null>(null);
   const [pendingJobOpen, setPendingJobOpen] = useState<PendingAnalysisJobOpen | null>(null);
 
-  useEffect(() => {
+  // useLayoutEffect (не useEffect) — иначе :root получает data-theme на кадр позже,
+  // чем .page (который выставляется синхронно в JSX), и часть UI на миг остаётся в старой теме.
+  useLayoutEffect(() => {
     document.documentElement.setAttribute('data-theme', uiTheme);
   }, [uiTheme]);
 
@@ -89,17 +91,19 @@ export const TelemetryScreen: React.FC<TelemetryScreenProps> = ({ onLogout, uiTh
     const maxOpacity = 1;
     const opacity = minOpacity + (index / (total - 1)) * (maxOpacity - minOpacity);
     
-    // Цвет от серого к насыщенному синему/красному
+    // Цвет от серого к насыщенному синему/красному (с учётом темы, иначе в тёмной теме иконки почти не видно)
     const isLogout = index === total - 1;
-    const color = isLogout 
+    const color = isLogout
       ? '#d64933' // красный для выхода
-      : `rgba(26, 35, 50, ${opacity})`;
-    
+      : uiTheme === 'dark'
+        ? `rgba(203, 214, 240, ${opacity})`
+        : `rgba(26, 35, 50, ${opacity})`;
+
     return {
       opacity,
       color,
-      '--hover-bg': isLogout 
-        ? 'rgba(214, 73, 51, 0.12)' 
+      '--hover-bg': isLogout
+        ? 'rgba(214, 73, 51, 0.12)'
         : `rgba(61, 99, 221, ${opacity * 0.15})`,
     } as React.CSSProperties;
   };

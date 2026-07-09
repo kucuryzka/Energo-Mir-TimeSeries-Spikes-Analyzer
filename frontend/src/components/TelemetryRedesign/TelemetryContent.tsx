@@ -818,13 +818,15 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
                       <DistributionChart data={dboObjectDistribution} title="Распределение по объектам" />
                     </div>
                   ) : (
-                    <Button
-                      type="default"
-                      loading={loadingDboDistribution}
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      disabled={loadingDboDistribution}
                       onClick={loadDboObjectDistribution}
+                      style={{ width: '100%', justifyContent: 'center' }}
                     >
-                      Загрузить распределение по объектам
-                    </Button>
+                      {loadingDboDistribution ? 'Загрузка…' : 'Загрузить распределение по объектам'}
+                    </button>
                   )}
                 </div>
               )}
