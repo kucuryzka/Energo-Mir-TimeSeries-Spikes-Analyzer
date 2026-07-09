@@ -58,12 +58,6 @@ public class AnalysisJobCoordinatorService
         };
     }
 
-    public async Task<IReadOnlyList<AnalysisJobQueueItemDto>> GetQueueAsync(string? database = null)
-    {
-        var overview = await GetOverviewAsync(database);
-        return overview.Active;
-    }
-
     private AnalysisJobQueueItemDto MapJob(AnalysisJob job, IReadOnlyDictionary<string, int> queuePositions) =>
         new()
         {

@@ -13,7 +13,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace API.DataSources;
 
-public class EmProtocolDataSource : IDataSourceStrategy, ISupportsChannels, ISupportsDistribution, ISupportsPointChannels
+public class EmProtocolDataSource : IDataSourceStrategy
 {
     private readonly DataSourceConnectionResolver _connectionResolver;
     private readonly AnalysisPipelineService _pipeline;

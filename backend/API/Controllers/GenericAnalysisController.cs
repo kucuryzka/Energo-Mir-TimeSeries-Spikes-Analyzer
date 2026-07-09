@@ -1,12 +1,10 @@
 using API.Data;
-using API.DataSources;
 using API.DTOs;
 using API.Infrastructure;
 using API.Models;
 using API.Services;
 using API.Sql;
 using Core.Enums;
-using Core.Interfaces;
 using Dapper;
 using Hangfire;
 using Microsoft.AspNetCore.Mvc;
@@ -19,7 +17,6 @@ public class GenericAnalysisController : ControllerBase
 {
     private readonly InternalDbContext _internalDb;
     private readonly IBackgroundJobClient _backgroundJobClient;
-    private readonly AnalysisPipelineService _pipeline;
     private readonly ISqlDialectProvider _dialectProvider;
     private readonly TablePreviewService _tablePreview;
     private readonly AnalysisRequestValidator _requestValidator;
@@ -29,7 +26,6 @@ public class GenericAnalysisController : ControllerBase
     public GenericAnalysisController(
         InternalDbContext internalDb,
         IBackgroundJobClient backgroundJobClient,
-        AnalysisPipelineService pipeline,
         ISqlDialectProvider dialectProvider,
         TablePreviewService tablePreview,
         AnalysisRequestValidator requestValidator,
@@ -38,7 +34,6 @@ public class GenericAnalysisController : ControllerBase
     {
         _internalDb = internalDb;
         _backgroundJobClient = backgroundJobClient;
-        _pipeline = pipeline;
         _dialectProvider = dialectProvider;
         _tablePreview = tablePreview;
         _requestValidator = requestValidator;
@@ -158,56 +153,6 @@ public class GenericAnalysisController : ControllerBase
     [HttpDelete("history/{id}")]
     public async Task<IActionResult> DeleteHistoryItem(string id) =>
         await _jobQueries.DeleteJobAsync(id) ? NoContent() : NotFound();
-
-    [HttpPost("analyze")]
-    public async Task<IActionResult> Analyze([FromBody] GenericAnalysisRequest request, [FromServices] ISpikeDetectionService spikeDetectionService)
-    {
-        try
-        {
-            var info = _session.RequireConnection();
-            _requestValidator.Validate(
-                request.StartDate,
-                request.EndDate,
-                request.Granularity,
-                request.WindowSize,
-                request.CustomMinutes);
-
-            var spec = new AnalysisTableSpec
-            {
-                Schema = request.Schema,
-                Table = request.Table,
-                TimeColumn = request.TimeColumn
-            };
-
-            var response = await _pipeline.ExecuteAsync(
-                spec,
-                request.StartDate,
-                request.EndDate,
-                request.Granularity,
-                request.CustomMinutes,
-                channelId: null,
-                request.Confidence ?? 95,
-                request.WindowSize ?? 30,
-                spikeDetectionService,
-                info.ConnectionString,
-                info.Provider,
-                request.Database);
-
-            return Ok(response);
-        }
-        catch (UnauthorizedAccessException ex)
-        {
-            return Unauthorized(ex.Message);
-        }
-        catch (ArgumentException ex)
-        {
-            return BadRequest(ex.Message);
-        }
-        catch (Exception ex)
-        {
-            return StatusCode(500, new { message = "An error occurred during generic analysis.", details = ex.Message });
-        }
-    }
 
     [HttpGet("point-details")]
     public async Task<IActionResult> GetPointDetails(

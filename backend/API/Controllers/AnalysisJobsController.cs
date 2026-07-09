@@ -33,16 +33,6 @@ public class AnalysisJobsController : ControllerBase
         _exportService = exportService;
     }
 
-    [HttpGet("queue")]
-    public async Task<IActionResult> GetQueue([FromQuery] string? database)
-    {
-        if (!_session.IsAuthenticated())
-            return Unauthorized();
-
-        var queue = await _coordinator.GetQueueAsync(database);
-        return Ok(queue);
-    }
-
     [HttpGet("overview")]
     public async Task<IActionResult> GetOverview([FromQuery] string? database, [FromQuery] int recentLimit = 50)
     {
