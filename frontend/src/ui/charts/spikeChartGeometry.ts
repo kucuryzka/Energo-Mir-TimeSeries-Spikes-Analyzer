@@ -9,7 +9,7 @@ export const LEFT_PADDING = 70;
 export const CHART_W = VIEW_W - LEFT_PADDING; 
 export const MAX_POINTS = 3000;
 
-export const X_LABEL_FONT_SIZE = 6.5;
+export const X_LABEL_FONT_SIZE = 9;
 export const X_LABEL_ROTATE_DEG = 60;
 const X_LABEL_CHARS = 'DD.MM HH:mm'.length;
 const X_LABEL_TEXT_LENGTH = X_LABEL_CHARS * X_LABEL_FONT_SIZE * 0.62; 

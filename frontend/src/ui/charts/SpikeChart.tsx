@@ -44,6 +44,8 @@ export const SpikeChart: React.FC<Props> = ({
 }) => {
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [hoverPoint, setHoverPoint] = useState<{ x: number; y: number; value: number; timestamp: string } | null>(null);
+  const [cursorPoint, setCursorPoint] = useState<{ x: number; y: number; value: number; timestamp: string } | null>(null);
+  const [cursorVisible, setCursorVisible] = useState(false);
   const { zoomRange, trackRef, startDrag, startTrackSelect, onTrackPointerMove, endDrag } = useSpikeZoom();
 
   const sortedData = useMemo(() => {
@@ -110,6 +112,74 @@ export const SpikeChart: React.FC<Props> = ({
     });
   }, [points, visibleData, showCriticalMarkers, showWarningMarkers]);
 
+  // Обработчик движения мыши по SVG
+  const handleSvgMouseMove = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
+    const svg = e.currentTarget;
+    const rect = svg.getBoundingClientRect();
+    const viewBoxWidth = VIEW_W;
+    const scaleX = viewBoxWidth / rect.width;
+    const x = (e.clientX - rect.left) * scaleX;
+    
+    // Проверяем, что мышь в пределах графика
+    if (x < LEFT_PADDING || x > VIEW_W) {
+      setCursorVisible(false);
+      setCursorPoint(null);
+      return;
+    }
+    
+    // Находим ближайшую точку
+    let closestIdx = 0;
+    let closestDist = Infinity;
+    points.forEach((p, i) => {
+      const dist = Math.abs(p.x - x);
+      if (dist < closestDist) {
+        closestDist = dist;
+        closestIdx = i;
+      }
+    });
+    
+    const point = visibleData[closestIdx];
+    if (point) {
+      setCursorPoint({
+        x: points[closestIdx].x,
+        y: points[closestIdx].y,
+        value: point.value,
+        timestamp: point.timestamp,
+      });
+      setCursorVisible(true);
+    }
+  }, [points, visibleData]);
+
+  const handleSvgMouseLeave = useCallback(() => {
+    setCursorVisible(false);
+    setCursorPoint(null);
+  }, []);
+
+  // Обработчик клика по прозрачной области
+  const handlePolylineClick = useCallback((e: React.MouseEvent<SVGPolylineElement>) => {
+    const svg = e.currentTarget.closest('svg');
+    if (!svg) return;
+    const rect = svg.getBoundingClientRect();
+    const viewBoxWidth = VIEW_W;
+    const scaleX = viewBoxWidth / rect.width;
+    const x = (e.clientX - rect.left) * scaleX;
+    
+    let closestIdx = 0;
+    let closestDist = Infinity;
+    points.forEach((p, i) => {
+      const dist = Math.abs(p.x - x);
+      if (dist < closestDist) {
+        closestDist = dist;
+        closestIdx = i;
+      }
+    });
+    
+    const point = visibleData[closestIdx];
+    if (point && onPointClick) {
+      onPointClick(point);
+    }
+  }, [points, visibleData, onPointClick]);
+
   const handleMarkerEnter = useCallback((p: { x: number; y: number; value: number; timestamp: string }, id: string) => {
     setHoveredId(id);
     setHoverPoint(p);
@@ -170,6 +240,8 @@ export const SpikeChart: React.FC<Props> = ({
           <svg
             viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
             style={{ width: '100%', height: 'auto', aspectRatio: `${VIEW_W}/${VIEW_H}`, display: 'block', overflow: 'visible' }}
+            onMouseMove={handleSvgMouseMove}
+            onMouseLeave={handleSvgMouseLeave}
           >
             <defs>
               <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
@@ -280,6 +352,32 @@ export const SpikeChart: React.FC<Props> = ({
                 filter="url(#lineGlow)"
                 pathLength={1}
                 className="chart-draw-line"
+              />
+            )}
+
+            {/* Прозрачная область для клика по любой точке графика */}
+            {visibleData.length > 0 && (
+              <polyline
+                points={points.map(p => `${p.x},${p.y}`).join(' ')}
+                fill="none"
+                stroke="transparent"
+                strokeWidth="20"
+                style={{ cursor: 'pointer' }}
+                onClick={handlePolylineClick}
+              />
+            )}
+
+            {/* Темно-синяя точка-индикатор за мышкой */}
+            {cursorVisible && cursorPoint && (
+              <circle
+                cx={cursorPoint.x}
+                cy={cursorPoint.y}
+                r="3.5"
+                fill="#2A3A6A"
+                opacity="0.85"
+                stroke="#3D63DD"
+                strokeWidth="1.5"
+                style={{ pointerEvents: 'none' }}
               />
             )}
 
@@ -400,30 +498,30 @@ export const SpikeChart: React.FC<Props> = ({
           onPointerMove={onTrackPointerMove}
           onPointerUp={endDrag}
           onPointerLeave={endDrag}
-          style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: 12, paddingLeft: LEFT_PADDING }}
+          style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: 12, paddingLeft: LEFT_PADDING }}
         >
-          <span className="zoom-label" style={{ font: '500 10.5px JetBrains Mono, monospace', color: 'var(--line-legend-color)' }}>
+          <span className="zoom-label" style={{ font: '500 12px JetBrains Mono, monospace', color: 'var(--line-legend-color)' }}>
             {firstTs ? dayjs(firstTs).format('DD.MM') : ''}
           </span>
           <div
             className="zoom-track"
             ref={trackRef}
             onPointerDown={startTrackSelect}
-            style={{ flex: 1, height: '6px', borderRadius: '999px', background: 'var(--zoom-track-bg)', position: 'relative', cursor: 'pointer', touchAction: 'none' }}
+            style={{ flex: 1, height: '9px', borderRadius: '999px', background: 'var(--zoom-track-bg)', position: 'relative', cursor: 'pointer', touchAction: 'none' }}
           >
             <div className="zoom-fill" style={{ position: 'absolute', top: 0, bottom: 0, left: `${zoomRange[0]}%`, right: `${100 - zoomRange[1]}%`, background: 'rgba(61,99,221,.28)', borderRadius: '999px' }} />
             <div
               className="zoom-handle"
-              style={{ position: 'absolute', top: '50%', left: `${zoomRange[0]}%`, transform: 'translate(-50%,-50%)', width: '11px', height: '11px', borderRadius: '50%', background: '#3D63DD', boxShadow: '0 0 0 3px var(--zoom-handle-ring),0 1px 3px rgba(0,0,0,.2)', cursor: 'grab', touchAction: 'none' }}
+              style={{ position: 'absolute', top: '50%', left: `${zoomRange[0]}%`, transform: 'translate(-50%,-50%)', width: '13px', height: '13px', borderRadius: '50%', background: '#3D63DD', boxShadow: '0 0 0 3px var(--zoom-handle-ring),0 1px 3px rgba(0,0,0,.2)', cursor: 'grab', touchAction: 'none' }}
               onPointerDown={startDrag('from')}
             />
             <div
               className="zoom-handle"
-              style={{ position: 'absolute', top: '50%', left: `${zoomRange[1]}%`, transform: 'translate(-50%,-50%)', width: '11px', height: '11px', borderRadius: '50%', background: '#3D63DD', boxShadow: '0 0 0 3px var(--zoom-handle-ring),0 1px 3px rgba(0,0,0,.2)', cursor: 'grab', touchAction: 'none' }}
+              style={{ position: 'absolute', top: '50%', left: `${zoomRange[1]}%`, transform: 'translate(-50%,-50%)', width: '13px', height: '13px', borderRadius: '50%', background: '#3D63DD', boxShadow: '0 0 0 3px var(--zoom-handle-ring),0 1px 3px rgba(0,0,0,.2)', cursor: 'grab', touchAction: 'none' }}
               onPointerDown={startDrag('to')}
             />
           </div>
-          <span className="zoom-label" style={{ font: '500 10.5px JetBrains Mono, monospace', color: 'var(--line-legend-color)' }}>
+          <span className="zoom-label" style={{ font: '500 12px JetBrains Mono, monospace', color: 'var(--line-legend-color)' }}>
             {lastTs ? dayjs(lastTs).format('DD.MM') : ''}
           </span>
         </div>
