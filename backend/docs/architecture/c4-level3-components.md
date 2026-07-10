@@ -69,10 +69,10 @@ Core                 — ML spike detection
 | `AnalysisResultService` | JSONL I/O, partial results, `HasResult` / `CanExport` |
 | `AnalysisJobQueryService` | **Общая** логика status / result / history / delete |
 | `AnalysisJobCoordinatorService` | Overview очереди, cancel, mapping source kind |
-| `ExcelReportService` | Шаблон xlsx, заполнение «Данные» |
-| `ExcelChartPatcher` | Post-save patch chart XML и размер на «График» |
-| `AnalysisExportService` | Оркестратор Excel export |
-| `EventCodeLabelService` | Подписи EventCode для export |
+| `ExcelReportService` | Шаблон xlsx, заполнение «Данные» (`GenerateReport`) |
+| `ExcelChartPatcher` | Post-save patch chart XML (**не используется** в текущем export) |
+| `AnalysisExportService` | Оркестратор Excel export (упрощённый: LoadAsync + GenerateReport) |
+| `EventCodeLabelService` | Подписи EventCode (зарегистрирован, не используется в export) |
 | `ConnectionManagerService` | In-memory сессии `DatabaseSessionInfo` |
 
 ## DataSources (Strategy)

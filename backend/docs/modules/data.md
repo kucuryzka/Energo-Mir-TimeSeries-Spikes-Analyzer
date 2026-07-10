@@ -48,7 +48,7 @@ InternalDbSchemaUpdater.Apply(internalDb);
 | Файл | Назначение |
 |------|------------|
 | `API/Data/event_codes.csv` | Справочник EventCode → label (копируется в output) |
-| `API/Resources/ReportTemplate.xlsx` | Шаблон Excel: «Данные», «График» с нативным chart |
+| `API/Resources/ReportTemplate.xlsx` | Шаблон Excel: «Данные» (таблица), «График» (нативный chart — **не обновляется** при текущем export) |
 
 ## Hangfire storage
 

@@ -18,7 +18,6 @@ void RemoveSession(string token);
 - `SessionContextService` — проверка токена
 - `DataSourceConnectionResolver` — connection для data sources
 - `AnalysisJobProcessor` — connection в Hangfire worker
-- `AnalysisExportService` — reload distribution, `EventCodeLabelService`
 
 ## Другие интерфейсы (в Services/)
 

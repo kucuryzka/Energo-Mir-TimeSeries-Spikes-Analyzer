@@ -21,9 +21,15 @@ dotnet run --project backend/API/API.csproj
 - Swagger (Development): `/swagger`
 - Hangfire: `/api/dist/hangfire/` (за nginx) или `/hangfire` локально
 
-Аутентификация: `POST /api/Auth/connect` → заголовок `X-Session-Token` на всех защищённых запросах.
+Аутентификация: `POST /api/Auth/connect` → заголовок `X-Session-Token` на защищённых запросах (не на всех — см. [api-reference.md](api-reference.md)).
 
 ## Навигация
+
+### API
+
+| Документ | Описание |
+|----------|----------|
+| **[api-reference.md](api-reference.md)** | Полный справочник эндпоинтов, DTO, авторизации |
 
 ### Архитектура (C4)
 
@@ -55,7 +61,18 @@ dotnet run --project backend/API/API.csproj
 2. **Постановка анализа** — `Dbo` / `em-protocol` / `GenericAnalysis` → `InternalDbContext` + Hangfire.
 3. **Выполнение** — `AnalysisJobProcessor` → `IDataSourceStrategy` или `AnalysisPipelineService` → `SpikeDetectionService`.
 4. **Результат** — JSONL в `results/`, метаданные в SQLite (`AnalysisJobs`).
-5. **Очередь и экспорт** — `AnalysisJobsController` (overview, cancel, Excel из шаблона + chart patch).
+5. **Очередь и экспорт** — `AnalysisJobsController` (overview, cancel, Excel из шаблона — только лист «Данные»).
+
+## Excel export (текущее состояние)
+
+Упрощённая реализация (коммит `1109952`):
+
+- `AnalysisExportService` → `LoadAsync` + `ExcelReportService.GenerateReport`
+- Заполняется только лист **«Данные»** шаблона `ReportTemplate.xlsx`
+- Параметр `loadDistribution` на эндпоинте **игнорируется**
+- `ExcelChartPatcher.cs` присутствует в репозитории, но **не вызывается**
+
+Расширенный экспорт (chart patch, «Параметры», «Распределение») был в коммите `dabda02` и может быть восстановлен из истории git.
 
 ## Известные ограничения
 

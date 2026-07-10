@@ -2,11 +2,26 @@
 
 HTTP-слой API. Все контроллеры в `API/Controllers/`, namespace `API.Controllers`.
 
+Полный справочник эндпоинтов с примерами JSON: [api-reference.md](../api-reference.md).
+
 ## Общие соглашения
 
-- Аутентификация: заголовок `X-Session-Token` (кроме `Auth/connect`).
+- Аутентификация: заголовок `X-Session-Token` (получается через `POST /api/Auth/connect`).
 - Проверка сессии: `SessionContextService` (`RequireToken`, `RequireConnection`, `IsAuthenticated`).
-- Ошибки: mix `Unauthorized(string)` и `Unauthorized(new { message })` — постепенная унификация на JSON-объекты.
+- **Не все** эндпоинты требуют токен — status/result/history job endpoints открыты.
+- Ошибки: mix `Unauthorized(string)` и `Unauthorized(new { message })`.
+
+### Матрица авторизации (кратко)
+
+| Контроллер | Без токена | С токеном |
+|------------|------------|-----------|
+| Auth/connect | ✓ | — |
+| Sources | ✓ | — |
+| Explorer | — | RequireConnection |
+| dbo/em enqueue, distribution | — | RequireToken |
+| dbo/em status, result, history | ✓ | — |
+| analysis-jobs | — | IsAuthenticated |
+| GenericAnalysis preview, point-details | — | RequireConnection |
 
 ## AuthController
 
@@ -32,6 +47,8 @@ HTTP-слой API. Все контроллеры в `API/Controllers/`, namespac
 | Метод | Путь | Описание |
 |-------|------|----------|
 | GET | `/api/Sources` | Список `IDataSourceStrategy` (id, name, distributions) |
+
+**Без авторизации.**
 
 ## DboController — `api/dbo`
 
@@ -79,7 +96,7 @@ Enqueue: Hangfire id `"em_protocol"`.
 | GET | `overview` | active + recent |
 | GET | `estimate` | ETA по `AnalysisTimingStatsService` |
 | POST | `{id}/cancel` | Отмена через coordinator |
-| GET | `{id}/export` | Excel (шаблон + chart patch), query `loadDistribution` |
+| GET | `{id}/export` | Excel (шаблон, лист «Данные»), query `loadDistribution` **игнорируется** |
 
 ## Зависимости контроллеров (типичные)
 

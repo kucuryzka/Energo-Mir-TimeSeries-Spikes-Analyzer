@@ -22,10 +22,13 @@ API contracts в `API/DTOs/`. JSON serialization: **camelCase**.
 string Database;
 DateTime StartDate, EndDate;
 TimeGranularity Granularity;
-int? CustomMinutes, WindowSize;
-double? Confidence;
-int? ChannelId;  // null = все каналы/объекты
+int? CustomMinutes;
+int ChannelId;       // в JSON: channelId, null = все
+double Confidence;   // default 95
+int WindowSize;      // default 30
 ```
+
+`sourceId` в теле запроса фронтенд передаёт, но контроллеры dbo/em не используют — источник определяется маршрутом.
 
 ## Ответы анализа
 

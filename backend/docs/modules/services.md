@@ -46,9 +46,9 @@ Hangfire worker. Точки входа:
 | `CanExport` | Completed/Cancelled + jsonl file |
 | `ResolveResultFilePath` | `ResultFilePath` или fallback `{jobId}.jsonl` |
 | `SaveAsync` / `LoadAsync` | JSONL + metadata в `ResultJson` |
-| `GetStoredDistribution` | Distribution из `ResultJson` (для export без reload) |
+| `GetStoredDistribution` | Distribution из `ResultJson` |
 | `SavePartialSeriesAsync` | Polling во время Running |
-| `EnumerateSeriesAsync` | Streaming для Excel export |
+| `EnumerateSeriesAsync` | Streaming чтения JSONL (не используется текущим export) |
 
 Файлы: `{ContentRoot}/results/` (настраивается `AnalysisSettings.ResultsDirectory`).
 
@@ -82,39 +82,46 @@ Hangfire worker. Точки входа:
 
 | Метод | Описание |
 |-------|----------|
-| `OpenTemplate()` | Открывает xlsx-шаблон (листы «Данные», «График») |
-| `FillSeriesAsync` | Стримит точки из JSONL в таблицу «Данные», ресайзит Excel Table |
+| `GenerateReport(SpikeResponse)` | Открывает шаблон, заполняет «Данные», сохраняет в `byte[]` |
 
-Колонки: Timestamp, Value, IsSpike, PValue, ChannelBreakdown.
+Колонки: Timestamp (`dd.MM.yyyy HH:mm:ss`), Value, IsSpike, PValue, ChannelBreakdown (строка `имя: count; ...`).
 
-## ExcelChartPatcher (static)
+При наличии Excel Table в шаблоне — ресайз таблицы под число строк.
 
-ClosedXML не умеет менять диапазоны графиков. После `SaveAs` патчит ZIP:
+Лист **«График»** не обновляется — график в шаблоне может отображаться некорректно на больших сериях.
 
-- `xl/charts/chart1.xml` — line chart по `'Данные'!$A$2:$A$n` / `$B$2:$B$n`
-- `xl/drawings/drawing1.xml` — размер якоря на листе «График» (зависит от числа точек)
-- `PrepareChartWorksheet` — ширина колонок / высота строк на «График»
+## ExcelChartPatcher (static) — не используется
+
+Класс остаётся в репозитории для возможного восстановления расширенного экспорта. Патчит ZIP после ClosedXML:
+
+- `xl/charts/chart1.xml` — диапазоны line chart
+- `xl/drawings/drawing1.xml` — размер якоря на «График»
+- `PrepareChartWorksheet` — ширина колонок / высота строк
+
+**Текущий export не вызывает этот класс.**
 
 ## AnalysisExportService (Scoped)
 
 Оркестратор Excel-экспорта (`GET /api/analysis-jobs/{id}/export`).
 
-Поток:
+**Текущий поток (упрощённый):**
 
-1. `ExcelReportService.OpenTemplate()` + `FillSeriesAsync` (серия из JSONL)
-2. `ExcelChartPatcher.PrepareChartWorksheet` на листе «График»
-3. Лист **«Параметры»** — метаданные job
-4. Опционально лист **«Распределение»** (dbo / em_protocol / generic)
-5. `ExcelChartPatcher.Patch` — фиксация графика после сохранения
+1. `CanExport(job)` — проверка статуса и наличия JSONL
+2. `AnalysisResultService.LoadAsync(job)` — полная загрузка серии в память
+3. `ExcelReportService.GenerateReport(response)` — заполнение «Данные»
+4. Возврат `(MemoryStream, fileName)`
 
-`loadDistribution`:
+Зависимости: только `AnalysisResultService` + `ExcelReportService`.
 
-| Значение | Распределение |
-|----------|---------------|
-| `false` | `GetStoredDistribution` из `ResultJson`; для dbo/em при пустом снимке — fallback из customer DB |
-| `true` | Всегда свежий запрос в customer DB за период job |
+| Параметр | Поведение |
+|----------|-----------|
+| `loadDistribution` | **Игнорируется** (`_ = loadDistribution`) |
 
-Для job с фильтром по каналу/объекту лист «Распределение» не добавляется. em_protocol: подписи EventCode через `EventCodeLabelService`.
+Имя файла: `spike-analysis-{DateTime.Now:yyyy-MM-dd_HHmm}.xlsx`.
+
+### Ранее (до revert `1109952`)
+
+Расширенный поток включал: стриминг `FillSeriesAsync`, chart patch, листы «Параметры» и «Распределение», логику `loadDistribution` с перезагрузкой из customer DB.
 
 ## AnalysisRequestValidator
 
@@ -141,3 +148,4 @@ In-memory `ConcurrentDictionary<string, DatabaseSessionInfo>`. **Не перси
 | Service | Роль |
 |---------|------|
 | `AnalysisJobCancellationService` | Registry `CancellationTokenSource` per job id |
+| `EventCodeLabelService` | EventCode → label из `event_codes.csv` (зарегистрирован, не используется в текущем export) |
