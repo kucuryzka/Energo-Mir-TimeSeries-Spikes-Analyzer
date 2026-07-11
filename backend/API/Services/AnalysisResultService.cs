@@ -162,37 +162,112 @@ public class AnalysisResultService
     public bool HasPartialResult(string jobId) =>
         File.Exists(GetPartialFilePath(jobId));
 
-    public async Task SavePartialSeriesAsync(string jobId, IEnumerable<Core.Models.DataPoint> series, CancellationToken cancellationToken = default)
+    public async Task AppendPartialSeriesAsync(
+        string jobId,
+        IReadOnlyList<Core.Models.DataPoint> batchPoints,
+        CancellationToken cancellationToken = default)
     {
+        if (batchPoints.Count == 0)
+            return;
+
         var fullPath = GetPartialFilePath(jobId);
+        var previousLength = File.Exists(fullPath) ? new FileInfo(fullPath).Length : 0L;
 
         try
         {
-            // Write in place with FileShare.Read so polling can read while we replace (no Move — avoids Windows lock on overwrite).
-            await using (var stream = new FileStream(fullPath, FileMode.Create, FileAccess.Write, FileShare.Read))
-            await using (var writer = new StreamWriter(stream))
+            await using var stream = new FileStream(fullPath, FileMode.Append, FileAccess.Write, FileShare.Read);
+            await using var writer = new StreamWriter(stream);
+            foreach (var point in batchPoints)
             {
-                foreach (var point in series.OrderBy(p => p.Timestamp))
+                cancellationToken.ThrowIfCancellationRequested();
+                var dto = new AnomalyResultDto
                 {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    var dto = new AnomalyResultDto
-                    {
-                        Timestamp = point.Timestamp,
-                        Value = point.Value,
-                        IsSpike = false,
-                        PValue = 1.0
-                    };
-                    await writer.WriteLineAsync(JsonSerializer.Serialize(dto, _jsonOptions));
-                }
+                    Timestamp = point.Timestamp,
+                    Value = point.Value,
+                    IsSpike = false,
+                    PValue = 1.0
+                };
+                await writer.WriteLineAsync(JsonSerializer.Serialize(dto, _jsonOptions));
             }
+
+            await writer.FlushAsync(cancellationToken);
+            await stream.FlushAsync(cancellationToken);
         }
         catch
         {
-            if (File.Exists(fullPath))
+            TryTruncateFile(fullPath, previousLength);
+            throw;
+        }
+    }
+
+    public async Task<List<AnomalyResultDto>> LoadPartialAlignedAsync(
+        string jobId,
+        DateTime processedUntilExclusive,
+        CancellationToken cancellationToken = default)
+    {
+        var fileName = GetPartialFileName(jobId);
+        if (!File.Exists(Path.Combine(_resultsRoot, fileName)))
+            return new List<AnomalyResultDto>();
+
+        var series = await LoadSeriesFromFileAsync(fileName, cancellationToken);
+        var aligned = series.Where(p => p.Timestamp < processedUntilExclusive).ToList();
+        if (aligned.Count < series.Count)
+            await RewritePartialSeriesAsync(jobId, aligned, cancellationToken);
+
+        return aligned;
+    }
+
+    private async Task RewritePartialSeriesAsync(
+        string jobId,
+        IReadOnlyList<AnomalyResultDto> series,
+        CancellationToken cancellationToken)
+    {
+        var fullPath = GetPartialFilePath(jobId);
+        var tempPath = fullPath + ".tmp";
+
+        try
+        {
+            await using (var stream = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None))
+            await using (var writer = new StreamWriter(stream))
             {
-                try { File.Delete(fullPath); } catch { /* best effort */ }
+                foreach (var point in series)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    await writer.WriteLineAsync(JsonSerializer.Serialize(point, _jsonOptions));
+                }
+            }
+
+            File.Move(tempPath, fullPath, overwrite: true);
+        }
+        catch
+        {
+            if (File.Exists(tempPath))
+            {
+                try { File.Delete(tempPath); } catch { /* best effort */ }
             }
             throw;
+        }
+    }
+
+    private static void TryTruncateFile(string fullPath, long length)
+    {
+        try
+        {
+            if (!File.Exists(fullPath))
+                return;
+
+            if (length <= 0)
+            {
+                File.Delete(fullPath);
+                return;
+            }
+
+            using var stream = new FileStream(fullPath, FileMode.Open, FileAccess.Write, FileShare.None);
+            stream.SetLength(length);
+        }
+        catch
+        {
+            // best effort — resume alignment still filters by ProcessedUntil
         }
     }
 

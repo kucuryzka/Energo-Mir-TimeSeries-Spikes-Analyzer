@@ -9,5 +9,7 @@ public class AnalysisBatchCompletedDto
 
     public DateTime BatchEndExclusive { get; set; }
 
-    public IReadOnlyList<Core.Models.DataPoint> SeriesSnapshot { get; set; } = Array.Empty<Core.Models.DataPoint>();
+    public int ProgressPercent { get; set; }
+
+    public IReadOnlyList<Core.Models.DataPoint> BatchPoints { get; set; } = Array.Empty<Core.Models.DataPoint>();
 }

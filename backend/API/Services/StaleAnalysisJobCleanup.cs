@@ -1,6 +1,4 @@
 using API.Data;
-using API.Models;
-using Hangfire;
 using Microsoft.EntityFrameworkCore;
 
 namespace API.Services;
@@ -23,39 +21,35 @@ public class StaleAnalysisJobCleanup : IHostedService
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<InternalDbContext>();
         var resultService = scope.ServiceProvider.GetRequiredService<AnalysisResultService>();
-        var backgroundJobs = scope.ServiceProvider.GetRequiredService<IBackgroundJobClient>();
 
         var interrupted = await db.AnalysisJobs
             .Where(j => j.Status == "Running" || j.Status == "Pending")
             .ToListAsync(cancellationToken);
 
-        var resumed = 0;
+        var awaitingResume = 0;
         var failed = 0;
 
         foreach (var job in interrupted)
         {
-            if (string.IsNullOrWhiteSpace(job.ConnectionString))
+            var hasCheckpoint = job.ProcessedUntil.HasValue && resultService.HasPartialResult(job.Id);
+            job.Status = "Failed";
+            job.CompletedAt = DateTime.UtcNow;
+            job.BackgroundJobId = null;
+
+            if (hasCheckpoint)
             {
-                job.Status = "Failed";
                 job.ErrorMessage =
-                    "Задача прервана из-за перезапуска сервера, и сохранённое подключение недоступно. Запустите анализ повторно.";
-                job.CompletedAt = DateTime.UtcNow;
+                    "Задача прервана из-за перезапуска сервера. Подключитесь к БД и продолжите анализ (resume).";
+                awaitingResume++;
+            }
+            else
+            {
+                job.ErrorMessage =
+                    "Задача прервана из-за перезапуска сервера. Запустите анализ повторно.";
                 job.ProcessedUntil = null;
                 resultService.DeletePartialFile(job.Id);
                 failed++;
-                continue;
             }
-
-            job.Status = "Pending";
-            job.ErrorMessage = null;
-            job.CompletedAt = null;
-
-            var hangfireId = string.IsNullOrEmpty(job.SourceId)
-                ? backgroundJobs.Enqueue<AnalysisJobProcessor>(p => p.ProcessJobAsync(job.Id))
-                : backgroundJobs.Enqueue<AnalysisJobProcessor>(p => p.ProcessSourceJobAsync(job.Id, job.SourceId));
-
-            job.BackgroundJobId = hangfireId;
-            resumed++;
         }
 
         var completedWithoutResult = await db.AnalysisJobs
@@ -78,8 +72,8 @@ public class StaleAnalysisJobCleanup : IHostedService
         {
             await db.SaveChangesAsync(cancellationToken);
             _logger.LogInformation(
-                "Startup cleanup: {ResumedCount} jobs requeued for resume, {FailedCount} failed (no connection), {RepairedCount} completed-without-result",
-                resumed,
+                "Startup cleanup: {AwaitingResume} interrupted with checkpoint, {FailedCount} without checkpoint, {RepairedCount} completed-without-result",
+                awaitingResume,
                 failed,
                 repairedCount);
         }

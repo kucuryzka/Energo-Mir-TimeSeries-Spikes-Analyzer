@@ -1,7 +1,4 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
+using API.Configuration;
 using API.DTOs;
 using API.Infrastructure;
 using API.Services;
@@ -9,7 +6,8 @@ using API.Sql;
 using Core.Enums;
 using Core.Interfaces;
 using Core.Models;
-using Microsoft.EntityFrameworkCore;
+using Dapper;
+using Microsoft.Extensions.Options;
 
 namespace API.DataSources;
 
@@ -17,19 +15,19 @@ public class EmProtocolDataSource : IDataSourceStrategy
 {
     private readonly DataSourceConnectionResolver _connectionResolver;
     private readonly AnalysisPipelineService _pipeline;
-    private readonly IDatabaseContextFactory _contextFactory;
     private readonly ISqlDialectProvider _dialectProvider;
+    private readonly int _commandTimeoutSeconds;
 
     public EmProtocolDataSource(
         DataSourceConnectionResolver connectionResolver,
         AnalysisPipelineService pipeline,
-        IDatabaseContextFactory contextFactory,
-        ISqlDialectProvider dialectProvider)
+        ISqlDialectProvider dialectProvider,
+        IOptions<AnalysisSettings> settings)
     {
         _connectionResolver = connectionResolver;
         _pipeline = pipeline;
-        _contextFactory = contextFactory;
         _dialectProvider = dialectProvider;
+        _commandTimeoutSeconds = settings.Value.CommandTimeoutSeconds;
     }
 
     public string Id => "em_protocol";
@@ -132,9 +130,11 @@ public class EmProtocolDataSource : IDataSourceStrategy
 
     public async Task<List<ChannelDto>> GetChannelsAsync(string database, string? search, int page = 1, int pageSize = 50)
     {
-        var (conn, prov) = ResolveConnection(null, null);
+        var (connStr, prov) = ResolveConnection(null, null);
         var dialect = _dialectProvider.GetDialect(prov);
-        using var context = _contextFactory.Create(conn, prov, database);
+        var targetConn = DatabaseConnectionHelper.WithDatabase(connStr, database);
+        await using var connection = DatabaseProvider.OpenConnection(prov, targetConn);
+        await connection.OpenAsync();
 
         var channels = dialect.QualifyFromTable("em_protocol", "Channels", "c");
         var objects = dialect.QualifyFromTable("dbo", "OBJECTS", "o");
@@ -152,11 +152,11 @@ public class EmProtocolDataSource : IDataSourceStrategy
             FROM {channels}
             JOIN {objects} ON c.{dialect.QuoteIdentifier("ObjectId")} = o.{dialect.QuoteIdentifier("IDGLOBAL")}";
 
-        var parameters = new List<object>();
+        object? args = null;
         if (!string.IsNullOrWhiteSpace(search))
         {
-            sql += $" WHERE o.{dialect.QuoteIdentifier("OBJECT_NAME")} LIKE {{0}} OR {eventCodeExpr} LIKE {{0}}";
-            parameters.Add($"%{search}%");
+            sql += $" WHERE o.{dialect.QuoteIdentifier("OBJECT_NAME")} LIKE @p0 OR {eventCodeExpr} LIKE @p0";
+            args = new { p0 = $"%{search}%" };
         }
 
         sql = dialect.Paginate(
@@ -164,7 +164,9 @@ public class EmProtocolDataSource : IDataSourceStrategy
             (page - 1) * pageSize,
             pageSize);
 
-        return await context.Database.SqlQueryRaw<ChannelDto>(sql, parameters.ToArray()).ToListAsync();
+        var rows = await connection.QueryAsync<ChannelDto>(
+            new CommandDefinition(sql, args, commandTimeout: _commandTimeoutSeconds));
+        return rows.AsList();
     }
 
     public async Task<List<DistributionItemDto>> GetDistributionAsync(string database, DateTime start, DateTime end, string categoryName)
@@ -172,9 +174,11 @@ public class EmProtocolDataSource : IDataSourceStrategy
         if (categoryName != "EventCode")
             return new List<DistributionItemDto>();
 
-        var (conn, prov) = ResolveConnection(null, null);
+        var (connStr, prov) = ResolveConnection(null, null);
         var dialect = _dialectProvider.GetDialect(prov);
-        using var context = _contextFactory.Create(conn, prov, database);
+        var targetConn = DatabaseConnectionHelper.WithDatabase(connStr, database);
+        await using var connection = DatabaseProvider.OpenConnection(prov, targetConn);
+        await connection.OpenAsync();
 
         var records = dialect.QualifyFromTable("em_protocol", "Records", "r");
         var channels = dialect.QualifyFromTable("em_protocol", "Channels", "c");
@@ -188,6 +192,8 @@ public class EmProtocolDataSource : IDataSourceStrategy
             GROUP BY {eventCodeExpr}
             ORDER BY Count DESC";
 
-        return await context.Database.SqlQueryRaw<DistributionItemDto>(sql, start, end).ToListAsync();
+        var rows = await connection.QueryAsync<DistributionItemDto>(
+            new CommandDefinition(sql, new { p0 = start, p1 = end }, commandTimeout: _commandTimeoutSeconds));
+        return rows.AsList();
     }
 }

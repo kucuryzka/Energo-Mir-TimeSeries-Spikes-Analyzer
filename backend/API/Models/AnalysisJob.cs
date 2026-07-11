@@ -34,9 +34,7 @@ public class AnalysisJob
 
     public string? SourceId { get; set; }
 
-    public string? ConnectionProvider { get; set; }
-
-    public string? ConnectionString { get; set; }
+    public string? ConnectionFingerprint { get; set; }
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? CompletedAt { get; set; }

@@ -1,5 +1,7 @@
+using API.Contracts;
 using API.Data;
 using API.DTOs;
+using API.Infrastructure;
 using API.Models;
 using Hangfire;
 using Hangfire.Storage;
@@ -13,17 +15,20 @@ public class AnalysisJobCoordinatorService
     private readonly IBackgroundJobClient _backgroundJobClient;
     private readonly IAnalysisJobCancellationService _cancellation;
     private readonly AnalysisResultService _resultService;
+    private readonly IConnectionManagerService _connectionManager;
 
     public AnalysisJobCoordinatorService(
         InternalDbContext db,
         IBackgroundJobClient backgroundJobClient,
         IAnalysisJobCancellationService cancellation,
-        AnalysisResultService resultService)
+        AnalysisResultService resultService,
+        IConnectionManagerService connectionManager)
     {
         _db = db;
         _backgroundJobClient = backgroundJobClient;
         _cancellation = cancellation;
         _resultService = resultService;
+        _connectionManager = connectionManager;
     }
 
     public async Task<AnalysisJobsOverviewDto> GetOverviewAsync(string? database = null, int recentLimit = 50)
@@ -114,19 +119,20 @@ public class AnalysisJobCoordinatorService
 
     public async Task MarkCancelledAsync(AnalysisJob job)
     {
+        if (!await _db.AnalysisJobs.AsNoTracking().AnyAsync(j => j.Id == job.Id))
+            return;
+
         job.Status = "Cancelled";
         job.ErrorMessage = "Задача отменена пользователем.";
         job.CompletedAt = DateTime.UtcNow;
-        job.ConnectionString = null;
-        job.ConnectionProvider = null;
         await _db.SaveChangesAsync();
     }
 
-    public async Task<(bool Ok, string? Error)> TryResumeAsync(
-        string jobId,
-        string? connectionProvider = null,
-        string? connectionString = null)
+    public async Task<(bool Ok, string? Error)> TryResumeAsync(string jobId, string sessionToken)
     {
+        if (string.IsNullOrWhiteSpace(sessionToken))
+            return (false, "Нет активной сессии. Подключитесь к БД и повторите resume.");
+
         var job = await _db.AnalysisJobs.FindAsync(jobId);
         if (job == null)
             return (false, "Задача не найдена.");
@@ -134,14 +140,15 @@ public class AnalysisJobCoordinatorService
         if (job.Status is "Completed" or "Cancelled" or "Running")
             return (false, "Задачу нельзя возобновить в текущем статусе.");
 
-        if (!string.IsNullOrWhiteSpace(connectionString))
-        {
-            job.ConnectionProvider = connectionProvider;
-            job.ConnectionString = connectionString;
-        }
+        if (!AnalysisJobResumeRules.CanResume(job, _resultService.HasPartialResult(job.Id)))
+            return (false, "Нет сохранённого прогресса для продолжения. Запустите анализ заново.");
 
-        if (string.IsNullOrWhiteSpace(job.ConnectionString))
-            return (false, "Нет сохранённого подключения. Подключитесь к БД и повторите resume.");
+        var connectionInfo = _connectionManager.GetConnectionInfo(sessionToken);
+        if (connectionInfo == null)
+            return (false, "Нет активной сессии. Подключитесь к БД и повторите resume.");
+
+        if (!ConnectionFingerprint.Matches(job.ConnectionFingerprint, connectionInfo.Provider, connectionInfo.ConnectionString))
+            return (false, "Текущее подключение не совпадает с сервером, на котором запускался анализ. Подключитесь к тому же хосту и пользователю.");
 
         if (!string.IsNullOrEmpty(job.BackgroundJobId))
             _backgroundJobClient.Delete(job.BackgroundJobId);
@@ -151,8 +158,8 @@ public class AnalysisJobCoordinatorService
         job.CompletedAt = null;
 
         var hangfireId = string.IsNullOrEmpty(job.SourceId)
-            ? _backgroundJobClient.Enqueue<AnalysisJobProcessor>(p => p.ProcessJobAsync(job.Id))
-            : _backgroundJobClient.Enqueue<AnalysisJobProcessor>(p => p.ProcessSourceJobAsync(job.Id, job.SourceId));
+            ? _backgroundJobClient.Enqueue<AnalysisJobProcessor>(p => p.ProcessJobAsync(job.Id, sessionToken))
+            : _backgroundJobClient.Enqueue<AnalysisJobProcessor>(p => p.ProcessSourceJobAsync(job.Id, job.SourceId, sessionToken));
 
         job.BackgroundJobId = hangfireId;
         await _db.SaveChangesAsync();

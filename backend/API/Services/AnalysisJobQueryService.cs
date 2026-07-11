@@ -11,15 +11,18 @@ public class AnalysisJobQueryService
     private readonly InternalDbContext _internalDb;
     private readonly AnalysisResultService _resultService;
     private readonly IBackgroundJobClient _backgroundJobClient;
+    private readonly IAnalysisJobCancellationService _cancellation;
 
     public AnalysisJobQueryService(
         InternalDbContext internalDb,
         AnalysisResultService resultService,
-        IBackgroundJobClient backgroundJobClient)
+        IBackgroundJobClient backgroundJobClient,
+        IAnalysisJobCancellationService cancellation)
     {
         _internalDb = internalDb;
         _resultService = resultService;
         _backgroundJobClient = backgroundJobClient;
+        _cancellation = cancellation;
     }
 
     public async Task<AnalysisJob?> FindJobAsync(string id) =>
@@ -43,7 +46,7 @@ public class AnalysisJobQueryService
 
     public async Task<SpikeResponse?> TryLoadPartialAsync(string id, AnalysisJob job)
     {
-        if (job.Status is not ("Running" or "Completed" or "Cancelled"))
+        if (job.Status is not ("Running" or "Completed" or "Cancelled" or "Failed" or "Pending"))
             throw new InvalidOperationException("Partial result is not available.");
 
         return await _resultService.TryLoadPartialAsync(id);
@@ -103,6 +106,9 @@ public class AnalysisJobQueryService
         var job = await _internalDb.AnalysisJobs.FindAsync(id);
         if (job == null)
             return false;
+
+        if (job.Status is "Running" or "Pending")
+            _cancellation.RequestCancel(id);
 
         if (!string.IsNullOrEmpty(job.BackgroundJobId))
             _backgroundJobClient.Delete(job.BackgroundJobId);

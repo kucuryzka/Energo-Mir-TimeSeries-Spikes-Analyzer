@@ -22,8 +22,7 @@ public static class InternalDbSchemaUpdater
         TryAddColumn(db, "AnalysisJobs", "PostProcessDurationMs", "INTEGER NULL");
         TryAddColumn(db, "AnalysisJobs", "ProcessedUntil", "TEXT NULL");
         TryAddColumn(db, "AnalysisJobs", "SourceId", "TEXT NULL");
-        TryAddColumn(db, "AnalysisJobs", "ConnectionProvider", "TEXT NULL");
-        TryAddColumn(db, "AnalysisJobs", "ConnectionString", "TEXT NULL");
+        TryAddColumn(db, "AnalysisJobs", "ConnectionFingerprint", "TEXT NULL");
 
         if (!TableExists(db, "AnalysisSourceTimingStats"))
         {

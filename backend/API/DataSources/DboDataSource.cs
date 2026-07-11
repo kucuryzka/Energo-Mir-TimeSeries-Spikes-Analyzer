@@ -1,7 +1,4 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
+using API.Configuration;
 using API.DTOs;
 using API.Infrastructure;
 using API.Services;
@@ -9,7 +6,8 @@ using API.Sql;
 using Core.Enums;
 using Core.Interfaces;
 using Core.Models;
-using Microsoft.EntityFrameworkCore;
+using Dapper;
+using Microsoft.Extensions.Options;
 
 namespace API.DataSources;
 
@@ -17,22 +15,22 @@ public class DboDataSource : IDataSourceStrategy
 {
     private readonly DataSourceConnectionResolver _connectionResolver;
     private readonly AnalysisPipelineService _pipeline;
-    private readonly IDatabaseContextFactory _contextFactory;
     private readonly ISqlDialectProvider _dialectProvider;
+    private readonly int _commandTimeoutSeconds;
 
     public DboDataSource(
         DataSourceConnectionResolver connectionResolver,
         AnalysisPipelineService pipeline,
-        IDatabaseContextFactory contextFactory,
-        ISqlDialectProvider dialectProvider)
+        ISqlDialectProvider dialectProvider,
+        IOptions<AnalysisSettings> settings)
     {
         _connectionResolver = connectionResolver;
         _pipeline = pipeline;
-        _contextFactory = contextFactory;
         _dialectProvider = dialectProvider;
+        _commandTimeoutSeconds = settings.Value.CommandTimeoutSeconds;
     }
 
-    public string Id => "Dbo";
+    public string Id => "dbo";
     public string Name => "dbo";
     public string[] SupportedDistributions => Array.Empty<string>();
 
@@ -136,18 +134,20 @@ public class DboDataSource : IDataSourceStrategy
 
     public async Task<List<ObjectDto>> GetObjectsAsync(string database, string? search, int page = 1, int pageSize = 50)
     {
-        var (conn, prov) = ResolveConnection(null, null);
+        var (connStr, prov) = ResolveConnection(null, null);
         var dialect = _dialectProvider.GetDialect(prov);
-        using var context = _contextFactory.Create(conn, prov, database);
+        var targetConn = DatabaseConnectionHelper.WithDatabase(connStr, database);
+        await using var connection = DatabaseProvider.OpenConnection(prov, targetConn);
+        await connection.OpenAsync();
 
         var table = dialect.QualifyFromTable("dbo", "OBJECTS");
         var sql = $"SELECT {dialect.QualifyColumn(null, "IDOBJECT")} AS Id, {dialect.QualifyColumn(null, "OBJECT_NAME")} AS Name FROM {table}";
-        var parameters = new List<object>();
+        object? args = null;
 
         if (!string.IsNullOrWhiteSpace(search))
         {
-            sql += $" WHERE {dialect.QualifyColumn(null, "OBJECT_NAME")} LIKE {{0}}";
-            parameters.Add($"%{search}%");
+            sql += $" WHERE {dialect.QualifyColumn(null, "OBJECT_NAME")} LIKE @p0";
+            args = new { p0 = $"%{search}%" };
         }
 
         sql = dialect.Paginate(
@@ -155,7 +155,9 @@ public class DboDataSource : IDataSourceStrategy
             (page - 1) * pageSize,
             pageSize);
 
-        return await context.Database.SqlQueryRaw<ObjectDto>(sql, parameters.ToArray()).ToListAsync();
+        var rows = await connection.QueryAsync<ObjectDto>(
+            new CommandDefinition(sql, args, commandTimeout: _commandTimeoutSeconds));
+        return rows.AsList();
     }
 
     public async Task<List<MeteringInfoDto>> GetPointDetailsAsync(
@@ -167,9 +169,11 @@ public class DboDataSource : IDataSourceStrategy
         string? connectionString = null,
         string? provider = null)
     {
-        var (conn, prov) = ResolveConnection(connectionString, provider);
+        var (connStr, prov) = ResolveConnection(connectionString, provider);
         var dialect = _dialectProvider.GetDialect(prov);
-        using var context = _contextFactory.Create(conn, prov, database);
+        var targetConn = DatabaseConnectionHelper.WithDatabase(connStr, database);
+        await using var connection = DatabaseProvider.OpenConnection(prov, targetConn);
+        await connection.OpenAsync();
 
         var endDate = GranularityHelper.GetBucketEnd(timestamp, granularity, customMinutes);
 
@@ -191,9 +195,12 @@ public class DboDataSource : IDataSourceStrategy
         var whereClause = $@"m.{dialect.QuoteIdentifier("TIME_INSERT")} >= @p0 AND m.{dialect.QuoteIdentifier("TIME_INSERT")} < @p1{channelFilter}";
         var sql = dialect.BuildLimitedSelect(selectList, fromClause, whereClause, 1000);
 
-        var parameters = new List<object> { timestamp, endDate };
-        if (channelId.HasValue) parameters.Add(channelId.Value);
+        object args = channelId.HasValue
+            ? new { p0 = timestamp, p1 = endDate, p2 = channelId.Value }
+            : new { p0 = timestamp, p1 = endDate };
 
-        return await context.Database.SqlQueryRaw<MeteringInfoDto>(sql, parameters.ToArray()).ToListAsync();
+        var rows = await connection.QueryAsync<MeteringInfoDto>(
+            new CommandDefinition(sql, args, commandTimeout: _commandTimeoutSeconds));
+        return rows.AsList();
     }
 }
