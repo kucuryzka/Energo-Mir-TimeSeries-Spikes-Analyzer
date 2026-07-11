@@ -19,7 +19,10 @@ public class InternalDbContext : DbContext
         modelBuilder.Entity<AnalysisJob>(entity =>
         {
             entity.HasKey(e => e.Id);
-            entity.Property(e => e.Status).IsRequired().HasMaxLength(50);
+            entity.Property(e => e.Status)
+                .HasConversion<string>()
+                .IsRequired()
+                .HasMaxLength(50);
             entity.Property(e => e.Database).IsRequired().HasMaxLength(200);
             entity.Property(e => e.Schema).IsRequired().HasMaxLength(200);
             entity.Property(e => e.Table).IsRequired().HasMaxLength(200);

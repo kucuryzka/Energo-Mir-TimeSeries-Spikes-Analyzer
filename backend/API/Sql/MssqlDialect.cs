@@ -1,11 +1,12 @@
-using API.Infrastructure;
 using Core.Enums;
+
+using API.Contracts;
 
 namespace API.Sql;
 
 public class MssqlDialect : IDatabaseDialect
 {
-    public string ProviderId => "mssql";
+    public DatabaseProviderKind ProviderId => DatabaseProviderKind.mssql;
 
     public string CountAggregateExpression => "COUNT(*)";
 

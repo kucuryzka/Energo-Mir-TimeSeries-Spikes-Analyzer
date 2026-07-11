@@ -1,0 +1,13 @@
+global using API.Contracts;
+global using API.Enums;
+global using API.Models;
+global using API.DTOs.Analysis;
+global using API.DTOs.Auth;
+global using API.DTOs.Catalog;
+global using API.Infrastructure.Database;
+global using API.Infrastructure.Filters;
+global using API.Infrastructure.Logging;
+global using API.Infrastructure.Session;
+global using API.Services;
+global using API.Services.Analysis;
+global using API.Services.Catalog;

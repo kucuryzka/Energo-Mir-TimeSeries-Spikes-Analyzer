@@ -1,6 +1,5 @@
 using API.Configuration;
 using API.DTOs;
-using API.Infrastructure;
 using API.Services;
 using API.Sql;
 using Core.Enums;
@@ -9,22 +8,24 @@ using Core.Models;
 using Dapper;
 using Microsoft.Extensions.Options;
 
+using API.Contracts;
+
 namespace API.DataSources;
 
 public class DboDataSource : IDataSourceStrategy
 {
-    private readonly DataSourceConnectionResolver _connectionResolver;
+    private readonly SessionContextService _session;
     private readonly AnalysisPipelineService _pipeline;
     private readonly ISqlDialectProvider _dialectProvider;
     private readonly int _commandTimeoutSeconds;
 
     public DboDataSource(
-        DataSourceConnectionResolver connectionResolver,
+        SessionContextService session,
         AnalysisPipelineService pipeline,
         ISqlDialectProvider dialectProvider,
         IOptions<AnalysisSettings> settings)
     {
-        _connectionResolver = connectionResolver;
+        _session = session;
         _pipeline = pipeline;
         _dialectProvider = dialectProvider;
         _commandTimeoutSeconds = settings.Value.CommandTimeoutSeconds;
@@ -34,8 +35,8 @@ public class DboDataSource : IDataSourceStrategy
     public string Name => "dbo";
     public string[] SupportedDistributions => Array.Empty<string>();
 
-    private (string ConnectionString, string Provider) ResolveConnection(string? connectionString, string? provider) =>
-        _connectionResolver.Resolve(connectionString, provider);
+    private (string ConnectionString, DatabaseProviderKind Provider) ResolveConnection(string? connectionString, DatabaseProviderKind? provider) =>
+        _session.ResolveConnection(connectionString, provider);
 
     private AnalysisTableSpec BuildTableSpec(IDatabaseDialect dialect) => new()
     {
@@ -59,7 +60,7 @@ public class DboDataSource : IDataSourceStrategy
         DetectSpikesRequest request,
         ISpikeDetectionService spikeDetectionService,
         string connectionString,
-        string provider,
+        DatabaseProviderKind provider,
         IProgress<int>? progress = null,
         Action<IReadOnlyList<DataPoint>>? onBatchAggregated = null,
         Func<AnalysisBatchCompletedDto, Task>? onBatchCompleted = null,
@@ -96,7 +97,7 @@ public class DboDataSource : IDataSourceStrategy
         DateTime endDate,
         int? channelId = null,
         string? connectionString = null,
-        string? provider = null)
+        DatabaseProviderKind? provider = null)
     {
         var (conn, prov) = ResolveConnection(connectionString, provider);
         var dialect = _dialectProvider.GetDialect(prov);
@@ -117,7 +118,7 @@ public class DboDataSource : IDataSourceStrategy
         int? customMinutes,
         int? channelId,
         string? connectionString = null,
-        string? provider = null)
+        DatabaseProviderKind? provider = null)
     {
         var (conn, prov) = ResolveConnection(connectionString, provider);
         var dialect = _dialectProvider.GetDialect(prov);
@@ -167,7 +168,7 @@ public class DboDataSource : IDataSourceStrategy
         int? customMinutes,
         int? channelId,
         string? connectionString = null,
-        string? provider = null)
+        DatabaseProviderKind? provider = null)
     {
         var (connStr, prov) = ResolveConnection(connectionString, provider);
         var dialect = _dialectProvider.GetDialect(prov);

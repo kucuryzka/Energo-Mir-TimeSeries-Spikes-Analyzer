@@ -1,11 +1,12 @@
-using API.Infrastructure;
 using Core.Enums;
+
+using API.Contracts;
 
 namespace API.Sql;
 
 public class PostgresDialect : IDatabaseDialect
 {
-    public string ProviderId => "pgsql";
+    public DatabaseProviderKind ProviderId => DatabaseProviderKind.pgsql;
 
     public string CountAggregateExpression => "COUNT(*)";
 

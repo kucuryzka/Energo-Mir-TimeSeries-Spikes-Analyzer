@@ -1,24 +1,20 @@
-namespace API.Sql;
+using API.Contracts;
 
-public interface ISqlDialectProvider
-{
-    IDatabaseDialect GetDialect(string provider);
-}
+namespace API.Sql;
 
 public class SqlDialectProvider : ISqlDialectProvider
 {
-    private readonly IReadOnlyDictionary<string, IDatabaseDialect> _dialects;
+    private readonly IReadOnlyDictionary<DatabaseProviderKind, IDatabaseDialect> _dialects;
 
     public SqlDialectProvider()
     {
         var list = new IDatabaseDialect[] { new MssqlDialect(), new PostgresDialect() };
-        _dialects = list.ToDictionary(d => d.ProviderId, StringComparer.OrdinalIgnoreCase);
+        _dialects = list.ToDictionary(d => d.ProviderId);
     }
 
-    public IDatabaseDialect GetDialect(string provider)
+    public IDatabaseDialect GetDialect(DatabaseProviderKind provider)
     {
-        var key = provider.Equals("postgres", StringComparison.OrdinalIgnoreCase) ? "pgsql" : provider;
-        if (_dialects.TryGetValue(key, out var dialect))
+        if (_dialects.TryGetValue(provider, out var dialect))
             return dialect;
         throw new NotSupportedException($"Database provider '{provider}' is not supported. Use 'mssql' or 'pgsql'.");
     }

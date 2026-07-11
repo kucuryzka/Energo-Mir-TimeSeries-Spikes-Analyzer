@@ -2,6 +2,6 @@ namespace API.Models;
 
 public class DatabaseSessionInfo
 {
-    public string Provider { get; set; } = "mssql";
+    public DatabaseProviderKind Provider { get; set; } = DatabaseProviderKind.mssql;
     public string ConnectionString { get; set; } = string.Empty;
 }

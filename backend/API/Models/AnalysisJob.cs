@@ -21,8 +21,10 @@ public class AnalysisJob
     public double? Confidence { get; set; }
     public int? WindowSize { get; set; }
 
-    public string Status { get; set; } = "Pending"; // Pending, Running, Completed, Failed, Cancelled
-    public int Progress { get; set; } = 0; // 0 to 100
+    public AnalysisJobStatus Status { get; set; } = AnalysisJobStatus.Pending;
+
+    [Range(0, 100)]
+    public int Progress { get; set; }
 
     public int CompletedBatchCount { get; set; }
     public int TotalBatchCount { get; set; }
