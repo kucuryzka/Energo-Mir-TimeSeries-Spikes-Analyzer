@@ -102,7 +102,8 @@ public class AnalysisResultService
         job.SeriesPointCount = response.Series.Count;
         job.ResultJson = JsonSerializer.Serialize(
             new AnalysisJobMetadata { Distribution = response.Distribution },
-            _jsonOptions);
+            _jsonOptions
+        );
     }
 
     public async Task<SpikeResponse> LoadAsync(AnalysisJob job, CancellationToken cancellationToken = default)
@@ -165,7 +166,8 @@ public class AnalysisResultService
     public async Task AppendPartialSeriesAsync(
         string jobId,
         IReadOnlyList<Core.Models.DataPoint> batchPoints,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default
+    )
     {
         if (batchPoints.Count == 0)
             return;
@@ -203,7 +205,8 @@ public class AnalysisResultService
     public async Task<List<AnomalyResultDto>> LoadPartialAlignedAsync(
         string jobId,
         DateTime processedUntilExclusive,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default
+    )
     {
         var fileName = GetPartialFileName(jobId);
         if (!File.Exists(Path.Combine(_resultsRoot, fileName)))
@@ -220,7 +223,8 @@ public class AnalysisResultService
     private async Task RewritePartialSeriesAsync(
         string jobId,
         IReadOnlyList<AnomalyResultDto> series,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         var fullPath = GetPartialFilePath(jobId);
         var tempPath = fullPath + ".tmp";
@@ -296,7 +300,8 @@ public class AnalysisResultService
 
     private async Task<List<AnomalyResultDto>> LoadSeriesFromFileAsync(
         string fileName,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         var fullPath = Path.Combine(_resultsRoot, fileName);
         if (!File.Exists(fullPath))

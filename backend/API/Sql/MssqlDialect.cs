@@ -20,7 +20,8 @@ public class MssqlDialect : IDatabaseDialect
         string fromClause,
         string? whereClause,
         int limit,
-        string? orderByClause = null)
+        string? orderByClause = null
+    )
     {
         var where = whereClause != null ? $" WHERE {whereClause}" : string.Empty;
         var order = orderByClause ?? string.Empty;

@@ -25,7 +25,8 @@ public class AnalysisJobsController : ControllerBase
         InternalDbContext internalDb,
         AnalysisResultService resultService,
         AnalysisExportService exportService,
-        AnalysisJobQueryService jobQueries)
+        AnalysisJobQueryService jobQueries
+    )
     {
         _coordinator = coordinator;
         _timingStats = timingStats;
@@ -49,7 +50,8 @@ public class AnalysisJobsController : ControllerBase
     public async Task<IActionResult> List(
         [FromQuery] string database,
         [FromQuery] string schema,
-        [FromQuery] string? table = null)
+        [FromQuery] string? table = null
+    )
     {
         if (!string.IsNullOrWhiteSpace(table))
             return Ok(await _jobQueries.GetTableScopedHistoryAsync(database, schema, table));
@@ -71,7 +73,8 @@ public class AnalysisJobsController : ControllerBase
         [FromQuery] string table,
         [FromQuery] TimeGranularity granularity,
         [FromQuery] DateTime startDate,
-        [FromQuery] DateTime endDate)
+        [FromQuery] DateTime endDate
+    )
     {
         var estimate = await _timingStats.EstimateAsync(database, schema, table, granularity, startDate, endDate);
         return Ok(estimate);
@@ -135,7 +138,8 @@ public class AnalysisJobsController : ControllerBase
     [HttpGet("{id}/export")]
     public async Task<IActionResult> Export(
         string id,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default
+    )
     {
         var job = await _internalDb.AnalysisJobs.FindAsync([id], cancellationToken);
         if (job == null)
@@ -154,7 +158,8 @@ public class AnalysisJobsController : ControllerBase
             return File(
                 bytes,
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                fileName);
+                fileName
+            );
         }
     }
 
@@ -202,7 +207,8 @@ public class AnalysisJobsController : ControllerBase
     public async Task<IActionResult> ListGenericLegacy(
         [FromQuery] string database,
         [FromQuery] string schema,
-        [FromQuery] string table) =>
+        [FromQuery] string table
+    ) =>
         Ok(await _jobQueries.GetTableScopedHistoryAsync(database, schema, table));
 
     [HttpDelete("~/api/dbo/history/{id}")]
@@ -215,7 +221,8 @@ public class AnalysisJobsController : ControllerBase
         var sessionToken = _session.RequireToken();
         var connection = _session.RequireConnection();
         var jobId = await _coordinator.EnqueueSourceAnalysisAsync(
-            request, schema: sourceId, sourceId, sessionToken, connection);
+            request, schema: sourceId, sourceId, sessionToken, connection
+        );
         return Ok(new { JobId = jobId });
     }
 }

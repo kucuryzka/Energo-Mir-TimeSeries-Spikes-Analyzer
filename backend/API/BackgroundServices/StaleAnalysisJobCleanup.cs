@@ -11,7 +11,8 @@ public class StaleAnalysisJobCleanup : IHostedService
 
     public StaleAnalysisJobCleanup(
         IServiceScopeFactory scopeFactory,
-        ILogger<StaleAnalysisJobCleanup> logger)
+        ILogger<StaleAnalysisJobCleanup> logger
+    )
     {
         _scopeFactory = scopeFactory;
         _logger = logger;
@@ -76,7 +77,8 @@ public class StaleAnalysisJobCleanup : IHostedService
                 "Startup cleanup: {AwaitingResume} interrupted with checkpoint, {FailedCount} without checkpoint, {RepairedCount} completed-without-result",
                 awaitingResume,
                 failed,
-                repairedCount);
+                repairedCount
+            );
         }
     }
 

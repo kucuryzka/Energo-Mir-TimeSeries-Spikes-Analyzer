@@ -19,7 +19,8 @@ public class TablePreviewService
     public TablePreviewService(
         ISqlDialectProvider dialectProvider,
         IOptions<AnalysisSettings> settings,
-        ILogger<TablePreviewService> logger)
+        ILogger<TablePreviewService> logger
+    )
     {
         _dialectProvider = dialectProvider;
         _settings = settings.Value;
@@ -33,12 +34,14 @@ public class TablePreviewService
         string schema,
         string table,
         string timeColumn,
-        int limit = 15)
+        int limit = 15
+    )
     {
         SqlIdentifier.EnsureSafeMany(
             (schema, nameof(schema)),
             (table, nameof(table)),
-            (timeColumn, nameof(timeColumn)));
+            (timeColumn, nameof(timeColumn))
+        );
 
         var dialect = _dialectProvider.GetDialect(provider);
         var targetConnStr = DatabaseConnectionHelper.WithDatabase(connectionString, database);
@@ -56,7 +59,8 @@ public class TablePreviewService
         {
             var countSql = dialect.BuildApproximateRowCountSql(schema, table);
             var countRow = await connection.QueryFirstOrDefaultAsync(
-                new CommandDefinition(countSql, commandTimeout: commandTimeout));
+                new CommandDefinition(countSql, commandTimeout: commandTimeout)
+            );
             var rc = GetColumnValue(countRow, "RowCount");
             if (rc is not null and not DBNull)
             {
@@ -76,12 +80,14 @@ public class TablePreviewService
         {
             _logger.LogInformation(
                 "Preview for {Schema}.{Table}: skipping ORDER BY ({RowCount:N0} rows > {Max:N0})",
-                schema, table, rowCount, _settings.PreviewOrderedSampleMaxRows);
+                schema, table, rowCount, _settings.PreviewOrderedSampleMaxRows
+            );
         }
 
         var sampleSql = dialect.BuildSampleSql(qualifiedTable, limit, orderByColumn);
         var rows = await connection.QueryAsync(
-            new CommandDefinition(sampleSql, commandTimeout: commandTimeout));
+            new CommandDefinition(sampleSql, commandTimeout: commandTimeout)
+        );
         response.SampleRows = ToRowDictionaries(rows);
 
         if (response.SampleRows.Count == 0)
@@ -96,8 +102,10 @@ public class TablePreviewService
             var dict = (IDictionary<string, object>)row;
             return dict.ToDictionary(
                 kv => kv.Key,
-                kv => NormalizeCellValue(kv.Value));
-        }).ToList();
+                kv => NormalizeCellValue(kv.Value)
+            );
+        }
+        ).ToList();
 
     private static object? GetColumnValue(object? row, string columnName)
     {

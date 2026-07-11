@@ -18,7 +18,8 @@ public class GenericAnalysisController : ControllerBase
         TablePreviewService tablePreview,
         GenericTableQueryService tableQuery,
         AnalysisRequestValidator requestValidator,
-        SessionContextService session)
+        SessionContextService session
+    )
     {
         _tablePreview = tablePreview;
         _tableQuery = tableQuery;
@@ -32,7 +33,8 @@ public class GenericAnalysisController : ControllerBase
         [FromQuery] string schema,
         [FromQuery] string table,
         [FromQuery] string timeColumn,
-        [FromQuery] int limit = 15)
+        [FromQuery] int limit = 15
+    )
     {
         _requestValidator.ValidateIdentifiers(schema, table, timeColumn);
         var info = _session.RequireConnection();
@@ -43,7 +45,8 @@ public class GenericAnalysisController : ControllerBase
             schema,
             table,
             timeColumn,
-            limit);
+            limit
+        );
         return Ok(preview);
     }
 
@@ -55,11 +58,13 @@ public class GenericAnalysisController : ControllerBase
         [FromQuery] string timeColumn,
         [FromQuery] DateTime timestamp,
         [FromQuery] TimeGranularity granularity,
-        [FromQuery] int? customMinutes)
+        [FromQuery] int? customMinutes
+    )
     {
         _requestValidator.ValidateIdentifiers(schema, table, timeColumn);
         var result = await _tableQuery.GetPointDetailsAsync(
-            database, schema, table, timeColumn, timestamp, granularity, customMinutes);
+            database, schema, table, timeColumn, timestamp, granularity, customMinutes
+        );
         return Ok(result);
     }
 }

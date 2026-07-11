@@ -9,7 +9,8 @@ public class AnalysisExportService
 
     public AnalysisExportService(
         AnalysisResultService resultService,
-        ExcelReportService excelReport)
+        ExcelReportService excelReport
+    )
     {
         _resultService = resultService;
         _excelReport = excelReport;
@@ -17,7 +18,8 @@ public class AnalysisExportService
 
     public async Task<(MemoryStream Stream, string FileName)> BuildExcelAsync(
         AnalysisJob job,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default
+    )
     {
         if (!_resultService.CanExport(job))
             throw new ArgumentException("Analysis result is not available for export.");

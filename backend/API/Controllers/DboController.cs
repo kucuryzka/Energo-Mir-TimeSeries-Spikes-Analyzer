@@ -15,7 +15,8 @@ public class DboController : ControllerBase
     public DboController(
         DboDataSource dataSource,
         TablePreviewService tablePreview,
-        SessionContextService session)
+        SessionContextService session
+    )
     {
         _dataSource = dataSource;
         _tablePreview = tablePreview;
@@ -44,7 +45,8 @@ public class DboController : ControllerBase
             schema: "dbo",
             table: "METERINGS",
             timeColumn: "TIME_INSERT",
-            limit);
+            limit
+        );
         return Ok(preview);
     }
 
@@ -67,7 +69,8 @@ public class DboController : ControllerBase
         [FromQuery] string database,
         [FromQuery] DateTime startDate,
         [FromQuery] DateTime endDate,
-        [FromQuery] int? channelId)
+        [FromQuery] int? channelId
+    )
     {
         var distribution = await _dataSource.GetObjectDistributionAsync(database, startDate, endDate, channelId);
         return Ok(distribution);

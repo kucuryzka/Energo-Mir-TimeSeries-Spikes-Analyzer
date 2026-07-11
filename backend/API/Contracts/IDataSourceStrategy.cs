@@ -19,5 +19,6 @@ public interface IDataSourceStrategy
         Func<AnalysisBatchCompletedDto, Task>? onBatchCompleted = null,
         Action<long>? onFinalizeCompleted = null,
         AnalysisResumeState? resume = null,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default
+    );
 }

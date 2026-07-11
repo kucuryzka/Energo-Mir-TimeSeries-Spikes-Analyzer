@@ -15,7 +15,8 @@ public class EmProtocolController : ControllerBase
     public EmProtocolController(
         EmProtocolDataSource dataSource,
         TablePreviewService tablePreview,
-        SessionContextService session)
+        SessionContextService session
+    )
     {
         _dataSource = dataSource;
         _tablePreview = tablePreview;
@@ -54,7 +55,8 @@ public class EmProtocolController : ControllerBase
             schema: "em_protocol",
             table: "Records",
             timeColumn: "InsertTime",
-            limit);
+            limit
+        );
         return Ok(preview);
     }
 

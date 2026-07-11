@@ -72,7 +72,8 @@ public class AnalysisTimingStatsService
         TimeGranularity granularity,
         DateTime startDate,
         DateTime endDate,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default
+    )
     {
         var periodDays = Math.Max((endDate - startDate).TotalDays, 1);
         var batchCount = Math.Max(1, (int)Math.Ceiling(periodDays / _batchIntervalDays));

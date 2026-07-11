@@ -12,7 +12,8 @@ public class ExcelReportService
         _templatePath = Path.Combine(
             environment.ContentRootPath,
             "Resources",
-            "ReportTemplate.xlsx");
+            "ReportTemplate.xlsx"
+        );
     }
 
     public byte[] GenerateReport(SpikeResponse response)
@@ -49,7 +50,9 @@ public class ExcelReportService
                 ? string.Join(
                     "; ",
                     point.ChannelBreakdown.Select(x =>
-                        $"{(string.IsNullOrWhiteSpace(x.ChannelName) ? x.ChannelId.ToString() : x.ChannelName)}: {x.Count}"))
+                        $"{(string.IsNullOrWhiteSpace(x.ChannelName) ? x.ChannelId.ToString() : x.ChannelName)}: {x.Count}"
+                    )
+                )
                 : "";
             row++;
         }
@@ -60,7 +63,9 @@ public class ExcelReportService
                 table.RangeAddress.FirstAddress.RowNumber,
                 table.RangeAddress.FirstAddress.ColumnNumber,
                 row - 1,
-                table.RangeAddress.LastAddress.ColumnNumber));
+                table.RangeAddress.LastAddress.ColumnNumber
+            )
+            );
         }
     }
 }

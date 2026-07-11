@@ -13,7 +13,8 @@ public class GenericTableQueryService
 
     public GenericTableQueryService(
         ISqlDialectProvider dialectProvider,
-        SessionContextService session)
+        SessionContextService session
+    )
     {
         _dialectProvider = dialectProvider;
         _session = session;
@@ -26,12 +27,14 @@ public class GenericTableQueryService
         string timeColumn,
         DateTime timestamp,
         TimeGranularity granularity,
-        int? customMinutes)
+        int? customMinutes
+    )
     {
         SqlIdentifier.EnsureSafeMany(
             (schema, nameof(schema)),
             (table, nameof(table)),
-            (timeColumn, nameof(timeColumn)));
+            (timeColumn, nameof(timeColumn))
+        );
 
         var info = _session.RequireConnection();
         var dialect = _dialectProvider.GetDialect(info.Provider);

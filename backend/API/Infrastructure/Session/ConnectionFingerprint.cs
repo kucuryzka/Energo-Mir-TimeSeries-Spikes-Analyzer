@@ -16,7 +16,8 @@ public static class ConnectionFingerprint
                 Get(builder, "Username")
                 ?? Get(builder, "User Id")
                 ?? Get(builder, "UserID")
-                ?? string.Empty);
+                ?? string.Empty
+            );
             return $"pgsql|{host}|{port}|{user}";
         }
 
@@ -29,7 +30,8 @@ public static class ConnectionFingerprint
             Get(builder, "User Id")
             ?? Get(builder, "User ID")
             ?? Get(builder, "UID")
-            ?? string.Empty);
+            ?? string.Empty
+        );
         return $"mssql|{NormalizeHost(sqlHost)}|{sqlPort}|{sqlUser}";
     }
 
@@ -64,7 +66,8 @@ public static class ConnectionFingerprint
 
         var comma = value.LastIndexOf(',');
         if (comma > 0 && comma < value.Length - 1
-            && int.TryParse(value[(comma + 1)..].Trim(), out _))
+            && int.TryParse(value[(comma + 1)..].Trim(), out _)
+        )
         {
             host = value[..comma].Trim();
             port = value[(comma + 1)..].Trim();

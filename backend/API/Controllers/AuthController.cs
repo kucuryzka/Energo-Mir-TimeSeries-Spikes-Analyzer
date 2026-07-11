@@ -32,7 +32,8 @@ public class AuthController : ControllerBase
         {
             Provider = normalizedProvider,
             ConnectionString = connectionString
-        });
+        }
+        );
 
         return Ok(new AuthResponse { Token = token, Message = "Connected successfully" });
     }

@@ -9,7 +9,8 @@ public static class InternalDbSchemaUpdater
     private static readonly Regex IdentifierRegex = new(@"^[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.Compiled);
     private static readonly Regex ColumnDefinitionRegex = new(
         @"^(INTEGER (NOT NULL DEFAULT \d+|NULL)|TEXT NULL)$",
-        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+        RegexOptions.Compiled | RegexOptions.CultureInvariant
+    );
 
     public static void Apply(InternalDbContext db)
     {
@@ -39,7 +40,8 @@ public static class InternalDbSchemaUpdater
                     AvgMsPerPeriodDay INTEGER NOT NULL,
                     LastUpdatedAt TEXT NOT NULL
                 );
-                """);
+                """
+            );
         }
     }
 

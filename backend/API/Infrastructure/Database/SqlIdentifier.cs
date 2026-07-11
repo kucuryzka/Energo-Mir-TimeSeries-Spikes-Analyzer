@@ -15,7 +15,8 @@ public static partial class SqlIdentifier
         if (!IsSafe(name))
             throw new ArgumentException(
                 $"Invalid SQL identifier '{paramName}': only letters, digits and underscore are allowed, and it must not start with a digit.",
-                paramName);
+                paramName
+            );
 
         return name!;
     }

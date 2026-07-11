@@ -10,7 +10,8 @@ public class SessionContextService
 
     public SessionContextService(
         IHttpContextAccessor httpContextAccessor,
-        IConnectionManagerService connectionManager)
+        IConnectionManagerService connectionManager
+    )
     {
         _httpContextAccessor = httpContextAccessor;
         _connectionManager = connectionManager;
@@ -41,7 +42,8 @@ public class SessionContextService
 
     public (string ConnectionString, DatabaseProviderKind Provider) ResolveConnection(
         string? connectionString = null,
-        DatabaseProviderKind? provider = null)
+        DatabaseProviderKind? provider = null
+    )
     {
         if (connectionString != null && provider != null)
             return (connectionString, provider.Value);

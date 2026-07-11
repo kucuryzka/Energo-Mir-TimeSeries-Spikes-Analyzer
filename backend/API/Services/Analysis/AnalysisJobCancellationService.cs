@@ -22,7 +22,8 @@ public class AnalysisJobCancellationService : IAnalysisJobCancellationService
         {
             existing.Dispose();
             return cts;
-        });
+        }
+        );
         return cts.Token;
     }
 

@@ -33,7 +33,8 @@ public interface IDatabaseDialect
         string fromClause,
         string? whereClause,
         int limit,
-        string? orderByClause = null);
+        string? orderByClause = null
+    );
 
     string Concat(params string[] parts);
 

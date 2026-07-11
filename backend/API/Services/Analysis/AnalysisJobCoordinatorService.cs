@@ -23,7 +23,8 @@ public class AnalysisJobCoordinatorService
         IAnalysisJobCancellationService cancellation,
         AnalysisResultService resultService,
         IConnectionManagerService connectionManager,
-        AnalysisRequestValidator requestValidator)
+        AnalysisRequestValidator requestValidator
+    )
     {
         _db = db;
         _backgroundJobClient = backgroundJobClient;
@@ -36,7 +37,8 @@ public class AnalysisJobCoordinatorService
     public async Task<string> EnqueueAsync(
         EnqueueAnalysisJobRequest request,
         string sessionToken,
-        DatabaseSessionInfo connection)
+        DatabaseSessionInfo connection
+    )
     {
         var sourceId = NormalizeSourceId(request.SourceId);
         if (sourceId is "dbo" or "em_protocol")
@@ -57,7 +59,8 @@ public class AnalysisJobCoordinatorService
                 schema: sourceId,
                 sourceId,
                 sessionToken,
-                connection);
+                connection
+            );
         }
 
         if (sourceId != null)
@@ -78,7 +81,8 @@ public class AnalysisJobCoordinatorService
                 WindowSize = request.WindowSize
             },
             sessionToken,
-            connection);
+            connection
+        );
     }
 
     private static string? NormalizeSourceId(string? sourceId)
@@ -99,14 +103,16 @@ public class AnalysisJobCoordinatorService
         string schema,
         string sourceId,
         string sessionToken,
-        DatabaseSessionInfo connection)
+        DatabaseSessionInfo connection
+    )
     {
         _requestValidator.Validate(
             request.StartDate,
             request.EndDate,
             request.Granularity,
             request.WindowSize,
-            request.CustomMinutes);
+            request.CustomMinutes
+        );
 
         var job = new AnalysisJob
         {
@@ -128,7 +134,8 @@ public class AnalysisJobCoordinatorService
         await _db.SaveChangesAsync();
 
         var hangfireId = _backgroundJobClient.Enqueue<AnalysisJobProcessor>(
-            p => p.ProcessSourceJobAsync(job.Id, sourceId, sessionToken));
+            p => p.ProcessSourceJobAsync(job.Id, sourceId, sessionToken)
+        );
 
         job.BackgroundJobId = hangfireId;
         await _db.SaveChangesAsync();
@@ -138,14 +145,16 @@ public class AnalysisJobCoordinatorService
     public async Task<string> EnqueueGenericAnalysisAsync(
         GenericAnalysisRequest request,
         string sessionToken,
-        DatabaseSessionInfo connection)
+        DatabaseSessionInfo connection
+    )
     {
         _requestValidator.Validate(
             request.StartDate,
             request.EndDate,
             request.Granularity,
             request.WindowSize,
-            request.CustomMinutes);
+            request.CustomMinutes
+        );
         _requestValidator.ValidateIdentifiers(request.Schema, request.Table, request.TimeColumn);
 
         var job = new AnalysisJob
@@ -167,7 +176,8 @@ public class AnalysisJobCoordinatorService
         await _db.SaveChangesAsync();
 
         var hangfireId = _backgroundJobClient.Enqueue<AnalysisJobProcessor>(
-            p => p.ProcessJobAsync(job.Id, sessionToken));
+            p => p.ProcessJobAsync(job.Id, sessionToken)
+        );
 
         job.BackgroundJobId = hangfireId;
         await _db.SaveChangesAsync();

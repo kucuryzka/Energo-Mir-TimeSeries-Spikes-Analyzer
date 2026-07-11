@@ -30,6 +30,7 @@ public class ExplorerController : ControllerBase
     public async Task<IActionResult> GetColumns(
         [FromQuery] string database,
         [FromQuery] string schema,
-        [FromQuery] string table) =>
+        [FromQuery] string table
+    ) =>
         Ok(await _catalog.ListColumnsAsync(database, schema, table));
 }

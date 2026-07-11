@@ -15,7 +15,8 @@ public class DatabaseCatalogService
 
     public DatabaseCatalogService(
         ISqlDialectProvider dialectProvider,
-        SessionContextService session)
+        SessionContextService session
+    )
     {
         _dialectProvider = dialectProvider;
         _session = session;
@@ -69,7 +70,8 @@ public class DatabaseCatalogService
             {
                 Name = (string)c.Name,
                 IsTimeColumn = (bool)c.IsTimeColumn
-            })
+            }
+            )
             .ToList();
     }
 

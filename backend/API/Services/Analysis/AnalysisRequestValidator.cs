@@ -18,7 +18,8 @@ public class AnalysisRequestValidator
         DateTime endDate,
         TimeGranularity granularity,
         int? windowSize,
-        int? customMinutes)
+        int? customMinutes
+    )
     {
         if (endDate <= startDate)
             throw new ArgumentException("EndDate must be after StartDate.");
@@ -26,7 +27,8 @@ public class AnalysisRequestValidator
         var rangeDays = (endDate - startDate).TotalDays;
         if (rangeDays > _settings.MaxAnalysisRangeDays)
             throw new ArgumentException(
-                $"Date range exceeds the maximum of {_settings.MaxAnalysisRangeDays} days.");
+                $"Date range exceeds the maximum of {_settings.MaxAnalysisRangeDays} days."
+            );
 
         if (windowSize is < 5 or > 1000)
             throw new ArgumentException("WindowSize must be between 5 and 1000.");
@@ -45,7 +47,8 @@ public class AnalysisRequestValidator
         if (estimatedPoints > _settings.MaxSeriesPoints)
             throw new ArgumentException(
                 $"Estimated series size ({estimatedPoints:N0} points) exceeds the maximum of {_settings.MaxSeriesPoints:N0}. " +
-                "Use a coarser granularity or a shorter date range.");
+                "Use a coarser granularity or a shorter date range."
+            );
     }
 
     public void ValidateIdentifiers(string schema, string table, string timeColumn)
@@ -53,14 +56,16 @@ public class AnalysisRequestValidator
         SqlIdentifier.EnsureSafeMany(
             (schema, nameof(schema)),
             (table, nameof(table)),
-            (timeColumn, nameof(timeColumn)));
+            (timeColumn, nameof(timeColumn))
+        );
     }
 
     public static long EstimateSeriesPoints(
         DateTime startDate,
         DateTime endDate,
         TimeGranularity granularity,
-        int? customMinutes)
+        int? customMinutes
+    )
     {
         var span = endDate - startDate;
         if (span <= TimeSpan.Zero)

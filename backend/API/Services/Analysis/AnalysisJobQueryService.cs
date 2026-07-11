@@ -16,7 +16,8 @@ public class AnalysisJobQueryService
     public AnalysisJobQueryService(
         InternalDbContext internalDb,
         AnalysisResultService resultService,
-        IAnalysisJobCancellationService cancellation)
+        IAnalysisJobCancellationService cancellation
+    )
     {
         _internalDb = internalDb;
         _resultService = resultService;
@@ -70,7 +71,8 @@ public class AnalysisJobQueryService
                 CompletedAt = j.CompletedAt,
                 SeriesPointCount = j.SeriesPointCount,
                 ChannelId = j.Table == "All" ? null : j.Table
-            })
+            }
+            )
             .ToListAsync();
     }
 
@@ -90,7 +92,8 @@ public class AnalysisJobQueryService
                 CreatedAt = j.CreatedAt,
                 CompletedAt = j.CompletedAt,
                 SeriesPointCount = j.SeriesPointCount
-            })
+            }
+            )
             .ToListAsync();
     }
 

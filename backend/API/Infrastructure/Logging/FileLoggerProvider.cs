@@ -50,7 +50,8 @@ public sealed class FileLoggerProvider : ILoggerProvider
             EventId eventId,
             TState state,
             Exception? exception,
-            Func<TState, Exception?, string> formatter)
+            Func<TState, Exception?, string> formatter
+        )
         {
             if (!IsEnabled(logLevel))
                 return;

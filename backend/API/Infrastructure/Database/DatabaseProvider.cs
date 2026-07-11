@@ -13,11 +13,13 @@ public static class DatabaseProvider
 
         if (provider.Equals("postgres", StringComparison.OrdinalIgnoreCase) ||
             provider.Equals("postgresql", StringComparison.OrdinalIgnoreCase) ||
-            provider.Equals("pgsql", StringComparison.OrdinalIgnoreCase))
+            provider.Equals("pgsql", StringComparison.OrdinalIgnoreCase)
+        )
             return DatabaseProviderKind.pgsql;
 
         if (provider.Equals("sqlserver", StringComparison.OrdinalIgnoreCase) ||
-            provider.Equals("mssql", StringComparison.OrdinalIgnoreCase))
+            provider.Equals("mssql", StringComparison.OrdinalIgnoreCase)
+        )
             return DatabaseProviderKind.mssql;
 
         throw new NotSupportedException($"Database provider '{provider}' is not supported. Use 'mssql' or 'pgsql'.");
