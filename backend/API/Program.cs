@@ -14,6 +14,7 @@ builder.Services.Configure<AnalysisSettings>(
     builder.Configuration.GetSection(AnalysisSettings.SectionName));
 builder.Services.Configure<HangfireSettings>(
     builder.Configuration.GetSection(HangfireSettings.SectionName));
+
 var analysisSettings = builder.Configuration
     .GetSection(AnalysisSettings.SectionName)
     .Get<AnalysisSettings>() ?? new AnalysisSettings();
@@ -59,8 +60,9 @@ builder.Services.AddHangfire(configuration => configuration
     .UseSQLiteStorage(builder.Configuration.GetConnectionString("InternalConnection"), new SQLiteStorageOptions
     {
         QueuePollInterval = TimeSpan.FromSeconds(1),
+        // Must exceed the longest expected analysis (days/weeks). Cap at 90 days.
         InvisibilityTimeout = TimeSpan.FromHours(
-            Math.Clamp(analysisSettings.HangfireJobInvisibilityTimeoutHours, 1, 24))
+            Math.Clamp(analysisSettings.HangfireJobInvisibilityTimeoutHours, 1, 90 * 24))
     }));
 
 builder.Services.AddHangfireServer(options =>
@@ -79,7 +81,6 @@ builder.Services.AddSingleton<IConnectionManagerService, ConnectionManagerServic
 builder.Services.AddScoped<SessionContextService>();
 builder.Services.AddScoped<DataSourceConnectionResolver>();
 builder.Services.AddSingleton<AnalysisResultService>();
-builder.Services.AddSingleton<EventCodeLabelService>();
 builder.Services.AddScoped<ExcelReportService>();
 builder.Services.AddScoped<AnalysisExportService>();
 builder.Services.AddScoped<TablePreviewService>();

@@ -6,4 +6,8 @@ public class AnalysisBatchCompletedDto
     public int TotalBatches { get; set; }
     public long DurationMs { get; set; }
     public int SeriesPointCount { get; set; }
+
+    public DateTime BatchEndExclusive { get; set; }
+
+    public IReadOnlyList<Core.Models.DataPoint> SeriesSnapshot { get; set; } = Array.Empty<Core.Models.DataPoint>();
 }

@@ -1,8 +1,4 @@
-using System;
 using System.Diagnostics;
-using System.Linq;
-using System.Threading.Tasks;
-using API.Contracts;
 using API.Configuration;
 using API.Data;
 using API.DataSources;
@@ -13,20 +9,20 @@ using Core.Interfaces;
 using Core.Models;
 using Hangfire;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace API.Services;
 
 public class AnalysisJobProcessor
 {
+    private const int DisableConcurrentTimeoutSeconds = 90 * 24 * 60 * 60;
+
     private readonly InternalDbContext _internalDb;
     private readonly AnalysisPipelineService _pipeline;
     private readonly ISpikeDetectionService _spikeDetectionService;
     private readonly IEnumerable<IDataSourceStrategy> _dataSourceStrategies;
     private readonly AnalysisResultService _resultService;
     private readonly AnalysisTimingStatsService _timingStats;
-    private readonly IConnectionManagerService _connectionManager;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IAnalysisJobCancellationService _cancellation;
     private readonly AnalysisJobCoordinatorService _coordinator;
@@ -40,7 +36,6 @@ public class AnalysisJobProcessor
         IEnumerable<IDataSourceStrategy> dataSourceStrategies,
         AnalysisResultService resultService,
         AnalysisTimingStatsService timingStats,
-        IConnectionManagerService connectionManager,
         IServiceScopeFactory scopeFactory,
         IAnalysisJobCancellationService cancellation,
         AnalysisJobCoordinatorService coordinator,
@@ -53,7 +48,6 @@ public class AnalysisJobProcessor
         _dataSourceStrategies = dataSourceStrategies;
         _resultService = resultService;
         _timingStats = timingStats;
-        _connectionManager = connectionManager;
         _scopeFactory = scopeFactory;
         _cancellation = cancellation;
         _coordinator = coordinator;
@@ -62,16 +56,16 @@ public class AnalysisJobProcessor
     }
 
     [AutomaticRetry(Attempts = 0)]
-    [DisableConcurrentExecution(timeoutInSeconds: 86400)]
-    public Task ProcessJobAsync(string jobId, string sessionToken) =>
-        ProcessJobCoreAsync(jobId, sessionToken, sourceId: null);
+    [DisableConcurrentExecution(DisableConcurrentTimeoutSeconds)]
+    public Task ProcessJobAsync(string jobId) =>
+        ProcessJobCoreAsync(jobId, sourceId: null);
 
     [AutomaticRetry(Attempts = 0)]
-    [DisableConcurrentExecution(timeoutInSeconds: 86400)]
-    public Task ProcessSourceJobAsync(string jobId, string sourceId, string sessionToken) =>
-        ProcessJobCoreAsync(jobId, sessionToken, sourceId);
+    [DisableConcurrentExecution(DisableConcurrentTimeoutSeconds)]
+    public Task ProcessSourceJobAsync(string jobId, string sourceId) =>
+        ProcessJobCoreAsync(jobId, sourceId);
 
-    private async Task ProcessJobCoreAsync(string jobId, string sessionToken, string? sourceId)
+    private async Task ProcessJobCoreAsync(string jobId, string? sourceId)
     {
         var job = await _internalDb.AnalysisJobs.FindAsync(jobId);
         if (job == null) return;
@@ -79,33 +73,32 @@ public class AnalysisJobProcessor
         if (job.Status is "Completed" or "Failed" or "Cancelled")
             return;
 
-        var connectionInfo = _connectionManager.GetConnectionInfo(sessionToken);
-        if (connectionInfo == null)
+        if (!TryResolveConnection(job, out var provider, out var connectionString))
         {
             await FailJobAsync(job, new InvalidOperationException(
-                "Database session expired. Please reconnect and run the analysis again."));
+                "Database connection for this job is no longer available. Reconnect and enqueue the analysis again."));
             return;
         }
 
-        var provider = DatabaseProvider.Normalize(connectionInfo.Provider);
-        var connectionString = connectionInfo.ConnectionString;
+        sourceId ??= job.SourceId;
         var cancellationToken = _cancellation.Register(jobId);
 
         long finalizeMs = 0;
-        var batchMetrics = CreateBatchMetricsHandler(job);
 
         try
         {
             if (_cancellation.IsCancellationRequested(jobId))
             {
                 await _coordinator.MarkCancelledAsync(job);
+                ClearStoredConnection(job);
+                await _internalDb.SaveChangesAsync();
                 return;
             }
 
-            await SetRunningAsync(job);
-            _resultService.DeletePartialFile(job.Id);
+            var resume = await PrepareResumeStateAsync(job);
+            await SetRunningAsync(job, isResume: resume != null);
 
-            var onBatchAggregated = CreateBatchAggregator(job.Id);
+            var onBatchCompleted = CreateCheckpointHandler(job);
 
             SpikeResponse response;
             if (string.IsNullOrEmpty(sourceId))
@@ -131,9 +124,10 @@ public class AnalysisJobProcessor
                     provider,
                     job.Database,
                     CreateProgressReporter(job.Id),
-                    onBatchAggregated,
-                    batchMetrics,
+                    onBatchAggregated: null,
+                    onBatchCompleted,
                     ms => finalizeMs = ms,
+                    resume,
                     cancellationToken);
             }
             else
@@ -164,9 +158,10 @@ public class AnalysisJobProcessor
                     connectionString,
                     provider,
                     CreateProgressReporter(job.Id),
-                    onBatchAggregated,
-                    batchMetrics,
+                    onBatchAggregated: null,
+                    onBatchCompleted,
                     ms => finalizeMs = ms,
+                    resume,
                     cancellationToken);
             }
 
@@ -177,6 +172,8 @@ public class AnalysisJobProcessor
         {
             _logger.LogInformation("Analysis job {JobId} cancelled by user", jobId);
             await _coordinator.MarkCancelledAsync(job);
+            ClearStoredConnection(job);
+            await _internalDb.SaveChangesAsync();
         }
         catch (Exception ex)
         {
@@ -189,46 +186,107 @@ public class AnalysisJobProcessor
         }
     }
 
-    private async Task SetRunningAsync(AnalysisJob job)
+    private static bool TryResolveConnection(AnalysisJob job, out string provider, out string connectionString)
+    {
+        if (!string.IsNullOrWhiteSpace(job.ConnectionString))
+        {
+            provider = DatabaseProvider.Normalize(job.ConnectionProvider ?? "mssql");
+            connectionString = job.ConnectionString;
+            return true;
+        }
+
+        provider = string.Empty;
+        connectionString = string.Empty;
+        return false;
+    }
+
+    private async Task<AnalysisResumeState?> PrepareResumeStateAsync(AnalysisJob job)
+    {
+        if (!job.ProcessedUntil.HasValue || job.ProcessedUntil.Value <= job.StartDate)
+        {
+            _resultService.DeletePartialFile(job.Id);
+            return null;
+        }
+
+        var partial = await _resultService.TryLoadPartialAsync(job.Id);
+        if (partial == null || partial.Series.Count == 0)
+        {
+            _logger.LogWarning(
+                "Job {JobId} has ProcessedUntil={ProcessedUntil} but no partial series; restarting from StartDate",
+                job.Id,
+                job.ProcessedUntil);
+            job.ProcessedUntil = null;
+            job.CompletedBatchCount = 0;
+            job.Progress = 0;
+            await _internalDb.SaveChangesAsync();
+            return null;
+        }
+
+        var seed = partial.Series
+            .Select(p => new DataPoint { Timestamp = p.Timestamp, Value = p.Value })
+            .ToList();
+
+        _logger.LogInformation(
+            "Resuming job {JobId} from {ProcessedUntil} with {PointCount} seeded points",
+            job.Id,
+            job.ProcessedUntil,
+            seed.Count);
+
+        return new AnalysisResumeState
+        {
+            ProcessedUntil = job.ProcessedUntil,
+            SeedSeries = seed
+        };
+    }
+
+    private async Task SetRunningAsync(AnalysisJob job, bool isResume)
     {
         job.Status = "Running";
-        job.Progress = 0;
-        job.CompletedBatchCount = 0;
-        job.TotalBatchCount = 0;
-        job.AvgBatchDurationMs = null;
-        job.LastBatchDurationMs = null;
-        job.PostProcessDurationMs = null;
+        job.ErrorMessage = null;
+        job.CompletedAt = null;
+
+        if (!isResume)
+        {
+            job.Progress = 0;
+            job.CompletedBatchCount = 0;
+            job.TotalBatchCount = 0;
+            job.AvgBatchDurationMs = null;
+            job.LastBatchDurationMs = null;
+            job.PostProcessDurationMs = null;
+            job.ProcessedUntil = null;
+        }
+
         await _internalDb.SaveChangesAsync();
     }
 
-    private Action<AnalysisBatchCompletedDto> CreateBatchMetricsHandler(AnalysisJob job)
+    private Func<AnalysisBatchCompletedDto, Task> CreateCheckpointHandler(AnalysisJob job)
     {
-        long batchDurationSum = 0;
+        long batchDurationSum = (job.AvgBatchDurationMs ?? 0) * Math.Max(job.CompletedBatchCount, 0);
 
-        return info =>
+        return async info =>
         {
             batchDurationSum += info.DurationMs;
             job.CompletedBatchCount = info.BatchIndex + 1;
             job.TotalBatchCount = info.TotalBatches;
             job.LastBatchDurationMs = info.DurationMs;
-            job.AvgBatchDurationMs = batchDurationSum / job.CompletedBatchCount;
+            job.AvgBatchDurationMs = batchDurationSum / Math.Max(job.CompletedBatchCount, 1);
+            job.ProcessedUntil = info.BatchEndExclusive;
+            job.SeriesPointCount = info.SeriesPointCount;
 
-            try
-            {
-                using var scope = _scopeFactory.CreateScope();
-                var db = scope.ServiceProvider.GetRequiredService<InternalDbContext>();
-                db.AnalysisJobs
-                    .Where(j => j.Id == job.Id && j.Status == "Running")
-                    .ExecuteUpdate(s => s
-                        .SetProperty(j => j.CompletedBatchCount, job.CompletedBatchCount)
-                        .SetProperty(j => j.TotalBatchCount, job.TotalBatchCount)
-                        .SetProperty(j => j.LastBatchDurationMs, job.LastBatchDurationMs)
-                        .SetProperty(j => j.AvgBatchDurationMs, job.AvgBatchDurationMs));
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to persist batch metrics for job {JobId}", job.Id);
-            }
+            // Persist partial series first, then advance the resume cursor.
+            await _resultService.SavePartialSeriesAsync(job.Id, info.SeriesSnapshot);
+
+            using var scope = _scopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<InternalDbContext>();
+            await db.AnalysisJobs
+                .Where(j => j.Id == job.Id && j.Status == "Running")
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(j => j.CompletedBatchCount, job.CompletedBatchCount)
+                    .SetProperty(j => j.TotalBatchCount, job.TotalBatchCount)
+                    .SetProperty(j => j.LastBatchDurationMs, job.LastBatchDurationMs)
+                    .SetProperty(j => j.AvgBatchDurationMs, job.AvgBatchDurationMs)
+                    .SetProperty(j => j.ProcessedUntil, job.ProcessedUntil)
+                    .SetProperty(j => j.SeriesPointCount, job.SeriesPointCount));
         };
     }
 
@@ -265,44 +323,6 @@ public class AnalysisJobProcessor
         });
     }
 
-    private Action<IReadOnlyList<DataPoint>> CreateBatchAggregator(string jobId)
-    {
-        var lastSavedCount = -1;
-        var lastSaveTicks = 0L;
-
-        return points =>
-        {
-            if (points.Count == 0 || points.Count == lastSavedCount)
-                return;
-
-            var now = Environment.TickCount64;
-            if (lastSaveTicks > 0 && now - lastSaveTicks < _progressSaveIntervalMs)
-                return;
-
-            lastSavedCount = points.Count;
-            lastSaveTicks = now;
-
-            try
-            {
-                _ = Task.Run(async () =>
-                {
-                    try
-                    {
-                        await _resultService.SavePartialSeriesAsync(jobId, points);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(ex, "Failed to persist partial series for job {JobId}", jobId);
-                    }
-                });
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to schedule partial series save for job {JobId}", jobId);
-            }
-        };
-    }
-
     private async Task CompleteJobAsync(AnalysisJob job, SpikeResponse response)
     {
         var saveSw = Stopwatch.StartNew();
@@ -315,19 +335,33 @@ public class AnalysisJobProcessor
         job.Status = "Completed";
         job.Progress = 100;
         job.CompletedAt = DateTime.UtcNow;
+        ClearStoredConnection(job);
         await _internalDb.SaveChangesAsync();
         await _timingStats.RecordCompletedJobAsync(job, saveMs);
     }
 
     private async Task FailJobAsync(AnalysisJob job, Exception ex)
     {
-        _resultService.DeleteResultFiles(job);
-        job.ResultFilePath = null;
-        job.SeriesPointCount = 0;
+        var hasCheckpoint = job.ProcessedUntil.HasValue && _resultService.HasPartialResult(job.Id);
+        if (!hasCheckpoint)
+        {
+            _resultService.DeleteResultFiles(job);
+            job.ResultFilePath = null;
+            job.SeriesPointCount = 0;
+            job.ProcessedUntil = null;
+            ClearStoredConnection(job);
+        }
+
         job.Status = "Failed";
         job.ErrorMessage = Truncate(ex.Message, 2000);
         job.CompletedAt = DateTime.UtcNow;
         await _internalDb.SaveChangesAsync();
+    }
+
+    private static void ClearStoredConnection(AnalysisJob job)
+    {
+        job.ConnectionString = null;
+        job.ConnectionProvider = null;
     }
 
     private static string Truncate(string value, int maxLength) =>

@@ -8,5 +8,6 @@ public class AnalysisJobStatusDto
     public string? ErrorMessage { get; set; }
     public bool HasResult { get; set; }
     public bool HasPartialResult { get; set; }
+    public bool CanResume { get; set; }
     public int SeriesPointCount { get; set; }
 }

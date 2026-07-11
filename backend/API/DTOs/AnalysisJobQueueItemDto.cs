@@ -40,6 +40,8 @@ public class AnalysisJobQueueItemDto
 
     public bool HasResult { get; set; }
 
+    public bool CanResume { get; set; }
+
     public int CompletedBatchCount { get; set; }
 
     public int TotalBatchCount { get; set; }

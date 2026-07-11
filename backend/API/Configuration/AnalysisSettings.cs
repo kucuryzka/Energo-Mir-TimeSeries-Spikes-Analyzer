@@ -6,13 +6,11 @@ public class AnalysisSettings
 
     public int CommandTimeoutSeconds { get; set; } = 86400;
 
-    public int ConnectionTimeoutSeconds { get; set; } = 15;
-
     public int BatchIntervalDays { get; set; } = 7;
 
     public int HangfireWorkerCount { get; set; } = 2;
 
-    public int HangfireJobInvisibilityTimeoutHours { get; set; } = 24;
+    public int HangfireJobInvisibilityTimeoutHours { get; set; } = 720;
 
     public string ResultsDirectory { get; set; } = "results";
 
@@ -25,22 +23,4 @@ public class AnalysisSettings
     public int PreviewCommandTimeoutSeconds { get; set; } = 120;
 
     public long PreviewOrderedSampleMaxRows { get; set; } = 500_000;
-}
-
-public class LoggingSettings
-{
-    public const string SectionName = "Logging:File";
-
-    public bool Enabled { get; set; } = true;
-
-    public string Directory { get; set; } = "logs";
-
-    public string MinLevel { get; set; } = "Information";
-}
-
-public class HangfireSettings
-{
-    public const string SectionName = "Hangfire";
-
-    public string DashboardPrefixPath { get; set; } = "/api/dist";
 }

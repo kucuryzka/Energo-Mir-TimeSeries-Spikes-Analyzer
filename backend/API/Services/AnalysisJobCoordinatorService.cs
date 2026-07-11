@@ -58,8 +58,10 @@ public class AnalysisJobCoordinatorService
         };
     }
 
-    private AnalysisJobQueueItemDto MapJob(AnalysisJob job, IReadOnlyDictionary<string, int> queuePositions) =>
-        new()
+    private AnalysisJobQueueItemDto MapJob(AnalysisJob job, IReadOnlyDictionary<string, int> queuePositions)
+    {
+        var hasPartial = _resultService.HasPartialResult(job.Id);
+        return new()
         {
             Id = job.Id,
             Status = job.Status,
@@ -79,14 +81,16 @@ public class AnalysisJobCoordinatorService
             QueuePosition = job.Status == "Pending"
                 ? TryGetQueuePosition(job.BackgroundJobId, queuePositions)
                 : null,
-            HasPartialResult = _resultService.HasPartialResult(job.Id),
+            HasPartialResult = hasPartial,
             HasResult = _resultService.HasResult(job),
+            CanResume = AnalysisJobResumeRules.CanResume(job, hasPartial),
             CompletedBatchCount = job.CompletedBatchCount,
             TotalBatchCount = job.TotalBatchCount,
             AvgBatchDurationMs = job.AvgBatchDurationMs,
             LastBatchDurationMs = job.LastBatchDurationMs,
             PostProcessDurationMs = job.PostProcessDurationMs,
         };
+    }
 
     public async Task<bool> TryCancelAsync(string jobId)
     {
@@ -113,7 +117,46 @@ public class AnalysisJobCoordinatorService
         job.Status = "Cancelled";
         job.ErrorMessage = "Задача отменена пользователем.";
         job.CompletedAt = DateTime.UtcNow;
+        job.ConnectionString = null;
+        job.ConnectionProvider = null;
         await _db.SaveChangesAsync();
+    }
+
+    public async Task<(bool Ok, string? Error)> TryResumeAsync(
+        string jobId,
+        string? connectionProvider = null,
+        string? connectionString = null)
+    {
+        var job = await _db.AnalysisJobs.FindAsync(jobId);
+        if (job == null)
+            return (false, "Задача не найдена.");
+
+        if (job.Status is "Completed" or "Cancelled" or "Running")
+            return (false, "Задачу нельзя возобновить в текущем статусе.");
+
+        if (!string.IsNullOrWhiteSpace(connectionString))
+        {
+            job.ConnectionProvider = connectionProvider;
+            job.ConnectionString = connectionString;
+        }
+
+        if (string.IsNullOrWhiteSpace(job.ConnectionString))
+            return (false, "Нет сохранённого подключения. Подключитесь к БД и повторите resume.");
+
+        if (!string.IsNullOrEmpty(job.BackgroundJobId))
+            _backgroundJobClient.Delete(job.BackgroundJobId);
+
+        job.Status = "Pending";
+        job.ErrorMessage = null;
+        job.CompletedAt = null;
+
+        var hangfireId = string.IsNullOrEmpty(job.SourceId)
+            ? _backgroundJobClient.Enqueue<AnalysisJobProcessor>(p => p.ProcessJobAsync(job.Id))
+            : _backgroundJobClient.Enqueue<AnalysisJobProcessor>(p => p.ProcessSourceJobAsync(job.Id, job.SourceId));
+
+        job.BackgroundJobId = hangfireId;
+        await _db.SaveChangesAsync();
+        return (true, null);
     }
 
     private static string ResolveSourceKind(AnalysisJob job) =>

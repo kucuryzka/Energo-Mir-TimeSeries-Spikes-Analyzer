@@ -25,16 +25,21 @@ public class AnalysisJobQueryService
     public async Task<AnalysisJob?> FindJobAsync(string id) =>
         await _internalDb.AnalysisJobs.FindAsync(id);
 
-    public AnalysisJobStatusDto BuildStatus(AnalysisJob job) => new()
+    public AnalysisJobStatusDto BuildStatus(AnalysisJob job)
     {
-        Id = job.Id,
-        Status = job.Status,
-        Progress = job.Progress,
-        ErrorMessage = job.ErrorMessage,
-        HasResult = _resultService.HasResult(job),
-        HasPartialResult = _resultService.HasPartialResult(job.Id),
-        SeriesPointCount = job.SeriesPointCount
-    };
+        var hasPartial = _resultService.HasPartialResult(job.Id);
+        return new()
+        {
+            Id = job.Id,
+            Status = job.Status,
+            Progress = job.Progress,
+            ErrorMessage = job.ErrorMessage,
+            HasResult = _resultService.HasResult(job),
+            HasPartialResult = hasPartial,
+            CanResume = AnalysisJobResumeRules.CanResume(job, hasPartial),
+            SeriesPointCount = job.SeriesPointCount
+        };
+    }
 
     public async Task<SpikeResponse?> TryLoadPartialAsync(string id, AnalysisJob job)
     {

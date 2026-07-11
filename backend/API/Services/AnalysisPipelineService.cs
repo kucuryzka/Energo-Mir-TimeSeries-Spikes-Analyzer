@@ -43,8 +43,9 @@ public class AnalysisPipelineService
         string database,
         IProgress<int>? progress = null,
         Action<IReadOnlyList<Core.Models.DataPoint>>? onBatchAggregated = null,
-        Action<AnalysisBatchCompletedDto>? onBatchCompleted = null,
+        Func<AnalysisBatchCompletedDto, Task>? onBatchCompleted = null,
         Action<long>? onFinalizeCompleted = null,
+        AnalysisResumeState? resume = null,
         CancellationToken cancellationToken = default)
     {
         var dialect = _dialectProvider.GetDialect(provider);
@@ -58,6 +59,12 @@ public class AnalysisPipelineService
         var distributionDict = new Dictionary<int, int>();
         var distributionNames = new Dictionary<int, string>();
         var distributionEventCodes = new Dictionary<int, string>();
+
+        if (resume?.SeedSeries != null)
+        {
+            foreach (var point in resume.SeedSeries)
+                seriesDict[point.Timestamp] = new DataPoint { Timestamp = point.Timestamp, Value = point.Value };
+        }
 
         var seriesSql = BuildSeriesSql(dialect, fromClause, timeExpr, timeCol, spec, channelId);
         var usePerBatchDistribution = spec.ChannelColumn != null
@@ -75,6 +82,26 @@ public class AnalysisPipelineService
         var totalBatches = Math.Max(1, (int)Math.Ceiling(totalDays / batchDays));
         var batchIndex = 0;
 
+        var resumeFrom = resume?.ProcessedUntil;
+        if (resumeFrom.HasValue && resumeFrom.Value > startDate)
+        {
+            currentStart = resumeFrom.Value < endDate ? resumeFrom.Value : endDate;
+            daysProcessed = Math.Min((currentStart - startDate).TotalDays, totalDays);
+            batchIndex = Math.Min(totalBatches, (int)Math.Floor(daysProcessed / batchDays));
+
+            if (usePerBatchDistribution && currentStart > startDate)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var priorDist = await context.Database
+                    .SqlQueryRaw<AggregatedResult>(
+                        distributionSql!,
+                        BuildBatchParameters(startDate, currentStart, channelId).ToArray())
+                    .ToListAsync(cancellationToken);
+                MergeDistributionBatch(distributionDict, distributionNames, distributionEventCodes, priorDist);
+                await context.Database.CloseConnectionAsync();
+            }
+        }
+
         while (currentStart < endDate)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -86,7 +113,7 @@ public class AnalysisPipelineService
             var parameters = BuildBatchParameters(currentStart, currentEnd, channelId);
             var batchSeries = await context.Database
                 .SqlQueryRaw<AggregatedResult>(seriesSql, parameters.ToArray())
-                .ToListAsync();
+                .ToListAsync(cancellationToken);
 
             MergeSeriesBatch(seriesDict, batchSeries);
 
@@ -94,23 +121,29 @@ public class AnalysisPipelineService
             {
                 var batchDist = await context.Database
                     .SqlQueryRaw<AggregatedResult>(distributionSql, parameters.ToArray())
-                    .ToListAsync();
+                    .ToListAsync(cancellationToken);
                 MergeDistributionBatch(distributionDict, distributionNames, distributionEventCodes, batchDist);
             }
 
             daysProcessed += (currentEnd - currentStart).TotalDays;
             progress?.Report(Math.Min(99, (int)(daysProcessed / totalDays * 100)));
 
-            onBatchAggregated?.Invoke(seriesDict.Values.OrderBy(p => p.Timestamp).ToList());
+            var orderedSeries = seriesDict.Values.OrderBy(p => p.Timestamp).ToList();
+            onBatchAggregated?.Invoke(orderedSeries);
 
             batchSw.Stop();
-            onBatchCompleted?.Invoke(new AnalysisBatchCompletedDto
+            if (onBatchCompleted != null)
             {
-                BatchIndex = batchIndex,
-                TotalBatches = totalBatches,
-                DurationMs = batchSw.ElapsedMilliseconds,
-                SeriesPointCount = seriesDict.Count,
-            });
+                await onBatchCompleted(new AnalysisBatchCompletedDto
+                {
+                    BatchIndex = batchIndex,
+                    TotalBatches = totalBatches,
+                    DurationMs = batchSw.ElapsedMilliseconds,
+                    SeriesPointCount = seriesDict.Count,
+                    BatchEndExclusive = currentEnd,
+                    SeriesSnapshot = orderedSeries,
+                });
+            }
             batchIndex++;
 
             await context.Database.CloseConnectionAsync();
@@ -367,10 +400,8 @@ public class AnalysisPipelineService
     {
         foreach (var row in batch)
         {
-            if (dict.TryGetValue(row.Timestamp, out var existing))
-                existing.Value += row.Value;
-            else
-                dict[row.Timestamp] = new DataPoint { Timestamp = row.Timestamp, Value = row.Value };
+            // Assign (not add): batch windows do not overlap; assign keeps resume re-fetches idempotent.
+            dict[row.Timestamp] = new DataPoint { Timestamp = row.Timestamp, Value = row.Value };
         }
     }
 

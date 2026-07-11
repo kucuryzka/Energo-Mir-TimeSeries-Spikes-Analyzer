@@ -69,7 +69,7 @@ public class GenericAnalysisController : ControllerBase
     {
         try
         {
-            var sessionToken = _session.RequireToken();
+            var connection = _session.RequireConnection();
             _requestValidator.Validate(
                 request.StartDate,
                 request.EndDate,
@@ -78,11 +78,13 @@ public class GenericAnalysisController : ControllerBase
                 request.CustomMinutes);
 
             var job = CreateJobFromRequest(request);
+            job.ConnectionProvider = connection.Provider;
+            job.ConnectionString = connection.ConnectionString;
             _internalDb.AnalysisJobs.Add(job);
             await _internalDb.SaveChangesAsync();
 
             var hangfireId = _backgroundJobClient.Enqueue<AnalysisJobProcessor>(
-                p => p.ProcessJobAsync(job.Id, sessionToken));
+                p => p.ProcessJobAsync(job.Id));
 
             job.BackgroundJobId = hangfireId;
             await _internalDb.SaveChangesAsync();

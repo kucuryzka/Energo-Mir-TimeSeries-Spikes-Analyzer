@@ -64,8 +64,9 @@ public class DboDataSource : IDataSourceStrategy
         string provider,
         IProgress<int>? progress = null,
         Action<IReadOnlyList<DataPoint>>? onBatchAggregated = null,
-        Action<AnalysisBatchCompletedDto>? onBatchCompleted = null,
+        Func<AnalysisBatchCompletedDto, Task>? onBatchCompleted = null,
         Action<long>? onFinalizeCompleted = null,
+        AnalysisResumeState? resume = null,
         CancellationToken cancellationToken = default)
     {
         var dialect = _dialectProvider.GetDialect(provider);
@@ -87,6 +88,7 @@ public class DboDataSource : IDataSourceStrategy
             onBatchAggregated,
             onBatchCompleted,
             onFinalizeCompleted,
+            resume,
             cancellationToken);
     }
 

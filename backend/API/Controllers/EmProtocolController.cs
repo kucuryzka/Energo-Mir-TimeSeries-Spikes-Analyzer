@@ -122,7 +122,7 @@ public class EmProtocolController : ControllerBase
     {
         try
         {
-            var sessionToken = _session.RequireToken();
+            var connection = _session.RequireConnection();
             _requestValidator.Validate(
                 request.StartDate,
                 request.EndDate,
@@ -141,14 +141,17 @@ public class EmProtocolController : ControllerBase
                 Granularity = request.Granularity,
                 CustomMinutes = request.CustomMinutes,
                 Confidence = request.Confidence,
-                WindowSize = request.WindowSize
+                WindowSize = request.WindowSize,
+                SourceId = "em_protocol",
+                ConnectionProvider = connection.Provider,
+                ConnectionString = connection.ConnectionString
             };
 
             _internalDb.AnalysisJobs.Add(job);
             await _internalDb.SaveChangesAsync();
 
             var jobId = _backgroundJobClient.Enqueue<AnalysisJobProcessor>(
-                p => p.ProcessSourceJobAsync(job.Id, "em_protocol", sessionToken));
+                p => p.ProcessSourceJobAsync(job.Id, "em_protocol"));
 
             job.BackgroundJobId = jobId;
             await _internalDb.SaveChangesAsync();

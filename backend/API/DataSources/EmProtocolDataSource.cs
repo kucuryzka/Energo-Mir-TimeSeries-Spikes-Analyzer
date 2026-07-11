@@ -81,8 +81,9 @@ public class EmProtocolDataSource : IDataSourceStrategy
         string provider,
         IProgress<int>? progress = null,
         Action<IReadOnlyList<DataPoint>>? onBatchAggregated = null,
-        Action<AnalysisBatchCompletedDto>? onBatchCompleted = null,
+        Func<AnalysisBatchCompletedDto, Task>? onBatchCompleted = null,
         Action<long>? onFinalizeCompleted = null,
+        AnalysisResumeState? resume = null,
         CancellationToken cancellationToken = default)
     {
         var dialect = _dialectProvider.GetDialect(provider);
@@ -103,6 +104,7 @@ public class EmProtocolDataSource : IDataSourceStrategy
             onBatchAggregated,
             onBatchCompleted,
             onFinalizeCompleted,
+            resume,
             cancellationToken);
     }
 
@@ -126,28 +128,6 @@ public class EmProtocolDataSource : IDataSourceStrategy
             conn,
             prov,
             database);
-    }
-
-    public Task<List<ChannelContributionDto>> GetRecordsDistributionAsync(
-        string database,
-        DateTime startDate,
-        DateTime endDate,
-        int? channelId,
-        string? connectionString = null,
-        string? provider = null,
-        CancellationToken cancellationToken = default)
-    {
-        var (conn, prov) = ResolveConnection(connectionString, provider);
-        var dialect = _dialectProvider.GetDialect(prov);
-        return _pipeline.GetDistributionAsync(
-            BuildTableSpec(dialect),
-            startDate,
-            endDate,
-            channelId,
-            conn,
-            prov,
-            database,
-            cancellationToken);
     }
 
     public async Task<List<ChannelDto>> GetChannelsAsync(string database, string? search, int page = 1, int pageSize = 50)

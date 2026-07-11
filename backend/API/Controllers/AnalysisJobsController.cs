@@ -72,10 +72,23 @@ public class AnalysisJobsController : ControllerBase
         return Ok(new { message = "Задача отменяется." });
     }
 
+    [HttpPost("{id}/resume")]
+    public async Task<IActionResult> Resume(string id)
+    {
+        if (!_session.IsAuthenticated())
+            return Unauthorized();
+
+        var connection = _session.RequireConnection();
+        var (ok, error) = await _coordinator.TryResumeAsync(id, connection.Provider, connection.ConnectionString);
+        if (!ok)
+            return BadRequest(new { message = error });
+
+        return Ok(new { message = "Задача поставлена в очередь для продолжения." });
+    }
+
     [HttpGet("{id}/export")]
     public async Task<IActionResult> Export(
         string id,
-        [FromQuery] bool loadDistribution = false,
         CancellationToken cancellationToken = default)
     {
         if (!_session.IsAuthenticated())
@@ -90,7 +103,7 @@ public class AnalysisJobsController : ControllerBase
 
         try
         {
-            var (stream, fileName) = await _exportService.BuildExcelAsync(job, loadDistribution, cancellationToken);
+            var (stream, fileName) = await _exportService.BuildExcelAsync(job, cancellationToken);
             await using (stream)
             {
                 var bytes = stream.ToArray();

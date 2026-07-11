@@ -8,7 +8,7 @@ public static class InternalDbSchemaUpdater
 {
     private static readonly Regex IdentifierRegex = new(@"^[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.Compiled);
     private static readonly Regex ColumnDefinitionRegex = new(
-        @"^INTEGER (NOT NULL DEFAULT \d+|NULL)$",
+        @"^(INTEGER (NOT NULL DEFAULT \d+|NULL)|TEXT NULL)$",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     public static void Apply(InternalDbContext db)
@@ -20,6 +20,10 @@ public static class InternalDbSchemaUpdater
         TryAddColumn(db, "AnalysisJobs", "AvgBatchDurationMs", "INTEGER NULL");
         TryAddColumn(db, "AnalysisJobs", "LastBatchDurationMs", "INTEGER NULL");
         TryAddColumn(db, "AnalysisJobs", "PostProcessDurationMs", "INTEGER NULL");
+        TryAddColumn(db, "AnalysisJobs", "ProcessedUntil", "TEXT NULL");
+        TryAddColumn(db, "AnalysisJobs", "SourceId", "TEXT NULL");
+        TryAddColumn(db, "AnalysisJobs", "ConnectionProvider", "TEXT NULL");
+        TryAddColumn(db, "AnalysisJobs", "ConnectionString", "TEXT NULL");
 
         if (!TableExists(db, "AnalysisSourceTimingStats"))
         {

@@ -1,6 +1,5 @@
 using System;
 using System.ComponentModel.DataAnnotations;
-using System.ComponentModel.DataAnnotations.Schema;
 using Core.Enums;
 
 namespace API.Models;
@@ -22,7 +21,7 @@ public class AnalysisJob
     public double? Confidence { get; set; }
     public int? WindowSize { get; set; }
 
-    public string Status { get; set; } = "Pending"; // Pending, Running, Completed, Failed
+    public string Status { get; set; } = "Pending"; // Pending, Running, Completed, Failed, Cancelled
     public int Progress { get; set; } = 0; // 0 to 100
 
     public int CompletedBatchCount { get; set; }
@@ -30,6 +29,14 @@ public class AnalysisJob
     public long? AvgBatchDurationMs { get; set; }
     public long? LastBatchDurationMs { get; set; }
     public long? PostProcessDurationMs { get; set; }
+
+    public DateTime? ProcessedUntil { get; set; }
+
+    public string? SourceId { get; set; }
+
+    public string? ConnectionProvider { get; set; }
+
+    public string? ConnectionString { get; set; }
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? CompletedAt { get; set; }
