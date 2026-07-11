@@ -1,3 +1,4 @@
+using API.Infrastructure;
 using Core.Enums;
 
 namespace API.Sql;
@@ -25,7 +26,8 @@ public class PostgresDialect : IDatabaseDialect
         return $"SELECT {selectList} FROM {fromClause}{where}{order} {LimitClause(limit)}";
     }
 
-    public string QuoteIdentifier(string identifier) => $"\"{identifier}\"";
+    public string QuoteIdentifier(string identifier) =>
+        $"\"{SqlIdentifier.EscapeForPostgres(identifier)}\"";
 
     public string QualifyColumn(string? tableAlias, string column)
     {

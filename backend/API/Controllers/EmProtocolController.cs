@@ -52,6 +52,10 @@ public class EmProtocolController : ControllerBase
             var channels = await _dataSource.GetChannelsAsync(database, search, page, pageSize);
             return Ok(channels);
         }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Unauthorized(ex.Message);
+        }
         catch (Exception ex)
         {
             return StatusCode(500, new { message = "An error occurred while fetching channels.", details = ex.Message });
@@ -70,6 +74,10 @@ public class EmProtocolController : ControllerBase
             }
 
             return BadRequest($"Source does not support distribution by '{categoryName}'.");
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Unauthorized(ex.Message);
         }
         catch (Exception ex)
         {
@@ -111,6 +119,10 @@ public class EmProtocolController : ControllerBase
             var breakdown = await _dataSource.GetPointChannelBreakdownAsync(database, timestamp, granularity, customMinutes, channelId);
             return Ok(breakdown);
         }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Unauthorized(ex.Message);
+        }
         catch (Exception ex)
         {
             return StatusCode(500, new { message = "An error occurred while fetching point channel breakdown.", details = ex.Message });
@@ -122,6 +134,7 @@ public class EmProtocolController : ControllerBase
     {
         try
         {
+            var sessionToken = _session.RequireToken();
             var connection = _session.RequireConnection();
             _requestValidator.Validate(
                 request.StartDate,
@@ -143,15 +156,14 @@ public class EmProtocolController : ControllerBase
                 Confidence = request.Confidence,
                 WindowSize = request.WindowSize,
                 SourceId = "em_protocol",
-                ConnectionProvider = connection.Provider,
-                ConnectionString = connection.ConnectionString
+                ConnectionFingerprint = ConnectionFingerprint.From(connection.Provider, connection.ConnectionString)
             };
 
             _internalDb.AnalysisJobs.Add(job);
             await _internalDb.SaveChangesAsync();
 
             var jobId = _backgroundJobClient.Enqueue<AnalysisJobProcessor>(
-                p => p.ProcessSourceJobAsync(job.Id, "em_protocol"));
+                p => p.ProcessSourceJobAsync(job.Id, "em_protocol", sessionToken));
 
             job.BackgroundJobId = jobId;
             await _internalDb.SaveChangesAsync();

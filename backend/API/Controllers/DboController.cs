@@ -53,6 +53,10 @@ public class DboController : ControllerBase
             var objects = await _dataSource.GetObjectsAsync(database, search, page, pageSize);
             return Ok(objects);
         }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Unauthorized(ex.Message);
+        }
         catch (Exception ex)
         {
             return StatusCode(500, new { message = "An error occurred while fetching objects.", details = ex.Message });
@@ -93,6 +97,10 @@ public class DboController : ControllerBase
             var details = await _dataSource.GetPointDetailsAsync(database, timestamp, granularity, customMinutes, channelId);
             return Ok(details);
         }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Unauthorized(ex.Message);
+        }
         catch (Exception ex)
         {
             return StatusCode(500, new { message = "An error occurred while fetching point details.", details = ex.Message });
@@ -106,6 +114,10 @@ public class DboController : ControllerBase
         {
             var breakdown = await _dataSource.GetPointChannelBreakdownAsync(database, timestamp, granularity, customMinutes, channelId);
             return Ok(breakdown);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Unauthorized(ex.Message);
         }
         catch (Exception ex)
         {
@@ -141,6 +153,7 @@ public class DboController : ControllerBase
     {
         try
         {
+            var sessionToken = _session.RequireToken();
             var connection = _session.RequireConnection();
             _requestValidator.Validate(
                 request.StartDate,
@@ -161,16 +174,15 @@ public class DboController : ControllerBase
                 CustomMinutes = request.CustomMinutes,
                 Confidence = request.Confidence,
                 WindowSize = request.WindowSize,
-                SourceId = "Dbo",
-                ConnectionProvider = connection.Provider,
-                ConnectionString = connection.ConnectionString
+                SourceId = "dbo",
+                ConnectionFingerprint = ConnectionFingerprint.From(connection.Provider, connection.ConnectionString)
             };
 
             _internalDb.AnalysisJobs.Add(job);
             await _internalDb.SaveChangesAsync();
 
             var jobId = _backgroundJobClient.Enqueue<AnalysisJobProcessor>(
-                p => p.ProcessSourceJobAsync(job.Id, "Dbo"));
+                p => p.ProcessSourceJobAsync(job.Id, "dbo", sessionToken));
 
             job.BackgroundJobId = jobId;
             await _internalDb.SaveChangesAsync();

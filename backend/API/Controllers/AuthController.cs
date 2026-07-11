@@ -3,6 +3,7 @@ using API.Contracts;
 using API.DTOs;
 using API.Infrastructure;
 using API.Models;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace API.Controllers;
@@ -18,6 +19,7 @@ public class AuthController : ControllerBase
         _connectionManager = connectionManager;
     }
 
+    [AllowAnonymous]
     [HttpPost("connect")]
     public async Task<IActionResult> Connect([FromBody] AuthRequest request)
     {
@@ -41,6 +43,17 @@ public class AuthController : ControllerBase
         {
             return BadRequest(new { Message = $"Connection failed: {ex.Message}" });
         }
+    }
+
+    [HttpPost("disconnect")]
+    public IActionResult Disconnect([FromServices] SessionContextService session)
+    {
+        var token = session.GetToken();
+        if (string.IsNullOrEmpty(token) || _connectionManager.GetConnectionInfo(token) == null)
+            return Unauthorized(new { Message = "Invalid or missing session token" });
+
+        _connectionManager.RemoveSession(token);
+        return Ok(new { Message = "Disconnected successfully" });
     }
 
     private string BuildConnectionString(AuthRequest request)

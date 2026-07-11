@@ -51,12 +51,17 @@ public class GenericAnalysisController : ControllerBase
     {
         try
         {
+            _requestValidator.ValidateIdentifiers(schema, table, timeColumn);
             var preview = await LoadTablePreviewAsync(database, schema, table, timeColumn, limit);
             return Ok(preview);
         }
         catch (UnauthorizedAccessException ex)
         {
             return Unauthorized(ex.Message);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ex.Message);
         }
         catch (Exception ex)
         {
@@ -69,6 +74,7 @@ public class GenericAnalysisController : ControllerBase
     {
         try
         {
+            var sessionToken = _session.RequireToken();
             var connection = _session.RequireConnection();
             _requestValidator.Validate(
                 request.StartDate,
@@ -76,15 +82,15 @@ public class GenericAnalysisController : ControllerBase
                 request.Granularity,
                 request.WindowSize,
                 request.CustomMinutes);
+            _requestValidator.ValidateIdentifiers(request.Schema, request.Table, request.TimeColumn);
 
             var job = CreateJobFromRequest(request);
-            job.ConnectionProvider = connection.Provider;
-            job.ConnectionString = connection.ConnectionString;
+            job.ConnectionFingerprint = ConnectionFingerprint.From(connection.Provider, connection.ConnectionString);
             _internalDb.AnalysisJobs.Add(job);
             await _internalDb.SaveChangesAsync();
 
             var hangfireId = _backgroundJobClient.Enqueue<AnalysisJobProcessor>(
-                p => p.ProcessJobAsync(job.Id));
+                p => p.ProcessJobAsync(job.Id, sessionToken));
 
             job.BackgroundJobId = hangfireId;
             await _internalDb.SaveChangesAsync();
@@ -168,6 +174,7 @@ public class GenericAnalysisController : ControllerBase
     {
         try
         {
+            _requestValidator.ValidateIdentifiers(schema, table, timeColumn);
             var info = _session.RequireConnection();
             var dialect = _dialectProvider.GetDialect(info.Provider);
             var targetConnStr = DatabaseConnectionHelper.WithDatabase(info.ConnectionString, database);
@@ -187,6 +194,10 @@ public class GenericAnalysisController : ControllerBase
         catch (UnauthorizedAccessException ex)
         {
             return Unauthorized(ex.Message);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ex.Message);
         }
         catch (Exception ex)
         {

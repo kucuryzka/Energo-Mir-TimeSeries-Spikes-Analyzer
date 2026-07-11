@@ -36,9 +36,6 @@ public class AnalysisJobsController : ControllerBase
     [HttpGet("overview")]
     public async Task<IActionResult> GetOverview([FromQuery] string? database, [FromQuery] int recentLimit = 50)
     {
-        if (!_session.IsAuthenticated())
-            return Unauthorized();
-
         var overview = await _coordinator.GetOverviewAsync(database, recentLimit);
         return Ok(overview);
     }
@@ -52,9 +49,6 @@ public class AnalysisJobsController : ControllerBase
         [FromQuery] DateTime startDate,
         [FromQuery] DateTime endDate)
     {
-        if (!_session.IsAuthenticated())
-            return Unauthorized();
-
         var estimate = await _timingStats.EstimateAsync(database, schema, table, granularity, startDate, endDate);
         return Ok(estimate);
     }
@@ -62,9 +56,6 @@ public class AnalysisJobsController : ControllerBase
     [HttpPost("{id}/cancel")]
     public async Task<IActionResult> Cancel(string id)
     {
-        if (!_session.IsAuthenticated())
-            return Unauthorized();
-
         var cancelled = await _coordinator.TryCancelAsync(id);
         if (!cancelled)
             return BadRequest(new { message = "Задача не найдена или уже завершена." });
@@ -75,11 +66,9 @@ public class AnalysisJobsController : ControllerBase
     [HttpPost("{id}/resume")]
     public async Task<IActionResult> Resume(string id)
     {
-        if (!_session.IsAuthenticated())
-            return Unauthorized();
-
-        var connection = _session.RequireConnection();
-        var (ok, error) = await _coordinator.TryResumeAsync(id, connection.Provider, connection.ConnectionString);
+        var sessionToken = _session.RequireToken();
+        _ = _session.RequireConnection();
+        var (ok, error) = await _coordinator.TryResumeAsync(id, sessionToken);
         if (!ok)
             return BadRequest(new { message = error });
 
@@ -91,9 +80,6 @@ public class AnalysisJobsController : ControllerBase
         string id,
         CancellationToken cancellationToken = default)
     {
-        if (!_session.IsAuthenticated())
-            return Unauthorized(new { message = "Invalid or missing session token" });
-
         var job = await _internalDb.AnalysisJobs.FindAsync([id], cancellationToken);
         if (job == null)
             return NotFound(new { message = "Задача не найдена." });

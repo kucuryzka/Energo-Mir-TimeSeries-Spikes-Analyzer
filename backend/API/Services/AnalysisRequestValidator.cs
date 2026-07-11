@@ -1,4 +1,5 @@
 using API.Configuration;
+using API.Infrastructure;
 using Core.Enums;
 using Microsoft.Extensions.Options;
 
@@ -46,6 +47,14 @@ public class AnalysisRequestValidator
             throw new ArgumentException(
                 $"Estimated series size ({estimatedPoints:N0} points) exceeds the maximum of {_settings.MaxSeriesPoints:N0}. " +
                 "Use a coarser granularity or a shorter date range.");
+    }
+
+    public void ValidateIdentifiers(string schema, string table, string timeColumn)
+    {
+        SqlIdentifier.EnsureSafeMany(
+            (schema, nameof(schema)),
+            (table, nameof(table)),
+            (timeColumn, nameof(timeColumn)));
     }
 
     public static long EstimateSeriesPoints(

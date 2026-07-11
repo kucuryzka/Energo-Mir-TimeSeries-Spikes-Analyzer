@@ -34,6 +34,11 @@ public class TablePreviewService
         string timeColumn,
         int limit = 15)
     {
+        SqlIdentifier.EnsureSafeMany(
+            (schema, nameof(schema)),
+            (table, nameof(table)),
+            (timeColumn, nameof(timeColumn)));
+
         var dialect = _dialectProvider.GetDialect(DatabaseProvider.Normalize(provider));
         var targetConnStr = DatabaseConnectionHelper.WithDatabase(connectionString, database);
         var qualifiedTable = dialect.QualifyTable(schema, table);

@@ -81,6 +81,7 @@ public class ExplorerController : ControllerBase
     {
         try
         {
+            SqlIdentifier.EnsureSafe(schema, nameof(schema));
             var info = _session.RequireConnection();
             var dialect = _dialectProvider.GetDialect(info.Provider);
             using var conn = OpenConnection(info, database);
@@ -93,6 +94,10 @@ public class ExplorerController : ControllerBase
         {
             return Unauthorized(ex.Message);
         }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { Message = ex.Message });
+        }
         catch (Exception ex)
         {
             return BadRequest(new { Message = ex.Message });
@@ -104,6 +109,7 @@ public class ExplorerController : ControllerBase
     {
         try
         {
+            SqlIdentifier.EnsureSafeMany((schema, nameof(schema)), (table, nameof(table)));
             var info = _session.RequireConnection();
             var dialect = _dialectProvider.GetDialect(info.Provider);
             using var conn = OpenConnection(info, database);
@@ -116,6 +122,10 @@ public class ExplorerController : ControllerBase
         catch (UnauthorizedAccessException ex)
         {
             return Unauthorized(ex.Message);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { Message = ex.Message });
         }
         catch (Exception ex)
         {

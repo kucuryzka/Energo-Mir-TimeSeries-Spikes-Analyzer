@@ -1,3 +1,4 @@
+using API.Infrastructure;
 using Core.Enums;
 
 namespace API.Sql;
@@ -25,7 +26,8 @@ public class MssqlDialect : IDatabaseDialect
         return $"SELECT {LimitClause(limit)} {selectList} FROM {fromClause}{where}{order}";
     }
 
-    public string QuoteIdentifier(string identifier) => $"[{identifier}]";
+    public string QuoteIdentifier(string identifier) =>
+        $"[{SqlIdentifier.EscapeForSqlServer(identifier)}]";
 
     public string QualifyColumn(string? tableAlias, string column)
     {
