@@ -38,7 +38,8 @@ public class AnalysisJobProcessor
         IServiceScopeFactory scopeFactory,
         IAnalysisJobCancellationService cancellation,
         AnalysisJobCoordinatorService coordinator,
-        ILogger<AnalysisJobProcessor> logger)
+        ILogger<AnalysisJobProcessor> logger
+    )
     {
         _internalDb = internalDb;
         _pipeline = pipeline;
@@ -75,14 +76,18 @@ public class AnalysisJobProcessor
         if (connectionInfo == null)
         {
             await FailJobAsync(job, new InvalidOperationException(
-                "Сессия БД недоступна. Подключитесь к базе и продолжите анализ (resume), если есть сохранённый прогресс."));
+                "Сессия БД недоступна. Подключитесь к базе и продолжите анализ (resume), если есть сохранённый прогресс."
+            )
+            );
             return;
         }
 
         if (!ConnectionFingerprint.Matches(job.ConnectionFingerprint, connectionInfo.Provider, connectionInfo.ConnectionString))
         {
             await FailJobAsync(job, new InvalidOperationException(
-                "Текущее подключение не совпадает с сервером, на котором запускался анализ. Подключитесь к тому же хосту и пользователю, затем resume."));
+                "Текущее подключение не совпадает с сервером, на котором запускался анализ. Подключитесь к тому же хосту и пользователю, затем resume."
+            )
+            );
             return;
         }
 
@@ -117,24 +122,19 @@ public class AnalysisJobProcessor
                 };
 
                 response = await _pipeline.ExecuteAsync(
-                    spec,
-                    job.StartDate,
-                    job.EndDate,
-                    job.Granularity,
-                    job.CustomMinutes,
-                    channelId: null,
-                    job.Confidence ?? 95,
-                    job.WindowSize ?? 30,
-                    _spikeDetectionService,
-                    connectionString,
-                    provider,
-                    job.Database,
-                    progress: null,
-                    onBatchAggregated: null,
-                    onBatchCompleted,
-                    ms => finalizeMs = ms,
-                    resume,
-                    cancellationToken);
+                    new AnalysisPipelineRequest(
+                        Spec: spec,
+                        Window: new AnalysisWindow(job.StartDate, job.EndDate, job.Granularity, job.CustomMinutes),
+                        Detection: new AnalysisDetection(_spikeDetectionService, job.Confidence ?? 95, job.WindowSize ?? 30),
+                        Connection: new AnalysisConnection(connectionString, provider, job.Database),
+                        Hooks: new AnalysisPipelineHooks(
+                            OnBatchCompleted: onBatchCompleted,
+                            OnFinalizeCompleted: ms => finalizeMs = ms
+                        ),
+                        Resume: resume
+                    ),
+                    cancellationToken
+                );
             }
             else
             {
@@ -168,7 +168,8 @@ public class AnalysisJobProcessor
                     onBatchCompleted,
                     ms => finalizeMs = ms,
                     resume,
-                    cancellationToken);
+                    cancellationToken
+                );
             }
 
             job.PostProcessDurationMs = finalizeMs;
@@ -204,7 +205,8 @@ public class AnalysisJobProcessor
             _logger.LogWarning(
                 "Job {JobId} has ProcessedUntil={ProcessedUntil} but no partial series; restarting from StartDate",
                 job.Id,
-                job.ProcessedUntil);
+                job.ProcessedUntil
+            );
             job.ProcessedUntil = null;
             job.CompletedBatchCount = 0;
             job.Progress = 0;
@@ -221,7 +223,8 @@ public class AnalysisJobProcessor
             "Resuming job {JobId} from {ProcessedUntil} with {PointCount} seeded points",
             job.Id,
             job.ProcessedUntil,
-            seed.Count);
+            seed.Count
+        );
 
         return new AnalysisResumeState
         {
@@ -279,7 +282,8 @@ public class AnalysisJobProcessor
                     .SetProperty(j => j.AvgBatchDurationMs, job.AvgBatchDurationMs)
                     .SetProperty(j => j.ProcessedUntil, job.ProcessedUntil)
                     .SetProperty(j => j.SeriesPointCount, job.SeriesPointCount)
-                    .SetProperty(j => j.Progress, job.Progress));
+                    .SetProperty(j => j.Progress, job.Progress)
+                );
         };
     }
 

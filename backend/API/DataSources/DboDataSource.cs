@@ -23,7 +23,8 @@ public class DboDataSource : IDataSourceStrategy
         SessionContextService session,
         AnalysisPipelineService pipeline,
         ISqlDialectProvider dialectProvider,
-        IOptions<AnalysisSettings> settings)
+        IOptions<AnalysisSettings> settings
+    )
     {
         _session = session;
         _pipeline = pipeline;
@@ -66,29 +67,22 @@ public class DboDataSource : IDataSourceStrategy
         Func<AnalysisBatchCompletedDto, Task>? onBatchCompleted = null,
         Action<long>? onFinalizeCompleted = null,
         AnalysisResumeState? resume = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default
+    )
     {
         var dialect = _dialectProvider.GetDialect(provider);
         var spec = BuildTableSpec(dialect);
         return _pipeline.ExecuteAsync(
-            spec,
-            request.StartDate,
-            request.EndDate,
-            request.Granularity,
-            request.CustomMinutes,
-            request.ChannelId,
-            request.Confidence,
-            request.WindowSize,
-            spikeDetectionService,
-            connectionString,
-            provider,
-            request.Database,
-            progress,
-            onBatchAggregated,
-            onBatchCompleted,
-            onFinalizeCompleted,
-            resume,
-            cancellationToken);
+            new AnalysisPipelineRequest(
+                Spec: spec,
+                Window: new AnalysisWindow(request.StartDate, request.EndDate, request.Granularity, request.CustomMinutes),
+                Detection: new AnalysisDetection(spikeDetectionService, request.Confidence, request.WindowSize),
+                Connection: new AnalysisConnection(connectionString, provider, request.Database, request.ChannelId),
+                Hooks: new AnalysisPipelineHooks(progress, onBatchAggregated, onBatchCompleted, onFinalizeCompleted),
+                Resume: resume
+            ),
+            cancellationToken
+        );
     }
 
     public Task<List<ChannelContributionDto>> GetObjectDistributionAsync(
@@ -97,7 +91,8 @@ public class DboDataSource : IDataSourceStrategy
         DateTime endDate,
         int? channelId = null,
         string? connectionString = null,
-        DatabaseProviderKind? provider = null)
+        DatabaseProviderKind? provider = null
+    )
     {
         var (conn, prov) = ResolveConnection(connectionString, provider);
         var dialect = _dialectProvider.GetDialect(prov);
@@ -108,7 +103,8 @@ public class DboDataSource : IDataSourceStrategy
             channelId,
             conn,
             prov,
-            database);
+            database
+        );
     }
 
     public Task<List<ChannelContributionDto>> GetPointChannelBreakdownAsync(
@@ -118,7 +114,8 @@ public class DboDataSource : IDataSourceStrategy
         int? customMinutes,
         int? channelId,
         string? connectionString = null,
-        DatabaseProviderKind? provider = null)
+        DatabaseProviderKind? provider = null
+    )
     {
         var (conn, prov) = ResolveConnection(connectionString, provider);
         var dialect = _dialectProvider.GetDialect(prov);
@@ -130,7 +127,8 @@ public class DboDataSource : IDataSourceStrategy
             channelId,
             conn,
             prov,
-            database);
+            database
+        );
     }
 
     public async Task<List<ObjectDto>> GetObjectsAsync(string database, string? search, int page = 1, int pageSize = 50)
@@ -154,10 +152,12 @@ public class DboDataSource : IDataSourceStrategy
         sql = dialect.Paginate(
             sql + $" ORDER BY {dialect.QualifyColumn(null, "OBJECT_NAME")}",
             (page - 1) * pageSize,
-            pageSize);
+            pageSize
+        );
 
         var rows = await connection.QueryAsync<ObjectDto>(
-            new CommandDefinition(sql, args, commandTimeout: _commandTimeoutSeconds));
+            new CommandDefinition(sql, args, commandTimeout: _commandTimeoutSeconds)
+        );
         return rows.AsList();
     }
 
@@ -168,7 +168,8 @@ public class DboDataSource : IDataSourceStrategy
         int? customMinutes,
         int? channelId,
         string? connectionString = null,
-        DatabaseProviderKind? provider = null)
+        DatabaseProviderKind? provider = null
+    )
     {
         var (connStr, prov) = ResolveConnection(connectionString, provider);
         var dialect = _dialectProvider.GetDialect(prov);
@@ -201,7 +202,8 @@ public class DboDataSource : IDataSourceStrategy
             : new { p0 = timestamp, p1 = endDate };
 
         var rows = await connection.QueryAsync<MeteringInfoDto>(
-            new CommandDefinition(sql, args, commandTimeout: _commandTimeoutSeconds));
+            new CommandDefinition(sql, args, commandTimeout: _commandTimeoutSeconds)
+        );
         return rows.AsList();
     }
 }

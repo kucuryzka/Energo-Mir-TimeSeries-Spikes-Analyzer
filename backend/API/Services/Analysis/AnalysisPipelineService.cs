@@ -21,98 +21,91 @@ public class AnalysisPipelineService
 
     public AnalysisPipelineService(
         ISqlDialectProvider dialectProvider,
-        IOptions<AnalysisSettings> settings)
+        IOptions<AnalysisSettings> settings
+    )
     {
         _dialectProvider = dialectProvider;
         _settings = settings.Value;
     }
 
     public async Task<SpikeResponse> ExecuteAsync(
-        AnalysisTableSpec spec,
-        DateTime startDate,
-        DateTime endDate,
-        TimeGranularity granularity,
-        int? customMinutes,
-        int? channelId,
-        double confidence,
-        int windowSize,
-        ISpikeDetectionService spikeDetectionService,
-        string connectionString,
-        DatabaseProviderKind provider,
-        string database,
-        IProgress<int>? progress = null,
-        Action<IReadOnlyList<Core.Models.DataPoint>>? onBatchAggregated = null,
-        Func<AnalysisBatchCompletedDto, Task>? onBatchCompleted = null,
-        Action<long>? onFinalizeCompleted = null,
-        AnalysisResumeState? resume = null,
-        CancellationToken cancellationToken = default)
+        AnalysisPipelineRequest request,
+        CancellationToken cancellationToken = default
+    )
     {
-        var dialect = _dialectProvider.GetDialect(provider);
+        var window = request.Window;
+        var connectionInfo = request.Connection;
+        var detection = request.Detection;
+        var hooks = request.Hooks;
+
+        var dialect = _dialectProvider.GetDialect(connectionInfo.Provider);
         var timeout = _settings.CommandTimeoutSeconds;
-        var targetConn = DatabaseConnectionHelper.WithDatabase(connectionString, database);
-        await using var connection = DatabaseProvider.OpenConnection(provider, targetConn);
+        var targetConn = DatabaseConnectionHelper.WithDatabase(connectionInfo.ConnectionString, connectionInfo.Database);
+        await using var connection = DatabaseProvider.OpenConnection(connectionInfo.Provider, targetConn);
         await connection.OpenAsync(cancellationToken);
 
-        var fromClause = spec.FromClause ?? dialect.QualifyFromTable(spec.Schema, spec.Table, spec.TableAlias);
-        var timeCol = dialect.QualifyColumn(spec.TableAlias, spec.TimeColumn);
-        var timeExpr = dialect.GetTimeBucketExpression(timeCol, granularity, customMinutes);
+        var fromClause = request.Spec.FromClause
+            ?? dialect.QualifyFromTable(request.Spec.Schema, request.Spec.Table, request.Spec.TableAlias);
+        var timeCol = dialect.QualifyColumn(request.Spec.TableAlias, request.Spec.TimeColumn);
+        var timeExpr = dialect.GetTimeBucketExpression(timeCol, window.Granularity, window.CustomMinutes);
 
         var seriesDict = new Dictionary<DateTime, DataPoint>();
         var distributionDict = new Dictionary<int, int>();
         var distributionNames = new Dictionary<int, string>();
         var distributionEventCodes = new Dictionary<int, string>();
 
-        if (resume?.SeedSeries != null)
+        if (request.Resume?.SeedSeries != null)
         {
-            foreach (var point in resume.SeedSeries)
+            foreach (var point in request.Resume.SeedSeries)
                 seriesDict[point.Timestamp] = new DataPoint { Timestamp = point.Timestamp, Value = point.Value };
         }
 
-        var seriesSql = BuildSeriesSql(dialect, fromClause, timeExpr, timeCol, spec, channelId);
-        var usePerBatchDistribution = spec.ChannelColumn != null
-            && !channelId.HasValue
-            && !spec.DeferDistribution
-            && !spec.OmitDistribution;
+        var seriesSql = BuildSeriesSql(dialect, fromClause, timeExpr, timeCol, request.Spec, connectionInfo.ChannelId);
+        var usePerBatchDistribution = request.Spec.ChannelColumn != null
+            && !connectionInfo.ChannelId.HasValue
+            && !request.Spec.DeferDistribution
+            && !request.Spec.OmitDistribution;
         var distributionSql = usePerBatchDistribution
-            ? BuildDistributionSql(dialect, fromClause, timeCol, spec)
+            ? BuildDistributionSql(dialect, fromClause, timeCol, request.Spec)
             : null;
 
-        var currentStart = startDate;
-        var totalDays = Math.Max((endDate - startDate).TotalDays, 1);
+        var currentStart = window.StartDate;
+        var totalDays = Math.Max((window.EndDate - window.StartDate).TotalDays, 1);
         var daysProcessed = 0.0;
         var batchDays = Math.Max(_settings.BatchIntervalDays, 1);
         var totalBatches = Math.Max(1, (int)Math.Ceiling(totalDays / batchDays));
         var batchIndex = 0;
 
-        var resumeFrom = resume?.ProcessedUntil;
-        if (resumeFrom.HasValue && resumeFrom.Value > startDate)
+        var resumeFrom = request.Resume?.ProcessedUntil;
+        if (resumeFrom.HasValue && resumeFrom.Value > window.StartDate)
         {
-            currentStart = resumeFrom.Value < endDate ? resumeFrom.Value : endDate;
-            daysProcessed = Math.Min((currentStart - startDate).TotalDays, totalDays);
+            currentStart = resumeFrom.Value < window.EndDate ? resumeFrom.Value : window.EndDate;
+            daysProcessed = Math.Min((currentStart - window.StartDate).TotalDays, totalDays);
             batchIndex = Math.Min(totalBatches, (int)Math.Floor(daysProcessed / batchDays));
 
-            if (usePerBatchDistribution && currentStart > startDate)
+            if (usePerBatchDistribution && currentStart > window.StartDate)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var priorDist = await QueryAggregatedAsync(
                     connection,
                     distributionSql!,
-                    BuildBatchArgs(startDate, currentStart, channelId),
+                    BuildBatchArgs(window.StartDate, currentStart, connectionInfo.ChannelId),
                     timeout,
-                    cancellationToken);
+                    cancellationToken
+                );
                 MergeDistributionBatch(distributionDict, distributionNames, distributionEventCodes, priorDist);
             }
         }
 
-        while (currentStart < endDate)
+        while (currentStart < window.EndDate)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
             var currentEnd = currentStart.AddDays(batchDays);
-            if (currentEnd > endDate) currentEnd = endDate;
+            if (currentEnd > window.EndDate) currentEnd = window.EndDate;
 
             var batchSw = Stopwatch.StartNew();
-            var args = BuildBatchArgs(currentStart, currentEnd, channelId);
+            var args = BuildBatchArgs(currentStart, currentEnd, connectionInfo.ChannelId);
             var batchSeries = await QueryAggregatedAsync(connection, seriesSql, args, timeout, cancellationToken);
 
             MergeSeriesBatch(seriesDict, batchSeries);
@@ -125,23 +118,23 @@ public class AnalysisPipelineService
 
             daysProcessed += (currentEnd - currentStart).TotalDays;
             var progressPercent = Math.Min(99, (int)(daysProcessed / totalDays * 100));
-            progress?.Report(progressPercent);
+            hooks?.Progress?.Report(progressPercent);
 
             batchSw.Stop();
-            if (onBatchAggregated != null)
+            if (hooks?.OnBatchAggregated != null)
             {
                 var orderedSeries = seriesDict.Values.OrderBy(p => p.Timestamp).ToList();
-                onBatchAggregated.Invoke(orderedSeries);
+                hooks.OnBatchAggregated.Invoke(orderedSeries);
             }
 
-            if (onBatchCompleted != null)
+            if (hooks?.OnBatchCompleted != null)
             {
                 var batchPoints = batchSeries
                     .Select(r => new DataPoint { Timestamp = r.Timestamp, Value = r.Value })
                     .OrderBy(p => p.Timestamp)
                     .ToList();
 
-                await onBatchCompleted(new AnalysisBatchCompletedDto
+                await hooks.OnBatchCompleted(new AnalysisBatchCompletedDto
                 {
                     BatchIndex = batchIndex,
                     TotalBatches = totalBatches,
@@ -150,7 +143,8 @@ public class AnalysisPipelineService
                     BatchEndExclusive = currentEnd,
                     ProgressPercent = progressPercent,
                     BatchPoints = batchPoints,
-                });
+                }
+                );
             }
             batchIndex++;
 
@@ -159,18 +153,30 @@ public class AnalysisPipelineService
 
         var finalizeSw = Stopwatch.StartNew();
         var groupedSeries = seriesDict.Values.OrderBy(p => p.Timestamp).ToList();
-        var anomalyResults = spikeDetectionService.DetectSpikes(groupedSeries, confidence, windowSize);
+        var anomalyResults = detection.SpikeDetectionService.DetectSpikes(
+            groupedSeries, detection.Confidence, detection.WindowSize
+        );
 
         List<ChannelContributionDto> distribution;
-        if (spec.OmitDistribution)
+        if (request.Spec.OmitDistribution)
         {
             distribution = new List<ChannelContributionDto>();
         }
-        else if (spec.ChannelColumn != null && !channelId.HasValue && spec.DeferDistribution)
+        else if (request.Spec.ChannelColumn != null && !connectionInfo.ChannelId.HasValue && request.Spec.DeferDistribution)
         {
             cancellationToken.ThrowIfCancellationRequested();
             distribution = await LoadDistributionAsync(
-                connection, dialect, fromClause, timeCol, spec, startDate, endDate, channelId, timeout, cancellationToken);
+                connection,
+                dialect,
+                fromClause,
+                timeCol,
+                request.Spec,
+                window.StartDate,
+                window.EndDate,
+                connectionInfo.ChannelId,
+                timeout,
+                cancellationToken
+            );
         }
         else
         {
@@ -182,12 +188,13 @@ public class AnalysisPipelineService
                     Count = kv.Value,
                     ChannelName = distributionNames.GetValueOrDefault(kv.Key, string.Empty),
                     EventCode = distributionEventCodes.GetValueOrDefault(kv.Key),
-                })
+                }
+                )
                 .ToList();
         }
 
         finalizeSw.Stop();
-        onFinalizeCompleted?.Invoke(finalizeSw.ElapsedMilliseconds);
+        hooks?.OnFinalizeCompleted?.Invoke(finalizeSw.ElapsedMilliseconds);
 
         return new SpikeResponse
         {
@@ -197,7 +204,8 @@ public class AnalysisPipelineService
                 Value = r.Value,
                 IsSpike = r.IsSpike,
                 PValue = r.PValue
-            }).ToList(),
+            }
+            ).ToList(),
             Distribution = distribution
         };
     }
@@ -210,7 +218,8 @@ public class AnalysisPipelineService
         string connectionString,
         DatabaseProviderKind provider,
         string database,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default
+    )
     {
         if (spec.ChannelColumn == null)
             return new List<ChannelContributionDto>();
@@ -225,7 +234,8 @@ public class AnalysisPipelineService
         var timeCol = dialect.QualifyColumn(spec.TableAlias, spec.TimeColumn);
 
         return await LoadDistributionAsync(
-            connection, dialect, fromClause, timeCol, spec, startDate, endDate, channelId, timeout, cancellationToken);
+            connection, dialect, fromClause, timeCol, spec, startDate, endDate, channelId, timeout, cancellationToken
+        );
     }
 
     public async Task<List<ChannelContributionDto>> GetPointChannelBreakdownAsync(
@@ -236,7 +246,8 @@ public class AnalysisPipelineService
         int? channelId,
         string connectionString,
         DatabaseProviderKind provider,
-        string database)
+        string database
+    )
     {
         if (spec.ChannelColumn == null)
             return new List<ChannelContributionDto>();
@@ -274,7 +285,8 @@ public class AnalysisPipelineService
             connection,
             sql,
             BuildBatchArgs(timestamp, endDate, channelId),
-            timeout);
+            timeout
+        );
 
         return rows
             .Where(r => r.ChannelId.HasValue)
@@ -284,7 +296,8 @@ public class AnalysisPipelineService
                 Count = r.Value,
                 ChannelName = r.ChannelName ?? string.Empty,
                 EventCode = r.EventCode,
-            })
+            }
+            )
             .ToList();
     }
 
@@ -298,7 +311,8 @@ public class AnalysisPipelineService
         DateTime endDate,
         int? channelId,
         int timeout,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default
+    )
     {
         var sql = BuildDistributionSql(dialect, fromClause, timeCol, spec, channelId);
         var rows = await QueryAggregatedAsync(
@@ -306,7 +320,8 @@ public class AnalysisPipelineService
             sql,
             BuildBatchArgs(startDate, endDate, channelId),
             timeout,
-            cancellationToken);
+            cancellationToken
+        );
 
         return rows
             .Where(r => r.ChannelId.HasValue && r.ChannelId.Value != 0)
@@ -317,7 +332,8 @@ public class AnalysisPipelineService
                 Count = r.Value,
                 ChannelName = r.ChannelName ?? string.Empty,
                 EventCode = r.EventCode,
-            })
+            }
+            )
             .ToList();
     }
 
@@ -326,10 +342,12 @@ public class AnalysisPipelineService
         string sql,
         object args,
         int timeout,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default
+    )
     {
         var rows = await connection.QueryAsync<AggregatedResult>(
-            new CommandDefinition(sql, args, commandTimeout: timeout, cancellationToken: cancellationToken));
+            new CommandDefinition(sql, args, commandTimeout: timeout, cancellationToken: cancellationToken)
+        );
         return rows.AsList();
     }
 
@@ -339,7 +357,8 @@ public class AnalysisPipelineService
         string timeExpr,
         string timeCol,
         AnalysisTableSpec spec,
-        int? channelId)
+        int? channelId
+    )
     {
         var channelFilter = "";
         if (channelId.HasValue && spec.ChannelColumn != null)
@@ -361,7 +380,8 @@ public class AnalysisPipelineService
         string fromClause,
         string timeCol,
         AnalysisTableSpec spec,
-        int? channelId = null)
+        int? channelId = null
+    )
     {
         var channelCol = dialect.QualifyColumn(spec.TableAlias, spec.ChannelColumn!);
         var channelFilter = channelId.HasValue ? $" AND {channelCol} = @p2" : "";
@@ -386,12 +406,14 @@ public class AnalysisPipelineService
         string JoinClause,
         string NameExpression,
         string? EventCodeExpression = null,
-        string? EventCodeGroupBy = null);
+        string? EventCodeGroupBy = null
+    );
 
     private static ChannelLookupJoin? BuildChannelLookupJoin(
         IDatabaseDialect dialect,
         AnalysisTableSpec spec,
-        string channelCol)
+        string channelCol
+    )
     {
         if (spec.ChannelLookup == null)
             return null;
@@ -418,7 +440,8 @@ public class AnalysisPipelineService
             joinClause,
             lookupName,
             eventCodeExpr,
-            eventCodeExpr);
+            eventCodeExpr
+        );
     }
 
     private static object BuildBatchArgs(DateTime start, DateTime end, int? channelId) =>
@@ -438,7 +461,8 @@ public class AnalysisPipelineService
         Dictionary<int, int> dict,
         Dictionary<int, string> names,
         Dictionary<int, string> eventCodes,
-        List<AggregatedResult> batch)
+        List<AggregatedResult> batch
+    )
     {
         foreach (var row in batch)
         {
