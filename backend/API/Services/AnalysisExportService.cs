@@ -17,11 +17,8 @@ public class AnalysisExportService
 
     public async Task<(MemoryStream Stream, string FileName)> BuildExcelAsync(
         AnalysisJob job,
-        bool loadDistribution,
         CancellationToken cancellationToken = default)
     {
-        _ = loadDistribution;
-
         if (!_resultService.CanExport(job))
             throw new InvalidOperationException("Analysis result is not available for export.");
 

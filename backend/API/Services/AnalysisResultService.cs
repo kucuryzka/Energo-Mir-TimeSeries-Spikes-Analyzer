@@ -1,4 +1,3 @@
-using System.Runtime.CompilerServices;
 using System.Text.Json;
 using API.Configuration;
 using API.DTOs;
@@ -200,48 +199,6 @@ public class AnalysisResultService
     public bool CanExport(AnalysisJob job) =>
         job.Status is "Completed" or "Cancelled"
         && HasResultFile(job);
-
-    public List<ChannelContributionDto> GetStoredDistribution(AnalysisJob job) =>
-        DeserializeMetadata(job.ResultJson).Distribution;
-
-    public async IAsyncEnumerable<AnomalyResultDto> EnumerateSeriesAsync(
-        AnalysisJob job,
-        [EnumeratorCancellation] CancellationToken cancellationToken = default)
-    {
-        var resultFilePath = ResolveResultFilePath(job);
-        if (resultFilePath == null)
-            throw new InvalidOperationException("Analysis result file is not available.");
-
-        await foreach (var point in ReadSeriesLinesAsync(resultFilePath, cancellationToken))
-            yield return point;
-    }
-
-    private async IAsyncEnumerable<AnomalyResultDto> ReadSeriesLinesAsync(
-        string fileName,
-        [EnumeratorCancellation] CancellationToken cancellationToken)
-    {
-        var fullPath = Path.Combine(_resultsRoot, fileName);
-        if (!File.Exists(fullPath))
-            throw new FileNotFoundException("Analysis result file was not found.", fullPath);
-
-        await using var stream = new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-        using var reader = new StreamReader(stream);
-        while (true)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var line = await reader.ReadLineAsync(cancellationToken);
-            if (line is null)
-                break;
-
-            if (string.IsNullOrWhiteSpace(line))
-                continue;
-
-            var point = JsonSerializer.Deserialize<AnomalyResultDto>(line, _jsonOptions)
-                ?? throw new InvalidDataException("Analysis result file contains an invalid line.");
-
-            yield return point;
-        }
-    }
 
     public async Task<SpikeResponse?> TryLoadPartialAsync(string jobId, CancellationToken cancellationToken = default)
     {

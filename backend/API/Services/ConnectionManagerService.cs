@@ -23,10 +23,4 @@ public class ConnectionManagerService : IConnectionManagerService
         _sessions.TryGetValue(token, out var info);
         return info;
     }
-
-    public void RemoveSession(string token)
-    {
-        if (!string.IsNullOrEmpty(token))
-            _sessions.TryRemove(token, out _);
-    }
 }
