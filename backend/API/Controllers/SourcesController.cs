@@ -24,8 +24,7 @@ public class SourcesController : ControllerBase
             Id = s.Id,
             Name = s.Name,
             SupportedDistributions = s.SupportedDistributions
-        }
-        ).ToList();
+        }).ToList();
         return Ok(sources);
     }
 }

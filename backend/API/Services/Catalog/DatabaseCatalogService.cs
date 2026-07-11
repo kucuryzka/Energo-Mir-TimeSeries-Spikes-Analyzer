@@ -70,8 +70,7 @@ public class DatabaseCatalogService
             {
                 Name = (string)c.Name,
                 IsTimeColumn = (bool)c.IsTimeColumn
-            }
-            )
+            })
             .ToList();
     }
 

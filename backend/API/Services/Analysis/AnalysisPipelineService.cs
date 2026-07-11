@@ -143,8 +143,7 @@ public class AnalysisPipelineService
                     BatchEndExclusive = currentEnd,
                     ProgressPercent = progressPercent,
                     BatchPoints = batchPoints,
-                }
-                );
+                });
             }
             batchIndex++;
 
@@ -188,8 +187,7 @@ public class AnalysisPipelineService
                     Count = kv.Value,
                     ChannelName = distributionNames.GetValueOrDefault(kv.Key, string.Empty),
                     EventCode = distributionEventCodes.GetValueOrDefault(kv.Key),
-                }
-                )
+                })
                 .ToList();
         }
 
@@ -204,8 +202,7 @@ public class AnalysisPipelineService
                 Value = r.Value,
                 IsSpike = r.IsSpike,
                 PValue = r.PValue
-            }
-            ).ToList(),
+            }).ToList(),
             Distribution = distribution
         };
     }
@@ -296,8 +293,7 @@ public class AnalysisPipelineService
                 Count = r.Value,
                 ChannelName = r.ChannelName ?? string.Empty,
                 EventCode = r.EventCode,
-            }
-            )
+            })
             .ToList();
     }
 
@@ -332,8 +328,7 @@ public class AnalysisPipelineService
                 Count = r.Value,
                 ChannelName = r.ChannelName ?? string.Empty,
                 EventCode = r.EventCode,
-            }
-            )
+            })
             .ToList();
     }
 

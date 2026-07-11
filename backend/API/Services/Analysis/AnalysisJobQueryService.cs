@@ -71,8 +71,7 @@ public class AnalysisJobQueryService
                 CompletedAt = j.CompletedAt,
                 SeriesPointCount = j.SeriesPointCount,
                 ChannelId = j.Table == "All" ? null : j.Table
-            }
-            )
+            })
             .ToListAsync();
     }
 
@@ -92,8 +91,7 @@ public class AnalysisJobQueryService
                 CreatedAt = j.CreatedAt,
                 CompletedAt = j.CompletedAt,
                 SeriesPointCount = j.SeriesPointCount
-            }
-            )
+            })
             .ToListAsync();
     }
 

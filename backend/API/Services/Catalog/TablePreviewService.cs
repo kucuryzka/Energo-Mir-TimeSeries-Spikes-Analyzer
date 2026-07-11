@@ -104,8 +104,7 @@ public class TablePreviewService
                 kv => kv.Key,
                 kv => NormalizeCellValue(kv.Value)
             );
-        }
-        ).ToList();
+        }).ToList();
 
     private static object? GetColumnValue(object? row, string columnName)
     {

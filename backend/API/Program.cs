@@ -68,15 +68,13 @@ if (!dashboardPath.Equals("/hangfire", StringComparison.OrdinalIgnoreCase))
         if (context.Request.Path.StartsWithSegments("/hangfire", out var remainder))
             context.Request.Path = new PathString(dashboardPath) + remainder;
         await next();
-    }
-    );
+    });
 }
 
 app.UseHangfireDashboard(dashboardPath, new DashboardOptions
 {
     Authorization = [new HangfireDashboardAuthorizationFilter()]
-}
-);
+});
 
 if (app.Environment.IsProduction())
     app.UseHttpsRedirection();

@@ -27,8 +27,7 @@ public class InternalDbContext : DbContext
             entity.Property(e => e.Schema).IsRequired().HasMaxLength(200);
             entity.Property(e => e.Table).IsRequired().HasMaxLength(200);
             entity.Property(e => e.TimeColumn).IsRequired().HasMaxLength(200);
-        }
-        );
+        });
 
         modelBuilder.Entity<AnalysisSourceTimingStats>(entity =>
         {
@@ -36,7 +35,6 @@ public class InternalDbContext : DbContext
             entity.Property(e => e.Database).HasColumnName("Database");
             entity.Property(e => e.Schema).HasColumnName("Schema");
             entity.Property(e => e.Table).HasColumnName("Table");
-        }
-        );
+        });
     }
 }

@@ -26,8 +26,7 @@ public static class ServiceCollectionExtensions
             options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedPrefix;
             options.KnownNetworks.Clear();
             options.KnownProxies.Clear();
-        }
-        );
+        });
 
         services.AddScoped<RequireSessionFilter>();
         services.AddScoped<ApiExceptionFilter>();
@@ -35,15 +34,13 @@ public static class ServiceCollectionExtensions
             {
                 options.Filters.AddService<RequireSessionFilter>();
                 options.Filters.AddService<ApiExceptionFilter>();
-            }
-        )
+            })
             .AddJsonOptions(options =>
             {
                 options.JsonSerializerOptions.Converters.Add(
                     new System.Text.Json.Serialization.JsonStringEnumConverter()
                 );
-            }
-            );
+            });
         services.AddHttpContextAccessor();
         services.AddEndpointsApiExplorer();
         services.AddSwaggerGen();
@@ -81,8 +78,7 @@ public static class ServiceCollectionExtensions
                 InvisibilityTimeout = TimeSpan.FromHours(
                     Math.Clamp(analysisSettings.HangfireJobInvisibilityTimeoutHours, 1, 90 * 24)
                 )
-            }
-            )
+            })
         );
 
         services.AddHangfireServer(options =>
@@ -90,8 +86,7 @@ public static class ServiceCollectionExtensions
             options.WorkerCount = analysisSettings.HangfireWorkerCount;
             options.SchedulePollingInterval = TimeSpan.FromSeconds(1);
             options.ServerCheckInterval = TimeSpan.FromSeconds(5);
-        }
-        );
+        });
 
         return services;
     }
@@ -135,10 +130,8 @@ public static class ServiceCollectionExtensions
                 policy.WithOrigins(corsSettings.AllowedOrigins)
                     .AllowAnyHeader()
                     .AllowAnyMethod();
-            }
-            );
-        }
-        );
+            });
+        });
         return services;
     }
 }
