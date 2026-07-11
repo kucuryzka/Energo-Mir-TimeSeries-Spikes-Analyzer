@@ -60,7 +60,7 @@ HTTP-слой API. Все контроллеры в `API/Controllers/`, namespac
 | Детализация точки | `GET point-details`, `GET point-channels` |
 | Job lifecycle | `POST enqueue`, `GET status/{id}`, `GET partial-result/{id}`, `GET result/{id}`, `GET history`, `DELETE history/{id}` |
 
-Enqueue: `DetectSpikesRequest`, schema=`dbo`, Hangfire `ProcessSourceJobAsync(..., "Dbo", token)`.
+Enqueue: `DetectSpikesRequest`, schema=`dbo`, Hangfire `ProcessSourceJobAsync(..., "dbo", token)`.
 
 Job endpoints делегируют `AnalysisJobQueryService`.
 

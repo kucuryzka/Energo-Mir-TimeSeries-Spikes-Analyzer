@@ -16,7 +16,6 @@
 | `ResultsDirectory` | results | JSONL results (относительно ContentRoot) |
 | `MaxAnalysisRangeDays` | 3650 | Лимит периода анализа |
 | `MaxSeriesPoints` | 500000 | Лимит точек в серии |
-| `ProgressSaveIntervalSeconds` | 5 | Интервал сохранения partial |
 | `PreviewCommandTimeoutSeconds` | 120 | Timeout preview запросов |
 
 Регистрация: `builder.Services.Configure<AnalysisSettings>(...)`.
@@ -50,7 +49,7 @@
 
 | Имя | Использование |
 |-----|---------------|
-| `DefaultConnection` | `AddDbContext<AppDbContext>` — **не используется** в runtime path |
+| `DefaultConnection` | unused |
 | `InternalConnection` | SQLite: InternalDb + Hangfire |
 
 ## Program.cs binding pattern

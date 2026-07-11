@@ -5,7 +5,7 @@
 ## IDataSourceStrategy
 
 ```csharp
-string Id { get; }           // Hangfire source id: "Dbo", "em_protocol"
+string Id { get; }           // Hangfire source id: "dbo", "em_protocol"
 string Name { get; }
 string[] SupportedDistributions { get; }
 

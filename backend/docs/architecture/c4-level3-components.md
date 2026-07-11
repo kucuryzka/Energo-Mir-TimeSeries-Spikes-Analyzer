@@ -79,7 +79,7 @@ Core                 — ML spike detection
 
 ```
 IDataSourceStrategy
-├── DboDataSource        (Id = "Dbo")
+├── DboDataSource        (Id = "dbo")
 └── EmProtocolDataSource (Id = "em_protocol")
 ```
 
@@ -101,7 +101,7 @@ IDataSourceStrategy
 
 | Lifetime | Типы |
 |----------|------|
-| Singleton | `ISqlDialectProvider`, `IDatabaseContextFactory`, `IConnectionManagerService`, `AnalysisResultService`, `EventCodeLabelService`, `IAnalysisJobCancellationService` |
+| Singleton | `ISqlDialectProvider`, `IConnectionManagerService`, `AnalysisResultService`, `IAnalysisJobCancellationService` |
 | Scoped | Pipeline, `ExcelReportService`, Export, DataSources, `SessionContextService`, `AnalysisJobQueryService`, Coordinator, TimingStats |
 | Hosted | `StaleAnalysisJobCleanup` |
 

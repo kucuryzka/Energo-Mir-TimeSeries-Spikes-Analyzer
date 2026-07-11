@@ -23,7 +23,6 @@ void RemoveSession(string token);
 
 | Interface | Файл | Реализация |
 |-----------|------|------------|
-| `IDatabaseContextFactory` | DatabaseContextFactory.cs | DatabaseContextFactory |
 | `IAnalysisJobCancellationService` | AnalysisJobCancellationService.cs | AnalysisJobCancellationService |
 
 ## DataSources contracts
@@ -49,4 +48,4 @@ void RemoveSession(string token);
 
 ## Принцип
 
-Новые cross-cutting контракты — в `Contracts/`. Интерфейсы, тесно связанные с одной реализацией, могут оставаться в том же файле (как `IDatabaseContextFactory`).
+Новые cross-cutting контракты — в `Contracts/`. Интерфейсы, тесно связанные с одной реализацией, могут оставаться рядом с реализацией.

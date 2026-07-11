@@ -9,7 +9,7 @@
 Ответственность:
 
 1. Разбиение периода на батчи (`BatchIntervalDays` из settings).
-2. SQL-агрегация в `DataPoint` (Dapper + `AppDbContext` через factory).
+2. SQL-агрегация в `DataPoint` (Dapper).
 3. Вызов `ISpikeDetectionService` для каждого батча.
 4. Callbacks: progress, partial save, batch completed stats.
 5. Формирование `SpikeResponse` (series + distribution).
@@ -47,7 +47,8 @@ Hangfire worker. Точки входа:
 | `ResolveResultFilePath` | `ResultFilePath` или fallback `{jobId}.jsonl` |
 | `SaveAsync` / `LoadAsync` | JSONL + metadata в `ResultJson` |
 | `GetStoredDistribution` | Distribution из `ResultJson` |
-| `SavePartialSeriesAsync` | Polling во время Running |
+| `AppendPartialSeriesAsync` | Checkpoint: дописать точки батча в `{jobId}.partial.jsonl` |
+| `LoadPartialAlignedAsync` | Resume: загрузка + отсечение хвоста ≥ `ProcessedUntil` |
 | `EnumerateSeriesAsync` | Streaming чтения JSONL (не используется текущим export) |
 
 Файлы: `{ContentRoot}/results/` (настраивается `AnalysisSettings.ResultsDirectory`).
@@ -134,10 +135,6 @@ Hangfire worker. Точки входа:
 ## ConnectionManagerService
 
 In-memory `ConcurrentDictionary<string, DatabaseSessionInfo>`. **Не персистентен** — рестарт API сбрасывает сессии.
-
-## DatabaseContextFactory
-
-Создаёт `AppDbContext` с динамической connection string и provider (MSSQL/Npgsql). Используется DataSources и pipeline.
 
 ## StaleAnalysisJobCleanup
 

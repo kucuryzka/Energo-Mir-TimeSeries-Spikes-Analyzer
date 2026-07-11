@@ -37,11 +37,9 @@ InternalDbSchemaUpdater.Apply(internalDb);
 
 Добавляет колонки через `PRAGMA table_info` + `ALTER TABLE` (идемпотентно).
 
-## AppDbContext
+## Customer DB access
 
-Тонкая обёртка `DbContext` для **customer DB**. Создаётся только через `DatabaseContextFactory.Create(connectionString, provider, database)` — не регистрируется в DI.
-
-Запросы к customer DB идут через `Database.SqlQueryRaw<T>()` (Dapper/EF raw SQL), не через `DbSet`.
+Customer SQL идёт через `DatabaseProvider.OpenConnection` + **Dapper** (`CommandDefinition` + timeout из `AnalysisSettings`). `AppDbContext` удалён.
 
 ## Статические ресурсы API
 

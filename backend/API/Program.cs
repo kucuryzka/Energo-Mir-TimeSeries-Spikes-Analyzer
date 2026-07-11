@@ -43,7 +43,11 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
     options.KnownProxies.Clear();
 });
 
-builder.Services.AddControllers()
+builder.Services.AddScoped<RequireSessionFilter>();
+builder.Services.AddControllers(options =>
+    {
+        options.Filters.AddService<RequireSessionFilter>();
+    })
     .AddJsonOptions(options =>
     {
         options.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
@@ -53,11 +57,16 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddDbContext<InternalDbContext>(options =>
     options.UseSqlite(builder.Configuration.GetConnectionString("InternalConnection")));
 
+// Hangfire.Storage.SQLite takes a file path; a full ADO connection string becomes a literal filename.
+var hangfireSqlitePath = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder(
+    builder.Configuration.GetConnectionString("InternalConnection") ?? "Data Source=app.db")
+    .DataSource;
+
 builder.Services.AddHangfire(configuration => configuration
     .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
     .UseSimpleAssemblyNameTypeSerializer()
     .UseRecommendedSerializerSettings()
-    .UseSQLiteStorage(builder.Configuration.GetConnectionString("InternalConnection"), new SQLiteStorageOptions
+    .UseSQLiteStorage(hangfireSqlitePath, new SQLiteStorageOptions
     {
         QueuePollInterval = TimeSpan.FromSeconds(1),
         // Must exceed the longest expected analysis (days/weeks). Cap at 90 days.
@@ -73,7 +82,6 @@ builder.Services.AddHangfireServer(options =>
 });
 
 builder.Services.AddSingleton<API.Sql.ISqlDialectProvider, API.Sql.SqlDialectProvider>();
-builder.Services.AddSingleton<API.Services.IDatabaseContextFactory, API.Services.DatabaseContextFactory>();
 builder.Services.AddScoped<AnalysisPipelineService>();
 
 builder.Services.AddScoped<Core.Interfaces.ISpikeDetectionService, Core.Services.SpikeDetectionService>();
@@ -88,6 +96,7 @@ builder.Services.AddScoped<AnalysisRequestValidator>();
 builder.Services.AddScoped<AnalysisJobQueryService>();
 builder.Services.AddSingleton<API.Services.IAnalysisJobCancellationService, API.Services.AnalysisJobCancellationService>();
 builder.Services.AddScoped<API.Services.AnalysisJobCoordinatorService>();
+builder.Services.AddScoped<API.Services.AnalysisJobProcessor>();
 builder.Services.AddScoped<API.Services.AnalysisTimingStatsService>();
 
 builder.Services.AddScoped<API.DataSources.IDataSourceStrategy, API.DataSources.EmProtocolDataSource>();

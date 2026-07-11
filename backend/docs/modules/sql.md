@@ -37,7 +37,7 @@ IDatabaseDialect GetDialect(string provider);
 ```
 ExplorerController     → list databases/schemas/tables/columns
 AnalysisPipelineService → aggregation queries
-DboDataSource / EmProtocolDataSource → raw SQL via EF SqlQueryRaw
+DboDataSource / EmProtocolDataSource / pipeline → raw SQL via Dapper
 TablePreviewService    → count + sample via Dapper
 GenericAnalysisController → point-details via Dapper
 ```
@@ -61,7 +61,6 @@ DatabaseProvider.OpenConnection(provider, connectionString)
 1. Реализовать `IDatabaseDialect`
 2. Добавить case в `SqlDialectProvider`
 3. Расширить `DatabaseProvider.OpenConnection`
-4. Обновить `DatabaseContextFactory` (UseSqlServer / UseNpgsql)
 
 ## Пример квалификации
 

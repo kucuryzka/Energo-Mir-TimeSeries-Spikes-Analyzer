@@ -93,7 +93,7 @@
 
 ```json
 [
-  { "id": "Dbo", "name": "DBO Meterings", "supportedDistributions": [] },
+  { "id": "dbo", "name": "dbo", "supportedDistributions": [] },
   { "id": "em_protocol", "name": "EM Protocol", "supportedDistributions": ["EventCode"] }
 ]
 ```
@@ -130,7 +130,7 @@
 | GET | `history` | Нет | `database` | `AnalysisJobHistoryItemDto[]` |
 | DELETE | `history/{id}` | Нет | — | 204 / 404 |
 
-**Enqueue:** создаёт `AnalysisJob` с `schema=dbo`, `table=channelId` или `"All"`, `timeColumn=""`. Hangfire: `ProcessSourceJobAsync(..., "Dbo", token)`.
+**Enqueue:** создаёт `AnalysisJob` с `schema=dbo`, `table=channelId` или `"All"`, `timeColumn=""`. Hangfire: `ProcessSourceJobAsync(..., "dbo", token)`.
 
 ---
 
@@ -216,7 +216,7 @@
 ```json
 {
   "database": "MyDb",
-  "sourceId": "Dbo",
+  "sourceId": "dbo",
   "channelId": null,
   "granularity": "Hour",
   "customMinutes": 15,
