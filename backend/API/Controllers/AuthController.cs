@@ -1,7 +1,6 @@
 using System.Data.Common;
 using API.Contracts;
 using API.DTOs;
-using API.Infrastructure;
 using API.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -23,26 +22,19 @@ public class AuthController : ControllerBase
     [HttpPost("connect")]
     public async Task<IActionResult> Connect([FromBody] AuthRequest request)
     {
-        try
+        string connectionString = BuildConnectionString(request);
+        var normalizedProvider = DatabaseProvider.Normalize(request.Provider);
+
+        using DbConnection conn = DatabaseProvider.OpenConnection(normalizedProvider, connectionString);
+        await conn.OpenAsync();
+
+        var token = _connectionManager.CreateSession(new DatabaseSessionInfo
         {
-            string connectionString = BuildConnectionString(request);
-            var normalizedProvider = DatabaseProvider.Normalize(request.Provider);
+            Provider = normalizedProvider,
+            ConnectionString = connectionString
+        });
 
-            using DbConnection conn = DatabaseProvider.OpenConnection(normalizedProvider, connectionString);
-            await conn.OpenAsync();
-
-            var token = _connectionManager.CreateSession(new DatabaseSessionInfo
-            {
-                Provider = normalizedProvider,
-                ConnectionString = connectionString
-            });
-
-            return Ok(new AuthResponse { Token = token, Message = "Connected successfully" });
-        }
-        catch (Exception ex)
-        {
-            return BadRequest(new { Message = $"Connection failed: {ex.Message}" });
-        }
+        return Ok(new AuthResponse { Token = token, Message = "Connected successfully" });
     }
 
     [HttpPost("disconnect")]
@@ -50,10 +42,10 @@ public class AuthController : ControllerBase
     {
         var token = session.GetToken();
         if (string.IsNullOrEmpty(token) || _connectionManager.GetConnectionInfo(token) == null)
-            return Unauthorized(new { Message = "Invalid or missing session token" });
+            return Unauthorized(new { message = "Invalid or missing session token" });
 
         _connectionManager.RemoveSession(token);
-        return Ok(new { Message = "Disconnected successfully" });
+        return Ok(new { message = "Disconnected successfully" });
     }
 
     private string BuildConnectionString(AuthRequest request)

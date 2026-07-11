@@ -1,10 +1,5 @@
-using API.Data;
 using API.DataSources;
-using API.DTOs;
-using API.Infrastructure;
-using API.Models;
 using API.Services;
-using Hangfire;
 using Microsoft.AspNetCore.Mvc;
 
 namespace API.Controllers;
@@ -14,224 +9,59 @@ namespace API.Controllers;
 public class EmProtocolController : ControllerBase
 {
     private readonly EmProtocolDataSource _dataSource;
-    private readonly InternalDbContext _internalDb;
-    private readonly IBackgroundJobClient _backgroundJobClient;
     private readonly TablePreviewService _tablePreview;
-    private readonly AnalysisRequestValidator _requestValidator;
     private readonly SessionContextService _session;
-    private readonly AnalysisJobQueryService _jobQueries;
 
     public EmProtocolController(
-        IEnumerable<IDataSourceStrategy> dataSourceStrategies,
-        InternalDbContext internalDb,
-        IBackgroundJobClient backgroundJobClient,
+        EmProtocolDataSource dataSource,
         TablePreviewService tablePreview,
-        AnalysisRequestValidator requestValidator,
-        SessionContextService session,
-        AnalysisJobQueryService jobQueries)
+        SessionContextService session)
     {
-        _dataSource = dataSourceStrategies.OfType<EmProtocolDataSource>().FirstOrDefault()
-            ?? throw new InvalidOperationException("EmProtocolDataSource not registered.");
-        _internalDb = internalDb;
-        _backgroundJobClient = backgroundJobClient;
+        _dataSource = dataSource;
         _tablePreview = tablePreview;
-        _requestValidator = requestValidator;
         _session = session;
-        _jobQueries = jobQueries;
     }
 
     [HttpGet("channels")]
     public async Task<IActionResult> GetChannels([FromQuery] string database, [FromQuery] string? search, [FromQuery] int page = 1, [FromQuery] int pageSize = 50)
     {
-        try
-        {
-            if (page < 1) page = 1;
-            if (pageSize < 1) pageSize = 1;
-            if (pageSize > 1000) pageSize = 1000;
+        if (page < 1) page = 1;
+        if (pageSize < 1) pageSize = 1;
+        if (pageSize > 1000) pageSize = 1000;
 
-            var channels = await _dataSource.GetChannelsAsync(database, search, page, pageSize);
-            return Ok(channels);
-        }
-        catch (UnauthorizedAccessException ex)
-        {
-            return Unauthorized(ex.Message);
-        }
-        catch (Exception ex)
-        {
-            return StatusCode(500, new { message = "An error occurred while fetching channels.", details = ex.Message });
-        }
+        var channels = await _dataSource.GetChannelsAsync(database, search, page, pageSize);
+        return Ok(channels);
     }
 
     [HttpGet("distribution")]
     public async Task<IActionResult> GetDistribution([FromQuery] string database, [FromQuery] DateTime startDate, [FromQuery] DateTime endDate, [FromQuery] string categoryName)
     {
-        try
-        {
-            if (_dataSource.SupportedDistributions.Contains(categoryName))
-            {
-                var distribution = await _dataSource.GetDistributionAsync(database, startDate, endDate, categoryName);
-                return Ok(distribution);
-            }
-
+        if (!_dataSource.SupportedDistributions.Contains(categoryName))
             return BadRequest($"Source does not support distribution by '{categoryName}'.");
-        }
-        catch (UnauthorizedAccessException ex)
-        {
-            return Unauthorized(ex.Message);
-        }
-        catch (Exception ex)
-        {
-            return StatusCode(500, new { message = "An error occurred while fetching distribution.", details = ex.Message });
-        }
+
+        var distribution = await _dataSource.GetDistributionAsync(database, startDate, endDate, categoryName);
+        return Ok(distribution);
     }
 
     [HttpGet("preview")]
     public async Task<IActionResult> GetTablePreview([FromQuery] string database, [FromQuery] int limit = 15)
     {
-        try
-        {
-            var info = _session.RequireConnection();
-            var preview = await _tablePreview.LoadAsync(
-                info.ConnectionString,
-                info.Provider,
-                database,
-                schema: "em_protocol",
-                table: "Records",
-                timeColumn: "InsertTime",
-                limit);
-            return Ok(preview);
-        }
-        catch (UnauthorizedAccessException ex)
-        {
-            return Unauthorized(ex.Message);
-        }
-        catch (Exception ex)
-        {
-            return StatusCode(500, new { message = "An error occurred while fetching table preview.", details = ex.Message });
-        }
+        var info = _session.RequireConnection();
+        var preview = await _tablePreview.LoadAsync(
+            info.ConnectionString,
+            info.Provider,
+            database,
+            schema: "em_protocol",
+            table: "Records",
+            timeColumn: "InsertTime",
+            limit);
+        return Ok(preview);
     }
 
     [HttpGet("point-channels")]
     public async Task<IActionResult> GetPointChannels([FromQuery] string database, [FromQuery] DateTime timestamp, [FromQuery] Core.Enums.TimeGranularity granularity, [FromQuery] int? customMinutes, [FromQuery] int? channelId)
     {
-        try
-        {
-            var breakdown = await _dataSource.GetPointChannelBreakdownAsync(database, timestamp, granularity, customMinutes, channelId);
-            return Ok(breakdown);
-        }
-        catch (UnauthorizedAccessException ex)
-        {
-            return Unauthorized(ex.Message);
-        }
-        catch (Exception ex)
-        {
-            return StatusCode(500, new { message = "An error occurred while fetching point channel breakdown.", details = ex.Message });
-        }
+        var breakdown = await _dataSource.GetPointChannelBreakdownAsync(database, timestamp, granularity, customMinutes, channelId);
+        return Ok(breakdown);
     }
-
-    [HttpPost("enqueue")]
-    public async Task<IActionResult> EnqueueAnalysis([FromBody] DetectSpikesRequest request)
-    {
-        try
-        {
-            var sessionToken = _session.RequireToken();
-            var connection = _session.RequireConnection();
-            _requestValidator.Validate(
-                request.StartDate,
-                request.EndDate,
-                request.Granularity,
-                request.WindowSize,
-                request.CustomMinutes);
-
-            var job = new AnalysisJob
-            {
-                Database = request.Database,
-                Schema = "em_protocol",
-                Table = request.ChannelId?.ToString() ?? "All",
-                TimeColumn = "",
-                StartDate = request.StartDate,
-                EndDate = request.EndDate,
-                Granularity = request.Granularity,
-                CustomMinutes = request.CustomMinutes,
-                Confidence = request.Confidence,
-                WindowSize = request.WindowSize,
-                SourceId = "em_protocol",
-                ConnectionFingerprint = ConnectionFingerprint.From(connection.Provider, connection.ConnectionString)
-            };
-
-            _internalDb.AnalysisJobs.Add(job);
-            await _internalDb.SaveChangesAsync();
-
-            var jobId = _backgroundJobClient.Enqueue<AnalysisJobProcessor>(
-                p => p.ProcessSourceJobAsync(job.Id, "em_protocol", sessionToken));
-
-            job.BackgroundJobId = jobId;
-            await _internalDb.SaveChangesAsync();
-
-            return Ok(new { JobId = job.Id });
-        }
-        catch (UnauthorizedAccessException ex)
-        {
-            return Unauthorized(ex.Message);
-        }
-        catch (ArgumentException ex)
-        {
-            return BadRequest(ex.Message);
-        }
-        catch (Exception ex)
-        {
-            return StatusCode(500, new { message = "Error enqueueing analysis", details = ex.Message });
-        }
-    }
-
-    [HttpGet("status/{id}")]
-    public async Task<IActionResult> GetJobStatus(string id)
-    {
-        var job = await _jobQueries.FindJobAsync(id);
-        if (job == null) return NotFound();
-        return Ok(_jobQueries.BuildStatus(job));
-    }
-
-    [HttpGet("partial-result/{id}")]
-    public async Task<IActionResult> GetPartialJobResult(string id)
-    {
-        var job = await _jobQueries.FindJobAsync(id);
-        if (job == null) return NotFound();
-
-        try
-        {
-            var partial = await _jobQueries.TryLoadPartialAsync(id, job);
-            if (partial == null) return NotFound();
-            return Ok(partial);
-        }
-        catch (InvalidOperationException ex)
-        {
-            return BadRequest(ex.Message);
-        }
-    }
-
-    [HttpGet("result/{id}")]
-    public async Task<IActionResult> GetJobResult(string id)
-    {
-        var job = await _jobQueries.FindJobAsync(id);
-        if (job == null) return NotFound();
-
-        try
-        {
-            var json = await _jobQueries.SerializeResultAsync(job);
-            return Content(json, "application/json");
-        }
-        catch (InvalidOperationException ex)
-        {
-            return BadRequest(ex.Message);
-        }
-    }
-
-    [HttpGet("history")]
-    public async Task<IActionResult> GetHistory([FromQuery] string database) =>
-        Ok(await _jobQueries.GetChannelScopedHistoryAsync(database, "em_protocol"));
-
-    [HttpDelete("history/{id}")]
-    public async Task<IActionResult> DeleteHistoryItem(string id) =>
-        await _jobQueries.DeleteJobAsync(id) ? NoContent() : NotFound();
 }

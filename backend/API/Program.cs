@@ -1,7 +1,6 @@
 using API.Configuration;
 using API.Contracts;
 using API.Data;
-using API.Infrastructure;
 using API.Services;
 using Hangfire;
 using Hangfire.Storage.SQLite;
@@ -21,6 +20,9 @@ var analysisSettings = builder.Configuration
 var hangfireSettings = builder.Configuration
     .GetSection(HangfireSettings.SectionName)
     .Get<HangfireSettings>() ?? new HangfireSettings();
+var corsSettings = builder.Configuration
+    .GetSection(CorsSettings.SectionName)
+    .Get<CorsSettings>() ?? new CorsSettings();
 var fileLogSettings = builder.Configuration
     .GetSection(LoggingSettings.SectionName)
     .Get<LoggingSettings>() ?? new LoggingSettings();
@@ -44,9 +46,11 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
 });
 
 builder.Services.AddScoped<RequireSessionFilter>();
+builder.Services.AddScoped<ApiExceptionFilter>();
 builder.Services.AddControllers(options =>
     {
         options.Filters.AddService<RequireSessionFilter>();
+        options.Filters.AddService<ApiExceptionFilter>();
     })
     .AddJsonOptions(options =>
     {
@@ -57,9 +61,10 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddDbContext<InternalDbContext>(options =>
     options.UseSqlite(builder.Configuration.GetConnectionString("InternalConnection")));
 
-// Hangfire.Storage.SQLite takes a file path; a full ADO connection string becomes a literal filename.
 var hangfireSqlitePath = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder(
-    builder.Configuration.GetConnectionString("InternalConnection") ?? "Data Source=app.db")
+    builder.Configuration.GetConnectionString("HangfireConnection")
+    ?? builder.Configuration.GetConnectionString("InternalConnection")
+    ?? "Data Source=hangfire.db")
     .DataSource;
 
 builder.Services.AddHangfire(configuration => configuration
@@ -69,7 +74,6 @@ builder.Services.AddHangfire(configuration => configuration
     .UseSQLiteStorage(hangfireSqlitePath, new SQLiteStorageOptions
     {
         QueuePollInterval = TimeSpan.FromSeconds(1),
-        // Must exceed the longest expected analysis (days/weeks). Cap at 90 days.
         InvisibilityTimeout = TimeSpan.FromHours(
             Math.Clamp(analysisSettings.HangfireJobInvisibilityTimeoutHours, 1, 90 * 24))
     }));
@@ -81,33 +85,36 @@ builder.Services.AddHangfireServer(options =>
     options.ServerCheckInterval = TimeSpan.FromSeconds(5);
 });
 
-builder.Services.AddSingleton<API.Sql.ISqlDialectProvider, API.Sql.SqlDialectProvider>();
+builder.Services.AddSingleton<ISqlDialectProvider, API.Sql.SqlDialectProvider>();
 builder.Services.AddScoped<AnalysisPipelineService>();
 
 builder.Services.AddScoped<Core.Interfaces.ISpikeDetectionService, Core.Services.SpikeDetectionService>();
 builder.Services.AddSingleton<IConnectionManagerService, ConnectionManagerService>();
 builder.Services.AddScoped<SessionContextService>();
-builder.Services.AddScoped<DataSourceConnectionResolver>();
 builder.Services.AddSingleton<AnalysisResultService>();
 builder.Services.AddScoped<ExcelReportService>();
 builder.Services.AddScoped<AnalysisExportService>();
 builder.Services.AddScoped<TablePreviewService>();
+builder.Services.AddScoped<DatabaseCatalogService>();
+builder.Services.AddScoped<GenericTableQueryService>();
 builder.Services.AddScoped<AnalysisRequestValidator>();
 builder.Services.AddScoped<AnalysisJobQueryService>();
-builder.Services.AddSingleton<API.Services.IAnalysisJobCancellationService, API.Services.AnalysisJobCancellationService>();
-builder.Services.AddScoped<API.Services.AnalysisJobCoordinatorService>();
-builder.Services.AddScoped<API.Services.AnalysisJobProcessor>();
-builder.Services.AddScoped<API.Services.AnalysisTimingStatsService>();
+builder.Services.AddSingleton<IAnalysisJobCancellationService, AnalysisJobCancellationService>();
+builder.Services.AddScoped<AnalysisJobCoordinatorService>();
+builder.Services.AddScoped<AnalysisJobProcessor>();
+builder.Services.AddScoped<AnalysisTimingStatsService>();
 
-builder.Services.AddScoped<API.DataSources.IDataSourceStrategy, API.DataSources.EmProtocolDataSource>();
-builder.Services.AddScoped<API.DataSources.IDataSourceStrategy, API.DataSources.DboDataSource>();
-builder.Services.AddHostedService<API.Services.StaleAnalysisJobCleanup>();
+builder.Services.AddScoped<API.DataSources.EmProtocolDataSource>();
+builder.Services.AddScoped<API.DataSources.DboDataSource>();
+builder.Services.AddScoped<IDataSourceStrategy>(sp => sp.GetRequiredService<API.DataSources.EmProtocolDataSource>());
+builder.Services.AddScoped<IDataSourceStrategy>(sp => sp.GetRequiredService<API.DataSources.DboDataSource>());
+builder.Services.AddHostedService<API.BackgroundServices.StaleAnalysisJobCleanup>();
 
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("ReactCorsPolicy", policy =>
     {
-        policy.WithOrigins("http://localhost:5173", "http://localhost:3000", "http://localhost")
+        policy.WithOrigins(corsSettings.AllowedOrigins)
               .AllowAnyHeader()
               .AllowAnyMethod();
     });
@@ -138,7 +145,6 @@ var dashboardPath = string.IsNullOrEmpty(dashboardPrefix)
     ? "/hangfire"
     : $"{dashboardPrefix}/hangfire";
 
-// Старый nginx: proxy_pass .../hangfire/ — переписываем на публичный путь dashboard.
 if (!dashboardPath.Equals("/hangfire", StringComparison.OrdinalIgnoreCase))
 {
     app.Use(async (context, next) =>
@@ -151,7 +157,7 @@ if (!dashboardPath.Equals("/hangfire", StringComparison.OrdinalIgnoreCase))
 
 app.UseHangfireDashboard(dashboardPath, new DashboardOptions
 {
-    Authorization = [new API.Infrastructure.HangfireDashboardAuthorizationFilter()]
+    Authorization = [new HangfireDashboardAuthorizationFilter()]
 });
 
 if (app.Environment.IsProduction())
