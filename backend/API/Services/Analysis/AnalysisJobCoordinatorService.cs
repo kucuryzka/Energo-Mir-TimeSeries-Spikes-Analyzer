@@ -287,7 +287,7 @@ public class AnalysisJobCoordinatorService
         if (job == null)
             return (false, "Задача не найдена.");
 
-        if (job.Status is AnalysisJobStatus.Completed or AnalysisJobStatus.Cancelled or AnalysisJobStatus.Running)
+        if (job.Status is AnalysisJobStatus.Completed or AnalysisJobStatus.Running)
             return (false, "Задачу нельзя возобновить в текущем статусе.");
 
         if (!AnalysisJobResumeRules.CanResume(job, _resultService.HasPartialResult(job.Id)))

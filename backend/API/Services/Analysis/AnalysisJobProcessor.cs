@@ -203,16 +203,16 @@ public class AnalysisJobProcessor
         if (aligned.Count == 0)
         {
             _logger.LogWarning(
-                "Job {JobId} has ProcessedUntil={ProcessedUntil} but no partial series; restarting from StartDate",
+                "Job {JobId} has ProcessedUntil={ProcessedUntil} but no partial series; resuming from checkpoint without seed",
                 job.Id,
                 job.ProcessedUntil
             );
-            job.ProcessedUntil = null;
-            job.CompletedBatchCount = 0;
-            job.Progress = 0;
-            _resultService.DeletePartialFile(job.Id);
-            await _internalDb.SaveChangesAsync();
-            return null;
+
+            return new AnalysisResumeState
+            {
+                ProcessedUntil = job.ProcessedUntil,
+                SeedSeries = Array.Empty<DataPoint>()
+            };
         }
 
         var seed = aligned
