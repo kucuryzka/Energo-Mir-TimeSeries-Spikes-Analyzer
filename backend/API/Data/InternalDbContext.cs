@@ -15,7 +15,7 @@ public class InternalDbContext : DbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
-        
+
         modelBuilder.Entity<AnalysisJob>(entity =>
         {
             entity.HasKey(e => e.Id);

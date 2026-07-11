@@ -20,10 +20,11 @@ public class SourcesController : ControllerBase
     [HttpGet]
     public IActionResult GetSources()
     {
-        var sources = _dataSourceStrategies.Select(s => new { 
-            Id = s.Id, 
+        var sources = _dataSourceStrategies.Select(s => new
+        {
+            Id = s.Id,
             Name = s.Name,
-            SupportedDistributions = s.SupportedDistributions 
+            SupportedDistributions = s.SupportedDistributions
         }).ToList();
         return Ok(sources);
     }
