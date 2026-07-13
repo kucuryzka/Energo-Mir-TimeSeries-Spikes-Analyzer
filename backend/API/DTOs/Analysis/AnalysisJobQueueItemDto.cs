@@ -13,6 +13,8 @@ public class AnalysisJobQueueItemDto
 
     public string Database { get; set; } = string.Empty;
 
+    public string? ConnectionHint { get; set; }
+
     public string Schema { get; set; } = string.Empty;
 
     public string Table { get; set; } = string.Empty;
@@ -52,4 +54,18 @@ public class AnalysisJobQueueItemDto
     public long? LastBatchDurationMs { get; set; }
 
     public long? PostProcessDurationMs { get; set; }
+
+    public long? ActiveDurationMs { get; set; }
+
+    public DateTime? RunningStartedAt { get; set; }
+
+    public AnalysisQueueJobKind QueueJobKind { get; set; } = AnalysisQueueJobKind.Analysis;
+
+    public string? ParentJobId { get; set; }
+
+    public string? SupplementLabel { get; set; }
+
+    public bool CanRetry { get; set; }
+
+    public string? ErrorMessage { get; set; }
 }

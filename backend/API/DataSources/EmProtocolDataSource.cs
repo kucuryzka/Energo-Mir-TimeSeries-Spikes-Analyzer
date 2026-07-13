@@ -170,12 +170,19 @@ public class EmProtocolDataSource : IDataSourceStrategy
         return rows.AsList();
     }
 
-    public async Task<List<DistributionItemDto>> GetDistributionAsync(string database, DateTime start, DateTime end, string categoryName)
+    public async Task<List<DistributionItemDto>> GetDistributionAsync(
+        string database,
+        DateTime start,
+        DateTime end,
+        string categoryName,
+        string? connectionString = null,
+        DatabaseProviderKind? provider = null
+    )
     {
         if (categoryName != "EventCode")
             return new List<DistributionItemDto>();
 
-        var (connStr, prov) = ResolveConnection(null, null);
+        var (connStr, prov) = ResolveConnection(connectionString, provider);
         var dialect = _dialectProvider.GetDialect(prov);
         var targetConn = DatabaseConnectionHelper.WithDatabase(connStr, database);
         await using var connection = DatabaseProvider.OpenConnection(prov, targetConn);

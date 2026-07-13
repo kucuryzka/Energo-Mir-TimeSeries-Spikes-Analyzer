@@ -58,23 +58,25 @@ dotnet run --project backend/API/API.csproj
 ## Ключевые потоки
 
 1. **Подключение** — `AuthController` → `ConnectionManagerService` (in-memory сессии).
-2. **Постановка анализа** — `Dbo` / `em-protocol` / `GenericAnalysis` → `InternalDbContext` + Hangfire.
-3. **Выполнение** — `AnalysisJobProcessor` → `IDataSourceStrategy` или `AnalysisPipelineService` → `SpikeDetectionService`.
+2. **Постановка анализа** — `AnalysisJobsController` (canonical `/api/analysis-jobs` + legacy `/dbo|em-protocol|GenericAnalysis/enqueue`) → `app.db` + Hangfire (`hangfire.db`).
+3. **Выполнение** — `AnalysisJobProcessor` → checkpoint (`ProcessedUntil` + partial.jsonl) → `AnalysisPipelineService` / `IDataSourceStrategy` → `SpikeDetectionService`.
 4. **Результат** — JSONL в `results/`, метаданные в SQLite (`AnalysisJobs`).
-5. **Очередь и экспорт** — `AnalysisJobsController` (overview, cancel, Excel из шаблона — только лист «Данные»).
+5. **Очередь, cancel, resume, экспорт** — `AnalysisJobsController` (overview, cancel, resume, Excel — лист «Данные»).
 
 ## Excel export (текущее состояние)
 
-Упрощённая реализация (коммит `1109952`):
+Упрощённая реализация:
 
 - `AnalysisExportService` → `LoadAsync` + `ExcelReportService.GenerateReport`
 - Заполняется только лист **«Данные»** шаблона `ReportTemplate.xlsx`
 - Параметр `loadDistribution` на эндпоинте **игнорируется**
 - `ExcelChartPatcher.cs` присутствует в репозитории, но **не вызывается**
 
-Расширенный экспорт (chart patch, «Параметры», «Распределение») был в коммите `dabda02` и может быть восстановлен из истории git.
+Расширенный экспорт (chart patch, «Параметры», «Распределение») может быть восстановлен из истории git.
 
 ## Известные ограничения
 
-- Эндпоинты жизненного цикла job дублируются по префиксам `/dbo`, `/em-protocol`, `/GenericAnalysis` (обратная совместимость с фронтом).
+- Legacy job URL aliases на `AnalysisJobsController` для совместимости с фронтом (enqueue/status/result/history).
 - Поле `AnalysisJob.Table` перегружено: для dbo/em — ID канала или `"All"`, для generic — имя таблицы.
+- Resume без partial-файла возможен по `ProcessedUntil` + `CompletedBatchCount`, но seed-серия в ML будет неполной до следующих батчей.
+- Сессия БД in-memory: после рестарта API нужен reconnect; job с checkpoint → Failed + `canResume`.

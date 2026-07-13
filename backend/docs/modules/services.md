@@ -32,11 +32,22 @@ Hangfire worker. Точки входа:
 
 Жизненный цикл job:
 
-1. Load job из SQLite, status → Running
-2. Resolve connection из session token
-3. Execute через strategy или pipeline
-4. `AnalysisResultService.SaveAsync` → JSONL
-5. Update timing stats, status → Completed / Failed / Cancelled
+1. Load job из SQLite; skip если уже Completed / Failed / Cancelled
+2. Resolve connection из session token + проверка **ConnectionFingerprint**
+3. `PrepareResumeStateAsync` — seed из partial + `ProcessedUntil` (или resume без seed)
+4. `SetRunningAsync(isResume)` — при resume прогресс **не** сбрасывается
+5. Execute через strategy или pipeline с `AnalysisResumeState`
+6. Checkpoint после батча: append partial + update `ProcessedUntil` / batch metrics
+7. `AnalysisResultService.SaveAsync` → JSONL; status → Completed / Failed / Cancelled
+
+## AnalysisJobResumeRules
+
+```csharp
+CanResume =
+  status is Failed | Pending | Cancelled
+  && ProcessedUntil.HasValue
+  && (hasPartialResult || CompletedBatchCount > 0)
+```
 
 ## AnalysisResultService (Singleton)
 
@@ -47,7 +58,7 @@ Hangfire worker. Точки входа:
 | `ResolveResultFilePath` | `ResultFilePath` или fallback `{jobId}.jsonl` |
 | `SaveAsync` / `LoadAsync` | JSONL + metadata в `ResultJson` |
 | `GetStoredDistribution` | Distribution из `ResultJson` |
-| `AppendPartialSeriesAsync` | Checkpoint: дописать точки батча в `{jobId}.partial.jsonl` |
+| `AppendPartialSeriesAsync` | Checkpoint: дописать точки батча в `{jobId}.partial.jsonl` (пустой батч — no-op) |
 | `LoadPartialAlignedAsync` | Resume: загрузка + отсечение хвоста ≥ `ProcessedUntil` |
 | `EnumerateSeriesAsync` | Streaming чтения JSONL (не используется текущим export) |
 
@@ -55,23 +66,25 @@ Hangfire worker. Точки входа:
 
 ## AnalysisJobQueryService
 
-Общая логика status / result / history / delete для трёх контроллеров.
+Общая логика status / result / history / delete для job API (и legacy aliases).
 
 | Метод | HTTP-аналог |
 |-------|-------------|
 | `FindJobAsync` | — |
-| `BuildStatus` | GET status |
+| `BuildStatus` | GET status (`CanResume`) |
 | `TryLoadPartialAsync` | GET partial-result |
 | `SerializeResultAsync` | GET result |
 | `GetChannelScopedHistoryAsync` | history dbo/em |
 | `GetTableScopedHistoryAsync` | history generic |
-| `DeleteJobAsync` | DELETE history |
+| `DeleteJobAsync` | DELETE job |
 
 ## AnalysisJobCoordinatorService
 
-- `GetOverviewAsync` — active + recent jobs для UI очереди.
-- `TryCancelAsync` — cancel token + Hangfire delete.
-- `ResolveSourceKind` — маппинг schema → `dbo` | `em` | `generic` для фронта.
+- `EnqueueAsync` / `EnqueueGenericAnalysisAsync` — создание job + fingerprint + Hangfire
+- `GetOverviewAsync` — active + recent (`CanResume` на каждом item)
+- `TryCancelAsync` / `MarkCancelledAsync` — cancel token + Hangfire detach
+- `TryResumeAsync` — requeue Failed/Cancelled/Pending с checkpoint
+- `ResolveSourceKind` — schema → `dbo` | `em_protocol` | `generic`
 
 ## AnalysisTimingStatsService
 

@@ -40,6 +40,7 @@ public class AnalysisJob
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? CompletedAt { get; set; }
+    public DateTime? RunningStartedAt { get; set; }
     public string? ErrorMessage { get; set; }
 
     public string? ResultJson { get; set; }

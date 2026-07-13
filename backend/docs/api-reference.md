@@ -174,14 +174,38 @@
 
 ## Analysis Jobs — `/api/analysis-jobs`
 
-Глобальная очередь и экспорт. Все эндпоинты требуют **IsAuthenticated**.
+Глобальная очередь, resume и экспорт. Большинство эндпоинтов требуют **IsAuthenticated** / живую сессию.
 
-| Метод | Путь | Query | Response |
-|-------|------|-------|----------|
+| Метод | Путь | Query / Body | Response |
+|-------|------|--------------|----------|
+| POST | `` | `EnqueueAnalysisJobRequest` | `{ jobId }` |
+| GET | `` | `database`, `schema`, `table?` | history list |
 | GET | `overview` | `database?`, `recentLimit=50` | `AnalysisJobsOverviewDto` |
 | GET | `estimate` | `database`, `schema`, `table`, `granularity`, `startDate`, `endDate` | `AnalysisDurationEstimateDto` |
+| GET | `{id}` | — | `AnalysisJobStatusDto` |
+| GET | `{id}/partial-result` | — | `SpikeResponse` |
+| GET | `{id}/result` | — | `SpikeResponse` JSON |
+| DELETE | `{id}` | — | 204 / 404 |
 | POST | `{id}/cancel` | — | `{ "message": "..." }` |
-| GET | `{id}/export` | `loadDistribution=false` | `.xlsx` file |
+| POST | `{id}/resume` | — | `{ "message": "..." }` или 400 |
+| GET | `{id}/export` | `loadDistribution` (игнорируется) | `.xlsx` file |
+
+### Legacy job URL aliases
+
+Те же handlers на `AnalysisJobsController` (не отдельные контроллеры) для совместимости с фронтом:
+
+- `POST /api/dbo|em-protocol|GenericAnalysis/enqueue`
+- `GET …/status|partial-result|result/{id}`
+- `GET …/history`, `DELETE …/history/{id}`
+
+Browse/preview/point endpoints остаются на `DboController` / `EmProtocolController` / `GenericAnalysisController`.
+
+### Resume (`POST {id}/resume`)
+
+1. Требует `X-Session-Token` и активное подключение к customer DB
+2. `canResume`: статус `Failed` \| `Pending` \| `Cancelled` + `ProcessedUntil` + (partial-файл **или** `CompletedBatchCount > 0`)
+3. Fingerprint текущего подключения должен совпасть с `job.ConnectionFingerprint`
+4. Job → `Pending`, Hangfire enqueue снова; pipeline продолжает с `ProcessedUntil` + seed из `{id}.partial.jsonl` (или без seed, если partial пуст)
 
 ### Excel export (`GET {id}/export`)
 
@@ -204,7 +228,7 @@
 |-----|---------|
 | 401 | Нет/невалидный токен |
 | 404 | Job не найден |
-| 400 | Результат недоступен для экспорта |
+| 400 | Результат недоступен для экспорта / resume невозможен |
 | 500 | Ошибка формирования файла |
 
 ---
@@ -282,11 +306,12 @@
   "errorMessage": null,
   "hasResult": false,
   "hasPartialResult": true,
+  "canResume": false,
   "seriesPointCount": 1200
 }
 ```
 
-Статусы: `Pending`, `Running`, `Completed`, `Failed`, `Cancelled`.
+Статусы: `Pending`, `Running`, `Completed`, `Failed`, `Cancelled` (enum → JSON string).
 
 ### AnalysisJobsOverviewDto
 
@@ -297,7 +322,7 @@
 }
 ```
 
-`AnalysisJobQueueItemDto` включает: `id`, `status`, `progress`, `database`, `schema`, `table`, `sourceKind` (`dbo`|`em`|`generic`), даты, `granularity`, `queuePosition`, `hasPartialResult`, `hasResult`, метрики батчей.
+`AnalysisJobQueueItemDto` включает: `id`, `status`, `progress`, `database`, `schema`, `table`, `sourceKind` (`dbo`|`em_protocol`|`generic`), даты, `granularity`, `queuePosition`, `hasPartialResult`, `hasResult`, **`canResume`**, метрики батчей.
 
 ### AnalysisDurationEstimateDto
 

@@ -1,7 +1,10 @@
 using System.Text.Json;
 using API.Configuration;
 using API.DTOs;
+using API.DTOs.Analysis;
+using API.Infrastructure.Database;
 using API.Models;
+using Core.Enums;
 using Microsoft.Extensions.Options;
 
 namespace API.Services.Analysis;
@@ -101,7 +104,11 @@ public class AnalysisResultService
         job.ResultFilePath = fileName;
         job.SeriesPointCount = response.Series.Count;
         job.ResultJson = JsonSerializer.Serialize(
-            new AnalysisJobMetadata { Distribution = response.Distribution },
+            new AnalysisJobMetadata
+            {
+                Distribution = response.Distribution,
+                CategoricalDistributions = response.CategoricalDistributions,
+            },
             _jsonOptions
         );
     }
@@ -116,7 +123,8 @@ public class AnalysisResultService
             return new SpikeResponse
             {
                 Series = series,
-                Distribution = metadata.Distribution
+                Distribution = metadata.Distribution,
+                CategoricalDistributions = metadata.CategoricalDistributions,
             };
         }
 
@@ -148,6 +156,224 @@ public class AnalysisResultService
 
         DeleteFileIfExists(Path.Combine(_resultsRoot, $"{job.Id}.jsonl"));
         DeletePartialFile(job.Id);
+        DeleteDetailsFile(job.Id);
+    }
+
+    public void DeleteDetailsFile(string jobId) =>
+        DeleteFileIfExists(GetDetailsFilePath(jobId));
+
+    public async Task<PointDetailsLineDto?> TryLoadPointDetailsAsync(
+        string jobId,
+        DateTime timestamp,
+        int? channelId,
+        TimeGranularity granularity,
+        int? customMinutes,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var path = GetDetailsFilePath(jobId);
+        if (!File.Exists(path))
+            return null;
+
+        await foreach (var line in ReadDetailsLinesAsync(path, cancellationToken))
+        {
+            if (TimestampsMatch(line.Timestamp, timestamp, granularity, customMinutes)
+                && line.ChannelId == channelId)
+                return line;
+        }
+
+        return null;
+    }
+
+    public async Task<long?> TryGetSeriesPointValueAsync(
+        AnalysisJob job,
+        DateTime alignedTimestamp,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var fileName = ResolveResultFilePath(job);
+        if (fileName == null)
+            return null;
+
+        var fullPath = Path.Combine(_resultsRoot, fileName);
+        if (!File.Exists(fullPath))
+            return null;
+
+        await using var stream = new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        using var reader = new StreamReader(stream);
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var line = await reader.ReadLineAsync(cancellationToken);
+            if (line is null)
+                break;
+
+            if (string.IsNullOrWhiteSpace(line))
+                continue;
+
+            var point = JsonSerializer.Deserialize<AnomalyResultDto>(line, _jsonOptions);
+            if (point != null
+                && TimestampsMatch(point.Timestamp, alignedTimestamp, job.Granularity, job.CustomMinutes))
+                return Convert.ToInt64(point.Value);
+        }
+
+        return null;
+    }
+
+    public async Task UpsertPointDetailsLineAsync(
+        string jobId,
+        PointDetailsLineDto line,
+        TimeGranularity granularity,
+        int? customMinutes,
+        CancellationToken cancellationToken = default
+    )
+    {
+        line.Timestamp = GranularityHelper.AlignToBucketStart(line.Timestamp, granularity, customMinutes);
+        var path = GetDetailsFilePath(jobId);
+        var map = new Dictionary<string, PointDetailsLineDto>(StringComparer.Ordinal);
+
+        if (File.Exists(path))
+        {
+            await foreach (var existing in ReadDetailsLinesAsync(path, cancellationToken))
+                map[DetailsKey(existing.Timestamp, existing.ChannelId, granularity, customMinutes)] = existing;
+        }
+
+        map[DetailsKey(line.Timestamp, line.ChannelId, granularity, customMinutes)] = line;
+        await WriteDetailsLinesAsync(path, map.Values, cancellationToken);
+    }
+
+    public async Task PatchSeriesChannelBreakdownAsync(
+        AnalysisJob job,
+        DateTime timestamp,
+        IReadOnlyList<ChannelContributionDto> channelBreakdown,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var aligned = GranularityHelper.AlignToBucketStart(timestamp, job.Granularity, job.CustomMinutes);
+        var fileName = ResolveResultFilePath(job);
+        if (fileName == null)
+            return;
+
+        var fullPath = Path.Combine(_resultsRoot, fileName);
+        if (!File.Exists(fullPath))
+            return;
+
+        var tempPath = fullPath + ".tmp";
+        var updated = false;
+
+        try
+        {
+            await using (var readStream = new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+            using (var reader = new StreamReader(readStream))
+            await using (var writeStream = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None))
+            await using (var writer = new StreamWriter(writeStream))
+            {
+                while (true)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var line = await reader.ReadLineAsync(cancellationToken);
+                    if (line is null)
+                        break;
+
+                    if (string.IsNullOrWhiteSpace(line))
+                    {
+                        await writer.WriteLineAsync(line);
+                        continue;
+                    }
+
+                    var point = JsonSerializer.Deserialize<AnomalyResultDto>(line, _jsonOptions);
+                    if (point != null && TimestampsMatch(point.Timestamp, aligned, job.Granularity, job.CustomMinutes))
+                    {
+                        point.ChannelBreakdown = channelBreakdown.ToList();
+                        updated = true;
+                        await writer.WriteLineAsync(JsonSerializer.Serialize(point, _jsonOptions));
+                    }
+                    else
+                    {
+                        await writer.WriteLineAsync(line);
+                    }
+                }
+            }
+
+            if (updated)
+                File.Move(tempPath, fullPath, overwrite: true);
+            else if (File.Exists(tempPath))
+                File.Delete(tempPath);
+        }
+        catch
+        {
+            if (File.Exists(tempPath))
+            {
+                try { File.Delete(tempPath); } catch { }
+            }
+            throw;
+        }
+    }
+
+    private static string DetailsKey(DateTime timestamp, int? channelId, TimeGranularity granularity, int? customMinutes) =>
+        $"{GranularityHelper.AlignToBucketStart(timestamp, granularity, customMinutes):O}|{channelId?.ToString() ?? "all"}";
+
+    private static bool TimestampsMatch(DateTime left, DateTime right, TimeGranularity granularity, int? customMinutes) =>
+        GranularityHelper.AlignToBucketStart(left, granularity, customMinutes).ToUniversalTime().Ticks
+        == GranularityHelper.AlignToBucketStart(right, granularity, customMinutes).ToUniversalTime().Ticks;
+
+    private static string GetDetailsFileName(string jobId) => $"{jobId}.details.jsonl";
+
+    private string GetDetailsFilePath(string jobId) =>
+        Path.Combine(_resultsRoot, GetDetailsFileName(jobId));
+
+    private async Task WriteDetailsLinesAsync(
+        string path,
+        IEnumerable<PointDetailsLineDto> lines,
+        CancellationToken cancellationToken
+    )
+    {
+        var tempPath = path + ".tmp";
+        try
+        {
+            await using (var stream = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None))
+            await using (var writer = new StreamWriter(stream))
+            {
+                foreach (var line in lines.OrderBy(l => l.Timestamp))
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    await writer.WriteLineAsync(JsonSerializer.Serialize(line, _jsonOptions));
+                }
+            }
+
+            File.Move(tempPath, path, overwrite: true);
+        }
+        catch
+        {
+            if (File.Exists(tempPath))
+            {
+                try { File.Delete(tempPath); } catch { }
+            }
+            throw;
+        }
+    }
+
+    private async IAsyncEnumerable<PointDetailsLineDto> ReadDetailsLinesAsync(
+        string path,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken
+    )
+    {
+        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        using var reader = new StreamReader(stream);
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var line = await reader.ReadLineAsync(cancellationToken);
+            if (line is null)
+                yield break;
+
+            if (string.IsNullOrWhiteSpace(line))
+                continue;
+
+            var dto = JsonSerializer.Deserialize<PointDetailsLineDto>(line, _jsonOptions);
+            if (dto != null)
+                yield return dto;
+        }
     }
 
     private static void DeleteFileIfExists(string fullPath)

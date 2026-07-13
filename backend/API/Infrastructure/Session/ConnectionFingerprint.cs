@@ -50,6 +50,27 @@ public static class ConnectionFingerprint
     public static bool Matches(string? expectedFingerprint, string provider, string connectionString) =>
         Matches(expectedFingerprint, DatabaseProvider.Parse(provider), connectionString);
 
+    public static string? ToDisplay(string? fingerprint)
+    {
+        if (string.IsNullOrWhiteSpace(fingerprint))
+            return null;
+
+        var parts = fingerprint.Split('|');
+        if (parts.Length < 4)
+            return fingerprint;
+
+        var provider = parts[0];
+        var host = parts[1];
+        var port = parts[2];
+        var user = parts[3];
+        var endpoint = port is "1433" or "5432" || string.IsNullOrEmpty(port)
+            ? host
+            : $"{host}:{port}";
+        return string.IsNullOrEmpty(user)
+            ? $"{provider} · {endpoint}"
+            : $"{provider} · {endpoint} · {user}";
+    }
+
     private static void ParseSqlServerEndpoint(string server, out string host, out string port)
     {
         server = server.Trim();

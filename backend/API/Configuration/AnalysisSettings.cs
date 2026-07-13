@@ -10,6 +10,8 @@ public class AnalysisSettings
 
     public int HangfireWorkerCount { get; set; } = 2;
 
+    public int HangfireSupplementWorkerCount { get; set; } = 1;
+
     public int HangfireJobInvisibilityTimeoutHours { get; set; } = 720;
 
     public string ResultsDirectory { get; set; } = "results";

@@ -13,8 +13,11 @@ API contracts в `API/DTOs/`. JSON serialization: **camelCase**.
 
 | DTO | Назначение |
 |-----|------------|
-| `DetectSpikesRequest` | Enqueue для dbo / em_protocol |
-| `GenericAnalysisRequest` | Enqueue для generic analyzer |
+| `DetectSpikesRequest` | Legacy enqueue body для dbo / em_protocol |
+| `GenericAnalysisRequest` | Legacy enqueue body для generic analyzer |
+| `EnqueueAnalysisJobRequest` | Unified `POST /api/analysis-jobs` |
+| `AnalysisPipelineRequest` | Внутренний typed request pipeline (window, detection, connection, hooks, resume) |
+| `AnalysisResumeState` | `ProcessedUntil` + `SeedSeries` для продолжения |
 
 ### DetectSpikesRequest
 
@@ -28,7 +31,7 @@ double Confidence;   // default 95
 int WindowSize;      // default 30
 ```
 
-`sourceId` в теле запроса фронтенд передаёт, но контроллеры dbo/em не используют — источник определяется маршрутом.
+`sourceId` в теле запроса фронтенд передаёт; unified enqueue использует его / schema для выбора источника.
 
 ## Ответы анализа
 
@@ -52,13 +55,14 @@ int WindowSize;      // default 30
 
 | DTO | Использование |
 |-----|---------------|
-| `AnalysisJobQueueItemDto` | Overview, queue UI |
+| `AnalysisJobQueueItemDto` | Overview, queue UI (`CanResume`) |
 | `AnalysisJobsOverviewDto` | active + recent |
-| `AnalysisJobStatusDto` | status endpoint (новый тип) |
+| `AnalysisJobStatusDto` | status endpoint (`CanResume`) |
 | `AnalysisJobHistoryItemDto` | history lists |
 | `AnalysisDurationEstimateDto` | ETA |
-| `AnalysisBatchCompletedDto` | Callback из pipeline |
+| `AnalysisBatchCompletedDto` | Callback из pipeline (BatchPoints, BatchEndExclusive) |
 | `AnalysisJobMetadata` | Внутренний wrapper для ResultJson |
+| `AnalysisResumeState` | Seed + курсор для resume |
 
 ## SpikeResponse (файл SpikeResponse.cs)
 

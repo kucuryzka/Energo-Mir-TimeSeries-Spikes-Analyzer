@@ -58,14 +58,17 @@ C4Container
 
 Таблицы:
 
-- `AnalysisJobs` — метаданные и статус job
+- `AnalysisJobs` — метаданные и статус job (`ProcessedUntil`, `ConnectionFingerprint`, batch metrics)
 - `AnalysisSourceTimingStats` — средняя длительность батчей для ETA
-- Hangfire tables — очередь и состояние фоновых задач
+
+### Hangfire SQLite (`hangfire.db`)
+
+Отдельный файл (`HangfireConnection`). Очередь и состояние фоновых задач **не** в `app.db`.
 
 ### Result files (`results/`)
 
 - `{jobId}.jsonl` — финальная серия (`AnomalyResultDto` построчно)
-- `{jobId}.partial.jsonl` — промежуточная серия во время выполнения
+- `{jobId}.partial.jsonl` — промежуточная серия (checkpoint / seed для resume)
 
 ### Customer DB
 

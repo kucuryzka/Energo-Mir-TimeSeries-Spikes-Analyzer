@@ -21,15 +21,14 @@ public class AnalysisTimingStatsService
     public static string BuildSourceKey(string database, string schema, string table, TimeGranularity granularity) =>
         $"{database}|{schema}|{table}|{granularity}";
 
-    public async Task RecordCompletedJobAsync(AnalysisJob job, long saveDurationMs, CancellationToken cancellationToken = default)
+    public async Task RecordCompletedJobAsync(AnalysisJob job, CancellationToken cancellationToken = default)
     {
         if (job.CompletedBatchCount <= 0 || job.AvgBatchDurationMs is null or <= 0)
             return;
 
         var periodDays = Math.Max((job.EndDate - job.StartDate).TotalDays, 1);
-        var totalJobMs = job.AvgBatchDurationMs.Value * job.CompletedBatchCount
-            + (job.PostProcessDurationMs ?? 0)
-            + saveDurationMs;
+        var postProcessMs = job.PostProcessDurationMs ?? 0;
+        var totalJobMs = job.AvgBatchDurationMs.Value * job.CompletedBatchCount + postProcessMs;
         var msPerDay = (long)(totalJobMs / periodDays);
 
         var sourceKey = BuildSourceKey(job.Database, job.Schema, job.Table, job.Granularity);
@@ -45,7 +44,7 @@ public class AnalysisTimingStatsService
                 Granularity = job.Granularity.ToString(),
                 SampleCount = 1,
                 AvgBatchDurationMs = job.AvgBatchDurationMs.Value,
-                AvgPostProcessDurationMs = (job.PostProcessDurationMs ?? 0) + saveDurationMs,
+                AvgPostProcessDurationMs = postProcessMs,
                 AvgMsPerPeriodDay = msPerDay,
                 LastUpdatedAt = DateTime.UtcNow,
             };
@@ -56,8 +55,7 @@ public class AnalysisTimingStatsService
             var n = stats.SampleCount;
             stats.SampleCount = n + 1;
             stats.AvgBatchDurationMs = (stats.AvgBatchDurationMs * n + job.AvgBatchDurationMs.Value) / (n + 1);
-            var postMs = (job.PostProcessDurationMs ?? 0) + saveDurationMs;
-            stats.AvgPostProcessDurationMs = (stats.AvgPostProcessDurationMs * n + postMs) / (n + 1);
+            stats.AvgPostProcessDurationMs = (stats.AvgPostProcessDurationMs * n + postProcessMs) / (n + 1);
             stats.AvgMsPerPeriodDay = (stats.AvgMsPerPeriodDay * n + msPerDay) / (n + 1);
             stats.LastUpdatedAt = DateTime.UtcNow;
         }

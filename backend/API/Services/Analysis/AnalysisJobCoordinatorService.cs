@@ -1,6 +1,7 @@
 using API.Contracts;
 using API.Data;
 using API.DTOs;
+using API.Infrastructure.Session;
 using API.Models;
 using Hangfire;
 using Hangfire.Storage;
@@ -16,6 +17,7 @@ public class AnalysisJobCoordinatorService
     private readonly AnalysisResultService _resultService;
     private readonly IConnectionManagerService _connectionManager;
     private readonly AnalysisRequestValidator _requestValidator;
+    private readonly SupplementJobService _supplementJobs;
 
     public AnalysisJobCoordinatorService(
         InternalDbContext db,
@@ -23,7 +25,8 @@ public class AnalysisJobCoordinatorService
         IAnalysisJobCancellationService cancellation,
         AnalysisResultService resultService,
         IConnectionManagerService connectionManager,
-        AnalysisRequestValidator requestValidator
+        AnalysisRequestValidator requestValidator,
+        SupplementJobService supplementJobs
     )
     {
         _db = db;
@@ -32,6 +35,7 @@ public class AnalysisJobCoordinatorService
         _resultService = resultService;
         _connectionManager = connectionManager;
         _requestValidator = requestValidator;
+        _supplementJobs = supplementJobs;
     }
 
     public async Task<string> EnqueueAsync(
@@ -207,13 +211,59 @@ public class AnalysisJobCoordinatorService
             .Take(Math.Clamp(recentLimit, 1, 200))
             .ToListAsync();
 
+        var supplementActiveQuery = _db.SupplementJobs
+            .Where(s => s.Status == AnalysisJobStatus.Pending || s.Status == AnalysisJobStatus.Running);
+        var supplementRecentQuery = _db.SupplementJobs
+            .Where(s => s.Status == AnalysisJobStatus.Completed || s.Status == AnalysisJobStatus.Failed || s.Status == AnalysisJobStatus.Cancelled);
+
+        if (!string.IsNullOrWhiteSpace(database))
+        {
+            supplementActiveQuery = supplementActiveQuery.Where(s => s.Database == database);
+            supplementRecentQuery = supplementRecentQuery.Where(s => s.Database == database);
+        }
+
+        var supplementActive = await supplementActiveQuery.OrderBy(s => s.CreatedAt).ToListAsync();
+        var supplementRecent = await supplementRecentQuery
+            .OrderByDescending(s => s.CompletedAt ?? s.CreatedAt)
+            .Take(Math.Clamp(recentLimit, 1, 200))
+            .ToListAsync();
+
+        var parentIds = supplementActive.Concat(supplementRecent).Select(s => s.ParentAnalysisJobId).Distinct().ToList();
+        var parents = await _db.AnalysisJobs.Where(j => parentIds.Contains(j.Id)).ToDictionaryAsync(j => j.Id);
+
         var queuePositions = BuildHangfireQueuePositions();
+
+        var active = activeJobs
+            .Select(job => MapJob(job, queuePositions))
+            .Concat(supplementActive
+                .Where(s => parents.ContainsKey(s.ParentAnalysisJobId))
+                .Select(s => _supplementJobs.MapToQueueItem(s, parents[s.ParentAnalysisJobId])))
+            .OrderBy(item => item.CreatedAt)
+            .ToList();
+
+        var recent = recentJobs
+            .Select(job => MapJob(job, queuePositions))
+            .Concat(supplementRecent
+                .Where(s => parents.ContainsKey(s.ParentAnalysisJobId))
+                .Select(s => _supplementJobs.MapToQueueItem(s, parents[s.ParentAnalysisJobId])))
+            .OrderByDescending(item => item.CompletedAt ?? item.CreatedAt)
+            .Take(Math.Clamp(recentLimit, 1, 200))
+            .ToList();
 
         return new AnalysisJobsOverviewDto
         {
-            Active = activeJobs.Select(job => MapJob(job, queuePositions)).ToList(),
-            Recent = recentJobs.Select(job => MapJob(job, queuePositions)).ToList(),
+            Active = active,
+            Recent = recent,
         };
+    }
+
+    public async Task<(bool Ok, string? Error)> TryRetryAsync(string jobId, string sessionToken)
+    {
+        var supplement = await _db.SupplementJobs.FindAsync(jobId);
+        if (supplement != null)
+            return await _supplementJobs.TryRetryAsync(jobId, sessionToken);
+
+        return (false, "Перезапуск доступен только для задач детализации и распределения.");
     }
 
     private AnalysisJobQueueItemDto MapJob(AnalysisJob job, IReadOnlyDictionary<string, int> queuePositions)
@@ -222,9 +272,11 @@ public class AnalysisJobCoordinatorService
         return new()
         {
             Id = job.Id,
+            QueueJobKind = AnalysisQueueJobKind.Analysis,
             Status = job.Status,
             Progress = job.Progress,
             Database = job.Database,
+            ConnectionHint = ConnectionFingerprint.ToDisplay(job.ConnectionFingerprint),
             Schema = job.Schema,
             Table = job.Table,
             SourceKind = ResolveSourceKind(job),
@@ -247,11 +299,17 @@ public class AnalysisJobCoordinatorService
             AvgBatchDurationMs = job.AvgBatchDurationMs,
             LastBatchDurationMs = job.LastBatchDurationMs,
             PostProcessDurationMs = job.PostProcessDurationMs,
+            ActiveDurationMs = AnalysisJobDurationHelper.ComputeActiveDurationMs(job),
+            RunningStartedAt = job.RunningStartedAt,
         };
     }
 
     public async Task<bool> TryCancelAsync(string jobId)
     {
+        var supplement = await _db.SupplementJobs.FindAsync(jobId);
+        if (supplement != null)
+            return await _supplementJobs.TryCancelAsync(jobId);
+
         var job = await _db.AnalysisJobs.FindAsync(jobId);
         if (job == null)
             return false;
@@ -275,6 +333,7 @@ public class AnalysisJobCoordinatorService
         job.Status = AnalysisJobStatus.Cancelled;
         job.ErrorMessage = "Задача отменена пользователем.";
         job.CompletedAt = DateTime.UtcNow;
+        job.RunningStartedAt = null;
         await _db.SaveChangesAsync();
     }
 

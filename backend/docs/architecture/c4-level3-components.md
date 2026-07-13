@@ -55,10 +55,10 @@ Core                 — ML spike detection
 | `AuthController` | `/api/Auth` | Подключение к БД, выдача токена |
 | `ExplorerController` | `/api/Explorer` | databases / schemas / tables / columns |
 | `SourcesController` | `/api/Sources` | Список зарегистрированных источников |
-| `DboController` | `/api/dbo` | dbo.METERINGS: объекты, preview, enqueue, job CRUD |
-| `EmProtocolController` | `/api/em-protocol` | em_protocol: каналы, distribution, enqueue, job CRUD |
-| `GenericAnalysisController` | `/api/GenericAnalysis` | Произвольные таблицы, enqueue, job CRUD |
-| `AnalysisJobsController` | `/api/analysis-jobs` | Очередь, overview, ETA, cancel, **export** |
+| `DboController` | `/api/dbo` | dbo.METERINGS: объекты, preview, point (job → legacy aliases) |
+| `EmProtocolController` | `/api/em-protocol` | em_protocol: каналы, distribution, preview (job → legacy aliases) |
+| `GenericAnalysisController` | `/api/GenericAnalysis` | Произвольные таблицы: preview, point (job → legacy aliases) |
+| `AnalysisJobsController` | `/api/analysis-jobs` | Enqueue, overview, ETA, cancel, **resume**, export + legacy job aliases |
 
 ## Services (ключевые)
 
@@ -68,7 +68,8 @@ Core                 — ML spike detection
 | `AnalysisJobProcessor` | Hangfire entry point для generic и source jobs |
 | `AnalysisResultService` | JSONL I/O, partial results, `HasResult` / `CanExport` |
 | `AnalysisJobQueryService` | **Общая** логика status / result / history / delete |
-| `AnalysisJobCoordinatorService` | Overview очереди, cancel, mapping source kind |
+| `AnalysisJobCoordinatorService` | Overview очереди, enqueue, cancel, **resume**, mapping source kind |
+| `AnalysisJobResumeRules` | Правила `CanResume` (checkpoint) |
 | `ExcelReportService` | Шаблон xlsx, заполнение «Данные» (`GenerateReport`) |
 | `ExcelChartPatcher` | Post-save patch chart XML (**не используется** в текущем export) |
 | `AnalysisExportService` | Оркестратор Excel export (упрощённый: LoadAsync + GenerateReport) |

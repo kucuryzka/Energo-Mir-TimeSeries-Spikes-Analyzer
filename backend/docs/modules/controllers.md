@@ -58,11 +58,8 @@ HTTP-слой API. Все контроллеры в `API/Controllers/`, namespac
 |--------|-----------|
 | Справочники | `GET objects`, `GET distribution`, `GET preview` |
 | Детализация точки | `GET point-details`, `GET point-channels` |
-| Job lifecycle | `POST enqueue`, `GET status/{id}`, `GET partial-result/{id}`, `GET result/{id}`, `GET history`, `DELETE history/{id}` |
 
-Enqueue: `DetectSpikesRequest`, schema=`dbo`, Hangfire `ProcessSourceJobAsync(..., "dbo", token)`.
-
-Job endpoints делегируют `AnalysisJobQueryService`.
+Job lifecycle (`enqueue` / `status` / `result` / `history`) — **legacy aliases** на `AnalysisJobsController` (фронт всё ещё бьёт в `/dbo/…`).
 
 ## EmProtocolController — `api/em-protocol`
 
@@ -72,9 +69,8 @@ Job endpoints делегируют `AnalysisJobQueryService`.
 |--------|-----------|
 | Справочники | `GET channels`, `GET distribution?categoryName=EventCode`, `GET preview` |
 | Детализация | `GET point-channels` |
-| Job lifecycle | те же, что у dbo |
 
-Enqueue: Hangfire id `"em_protocol"`.
+Job lifecycle — аналогично dbo: legacy aliases на `AnalysisJobsController`.
 
 ## GenericAnalysisController — `api/GenericAnalysis`
 
@@ -83,32 +79,39 @@ Enqueue: Hangfire id `"em_protocol"`.
 | Метод | Путь | Особенность |
 |-------|------|-------------|
 | GET | `preview` | schema, table, timeColumn |
-| POST | `enqueue` | `GenericAnalysisRequest` → `ProcessJobAsync` |
 | GET | `point-details` | Raw rows в интервале bucket |
-| Job lifecycle | status, result, history… | history фильтрует по schema+table |
+
+Enqueue / status / result / history — legacy aliases на `AnalysisJobsController`.
 
 ## AnalysisJobsController — `api/analysis-jobs`
 
-Единая точка для **глобальной** очереди (не привязана к одному источнику).
+Единая точка для **жизненного цикла job**: enqueue, list/history, overview, ETA, status/result, cancel, **resume**, export.
 
 | Метод | Путь | Описание |
 |-------|------|----------|
+| POST | `` | Unified enqueue (`EnqueueAnalysisJobRequest`) |
+| GET | `` | History (channel- или table-scoped) |
 | GET | `overview` | active + recent |
 | GET | `estimate` | ETA по `AnalysisTimingStatsService` |
+| GET | `{id}` | Status (`canResume`) |
+| GET | `{id}/partial-result` / `{id}/result` | Результаты |
+| DELETE | `{id}` | Удаление job |
 | POST | `{id}/cancel` | Отмена через coordinator |
+| POST | `{id}/resume` | Продолжение с checkpoint |
 | GET | `{id}/export` | Excel (шаблон, лист «Данные»), query `loadDistribution` **игнорируется** |
+
+Legacy aliases на том же контроллере: `/api/dbo|em-protocol|GenericAnalysis/{enqueue,status,…}` — browse endpoints остаются на domain-контроллерах.
 
 ## Зависимости контроллеров (типичные)
 
 ```
 AnalysisJobsController
   → AnalysisJobCoordinatorService, AnalysisTimingStatsService
-  → AnalysisExportService, AnalysisResultService, InternalDbContext
-  → SessionContextService
+  → AnalysisExportService, AnalysisResultService, AnalysisJobQueryService
+  → InternalDbContext, SessionContextService
 
-DboController / EmProtocolController
-  → DboDataSource | EmProtocolDataSource
-  → InternalDbContext, IBackgroundJobClient
-  → SessionContextService, AnalysisJobQueryService
-  → AnalysisRequestValidator, TablePreviewService
+DboController / EmProtocolController / GenericAnalysisController
+  → DataSource / TablePreview / point & distribution endpoints
+  → SessionContextService
+  (job lifecycle → legacy aliases на AnalysisJobsController)
 ```

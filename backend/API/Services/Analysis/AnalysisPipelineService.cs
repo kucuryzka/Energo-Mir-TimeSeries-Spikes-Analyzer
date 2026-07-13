@@ -3,6 +3,7 @@ using System.Diagnostics;
 using API.Configuration;
 using API.DataSources;
 using API.DTOs;
+using API.Infrastructure.Database;
 using API.Sql;
 using Core.Enums;
 using Core.Interfaces;
@@ -249,6 +250,7 @@ public class AnalysisPipelineService
         if (spec.ChannelColumn == null)
             return new List<ChannelContributionDto>();
 
+        timestamp = GranularityHelper.AlignToBucketStart(timestamp, granularity, customMinutes);
         var dialect = _dialectProvider.GetDialect(provider);
         var timeout = _settings.CommandTimeoutSeconds;
         var targetConn = DatabaseConnectionHelper.WithDatabase(connectionString, database);

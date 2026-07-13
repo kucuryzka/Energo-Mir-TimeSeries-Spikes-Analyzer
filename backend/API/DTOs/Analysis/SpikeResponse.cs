@@ -7,6 +7,7 @@ public class SpikeResponse
 {
     public List<AnomalyResultDto> Series { get; set; } = new();
     public List<ChannelContributionDto> Distribution { get; set; } = new();
+    public Dictionary<string, List<DistributionItemDto>> CategoricalDistributions { get; set; } = new();
 }
 
 public class AnomalyResultDto

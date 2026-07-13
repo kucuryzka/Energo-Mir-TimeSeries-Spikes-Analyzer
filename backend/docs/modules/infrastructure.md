@@ -15,6 +15,19 @@ Cross-cutting компоненты в `API/Infrastructure/`.
 
 **Заменяет** приватные `RequireSession*` в 4+ контроллерах.
 
+## ConnectionFingerprint (static)
+
+**Путь:** `Infrastructure/Session/ConnectionFingerprint.cs`
+
+Отпечаток подключения без секретов: `mssql|host|port|user` / `pgsql|host|port|user`.
+
+| Метод | Назначение |
+|-------|------------|
+| `From(provider, connectionString)` | Построить fingerprint |
+| `Matches(expected, provider, connectionString)` | Проверка при process/resume (`null` expected → skip) |
+
+Сохраняется на `AnalysisJob` при enqueue.
+
 ## DataSourceConnectionResolver (Scoped)
 
 ```csharp

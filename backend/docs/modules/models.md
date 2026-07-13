@@ -6,13 +6,15 @@
 
 EF entity для SQLite. См. [data.md](data.md) для полного описания полей.
 
-Создаётся в контроллерах при enqueue:
+Создаётся в coordinator при enqueue:
 
 | Источник | Schema | Table | TimeColumn |
 |----------|--------|-------|------------|
 | Dbo | dbo | ChannelId или "All" | "" |
 | Em | em_protocol | ChannelId или "All" | "" |
 | Generic | request.Schema | request.Table | request.TimeColumn |
+
+Checkpoint: `ProcessedUntil`, `ConnectionFingerprint`, batch timing fields — см. [data.md](data.md).
 
 ## AnalysisSourceTimingStats
 

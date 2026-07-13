@@ -2,6 +2,7 @@ using API.Configuration;
 using API.DTOs;
 using API.Services;
 using API.Sql;
+using API.Infrastructure.Database;
 using Core.Enums;
 using Core.Interfaces;
 using Core.Models;
@@ -117,6 +118,7 @@ public class DboDataSource : IDataSourceStrategy
         DatabaseProviderKind? provider = null
     )
     {
+        timestamp = GranularityHelper.AlignToBucketStart(timestamp, granularity, customMinutes);
         var (conn, prov) = ResolveConnection(connectionString, provider);
         var dialect = _dialectProvider.GetDialect(prov);
         return _pipeline.GetPointChannelBreakdownAsync(
@@ -171,6 +173,7 @@ public class DboDataSource : IDataSourceStrategy
         DatabaseProviderKind? provider = null
     )
     {
+        timestamp = GranularityHelper.AlignToBucketStart(timestamp, granularity, customMinutes);
         var (connStr, prov) = ResolveConnection(connectionString, provider);
         var dialect = _dialectProvider.GetDialect(prov);
         var targetConn = DatabaseConnectionHelper.WithDatabase(connStr, database);

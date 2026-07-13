@@ -25,6 +25,7 @@ public class AnalysisJobProcessor
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IAnalysisJobCancellationService _cancellation;
     private readonly AnalysisJobCoordinatorService _coordinator;
+    private readonly SupplementJobService _supplementJobs;
     private readonly ILogger<AnalysisJobProcessor> _logger;
 
     public AnalysisJobProcessor(
@@ -38,6 +39,7 @@ public class AnalysisJobProcessor
         IServiceScopeFactory scopeFactory,
         IAnalysisJobCancellationService cancellation,
         AnalysisJobCoordinatorService coordinator,
+        SupplementJobService supplementJobs,
         ILogger<AnalysisJobProcessor> logger
     )
     {
@@ -51,6 +53,7 @@ public class AnalysisJobProcessor
         _scopeFactory = scopeFactory;
         _cancellation = cancellation;
         _coordinator = coordinator;
+        _supplementJobs = supplementJobs;
         _logger = logger;
     }
 
@@ -173,7 +176,13 @@ public class AnalysisJobProcessor
             }
 
             job.PostProcessDurationMs = finalizeMs;
+
             await CompleteJobAsync(job, response);
+
+            if (string.Equals(sourceId, "em_protocol", StringComparison.OrdinalIgnoreCase))
+            {
+                await _supplementJobs.EnqueueDistributionAfterAnalysisAsync(job.Id, sessionToken);
+            }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -238,6 +247,7 @@ public class AnalysisJobProcessor
         job.Status = AnalysisJobStatus.Running;
         job.ErrorMessage = null;
         job.CompletedAt = null;
+        job.RunningStartedAt = DateTime.UtcNow;
 
         if (!isResume)
         {
@@ -270,6 +280,7 @@ public class AnalysisJobProcessor
             job.ProcessedUntil = info.BatchEndExclusive;
             job.SeriesPointCount = info.SeriesPointCount;
             job.Progress = Math.Clamp(info.ProgressPercent, 0, 99);
+            job.RunningStartedAt = DateTime.UtcNow;
 
             using var scope = _scopeFactory.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<InternalDbContext>();
@@ -283,6 +294,7 @@ public class AnalysisJobProcessor
                     .SetProperty(j => j.ProcessedUntil, job.ProcessedUntil)
                     .SetProperty(j => j.SeriesPointCount, job.SeriesPointCount)
                     .SetProperty(j => j.Progress, job.Progress)
+                    .SetProperty(j => j.RunningStartedAt, job.RunningStartedAt)
                 );
         };
     }
@@ -308,8 +320,9 @@ public class AnalysisJobProcessor
         job.Status = AnalysisJobStatus.Completed;
         job.Progress = 100;
         job.CompletedAt = DateTime.UtcNow;
+        job.RunningStartedAt = null;
         await _internalDb.SaveChangesAsync();
-        await _timingStats.RecordCompletedJobAsync(job, saveMs);
+        await _timingStats.RecordCompletedJobAsync(job);
     }
 
     private async Task FailJobAsync(AnalysisJob job, Exception ex)
@@ -329,6 +342,7 @@ public class AnalysisJobProcessor
         job.Status = AnalysisJobStatus.Failed;
         job.ErrorMessage = Truncate(ex.Message, 2000);
         job.CompletedAt = DateTime.UtcNow;
+        job.RunningStartedAt = null;
         await _internalDb.SaveChangesAsync();
     }
 

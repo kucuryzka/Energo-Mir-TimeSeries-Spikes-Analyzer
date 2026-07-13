@@ -86,6 +86,15 @@ public static class ServiceCollectionExtensions
             options.WorkerCount = analysisSettings.HangfireWorkerCount;
             options.SchedulePollingInterval = TimeSpan.FromSeconds(1);
             options.ServerCheckInterval = TimeSpan.FromSeconds(5);
+            options.Queues = new[] { "default" };
+        });
+
+        services.AddHangfireServer(options =>
+        {
+            options.WorkerCount = Math.Max(1, analysisSettings.HangfireSupplementWorkerCount);
+            options.SchedulePollingInterval = TimeSpan.FromSeconds(1);
+            options.ServerCheckInterval = TimeSpan.FromSeconds(5);
+            options.Queues = new[] { "supplements" };
         });
 
         return services;
@@ -108,8 +117,11 @@ public static class ServiceCollectionExtensions
         services.AddScoped<AnalysisRequestValidator>();
         services.AddScoped<AnalysisJobQueryService>();
         services.AddSingleton<IAnalysisJobCancellationService, AnalysisJobCancellationService>();
+        services.AddSingleton<ISupplementJobCancellationService, SupplementJobCancellationService>();
         services.AddScoped<AnalysisJobCoordinatorService>();
         services.AddScoped<AnalysisJobProcessor>();
+        services.AddScoped<SupplementJobService>();
+        services.AddScoped<PointDetailsService>();
         services.AddScoped<AnalysisTimingStatsService>();
 
         services.AddScoped<EmProtocolDataSource>();

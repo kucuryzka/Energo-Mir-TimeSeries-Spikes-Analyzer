@@ -10,6 +10,7 @@ public class InternalDbContext : DbContext
     }
 
     public DbSet<AnalysisJob> AnalysisJobs { get; set; } = null!;
+    public DbSet<SupplementJob> SupplementJobs { get; set; } = null!;
     public DbSet<AnalysisSourceTimingStats> AnalysisSourceTimingStats { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -35,6 +36,15 @@ public class InternalDbContext : DbContext
             entity.Property(e => e.Database).HasColumnName("Database");
             entity.Property(e => e.Schema).HasColumnName("Schema");
             entity.Property(e => e.Table).HasColumnName("Table");
+        });
+
+        modelBuilder.Entity<SupplementJob>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Kind).HasConversion<string>().IsRequired().HasMaxLength(50);
+            entity.Property(e => e.Status).HasConversion<string>().IsRequired().HasMaxLength(50);
+            entity.Property(e => e.Database).IsRequired().HasMaxLength(200);
+            entity.Property(e => e.ParentAnalysisJobId).IsRequired().HasMaxLength(64);
         });
     }
 }

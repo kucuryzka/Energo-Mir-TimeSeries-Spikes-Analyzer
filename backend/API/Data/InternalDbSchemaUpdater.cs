@@ -24,6 +24,28 @@ public static class InternalDbSchemaUpdater
         TryAddColumn(db, "AnalysisJobs", "ProcessedUntil", "TEXT NULL");
         TryAddColumn(db, "AnalysisJobs", "SourceId", "TEXT NULL");
         TryAddColumn(db, "AnalysisJobs", "ConnectionFingerprint", "TEXT NULL");
+        TryAddColumn(db, "AnalysisJobs", "RunningStartedAt", "TEXT NULL");
+
+        if (!TableExists(db, "SupplementJobs"))
+        {
+            db.Database.ExecuteSqlRaw("""
+                CREATE TABLE SupplementJobs (
+                    Id TEXT NOT NULL PRIMARY KEY,
+                    Kind TEXT NOT NULL,
+                    Status TEXT NOT NULL,
+                    ParentAnalysisJobId TEXT NOT NULL,
+                    "Database" TEXT NOT NULL,
+                    ConnectionFingerprint TEXT NULL,
+                    PayloadJson TEXT NOT NULL,
+                    ErrorMessage TEXT NULL,
+                    CreatedAt TEXT NOT NULL,
+                    CompletedAt TEXT NULL,
+                    RunningStartedAt TEXT NULL,
+                    BackgroundJobId TEXT NULL
+                );
+                """
+            );
+        }
 
         if (!TableExists(db, "AnalysisSourceTimingStats"))
         {

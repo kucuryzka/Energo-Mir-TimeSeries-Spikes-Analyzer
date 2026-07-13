@@ -17,6 +17,8 @@ public class AnalysisJobsController : ControllerBase
     private readonly AnalysisResultService _resultService;
     private readonly AnalysisExportService _exportService;
     private readonly AnalysisJobQueryService _jobQueries;
+    private readonly PointDetailsService _pointDetailsService;
+    private readonly SupplementJobService _supplementJobs;
 
     public AnalysisJobsController(
         AnalysisJobCoordinatorService coordinator,
@@ -25,7 +27,9 @@ public class AnalysisJobsController : ControllerBase
         InternalDbContext internalDb,
         AnalysisResultService resultService,
         AnalysisExportService exportService,
-        AnalysisJobQueryService jobQueries
+        AnalysisJobQueryService jobQueries,
+        PointDetailsService pointDetailsService,
+        SupplementJobService supplementJobs
     )
     {
         _coordinator = coordinator;
@@ -35,6 +39,8 @@ public class AnalysisJobsController : ControllerBase
         _resultService = resultService;
         _exportService = exportService;
         _jobQueries = jobQueries;
+        _pointDetailsService = pointDetailsService;
+        _supplementJobs = supplementJobs;
     }
 
     [HttpPost]
@@ -109,6 +115,35 @@ public class AnalysisJobsController : ControllerBase
         return Content(json, "application/json");
     }
 
+    [HttpGet("{id}/point-details")]
+    public async Task<IActionResult> GetPointDetails(
+        string id,
+        [FromQuery] DateTime timestamp,
+        [FromQuery] int? channelId = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        try
+        {
+            var sessionToken = _session.RequireToken();
+            var response = await _pointDetailsService.GetOrStartFetchAsync(
+                id, timestamp, sessionToken, channelId, cancellationToken
+            );
+            if (response.Status is "loading")
+                return Accepted(response);
+
+            return Ok(response);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(string id) =>
         await _jobQueries.DeleteJobAsync(id) ? NoContent() : NotFound();
@@ -133,6 +168,37 @@ public class AnalysisJobsController : ControllerBase
             return BadRequest(new { message = error });
 
         return Ok(new { message = "Задача поставлена в очередь для продолжения." });
+    }
+
+    [HttpPost("{id}/retry")]
+    public async Task<IActionResult> Retry(string id)
+    {
+        var sessionToken = _session.RequireToken();
+        _ = _session.RequireConnection();
+        var (ok, error) = await _coordinator.TryRetryAsync(id, sessionToken);
+        if (!ok)
+            return BadRequest(new { message = error });
+
+        return Ok(new { message = "Задача поставлена в очередь для повторного запуска." });
+    }
+
+    [HttpPost("{id}/distribution/enqueue")]
+    public async Task<IActionResult> EnqueueDistribution(string id, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var sessionToken = _session.RequireToken();
+            var supplement = await _supplementJobs.StartDistributionAsync(id, sessionToken, cancellationToken);
+            return Ok(new { supplementJobId = supplement.Id });
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
     }
 
     [HttpGet("{id}/export")]
