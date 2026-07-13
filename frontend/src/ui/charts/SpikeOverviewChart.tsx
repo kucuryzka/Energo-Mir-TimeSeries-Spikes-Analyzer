@@ -5,6 +5,7 @@ import { SpikeChart } from './SpikeChart';
 interface SpikeOverviewChartProps {
   enrichedData: SpikePoint[];
   isPartialResult: boolean;
+  yAxisLabel?: string;
   showMarkers: boolean;
   setShowMarkers: React.Dispatch<React.SetStateAction<boolean>>;
   showCritical: boolean;
@@ -17,6 +18,7 @@ interface SpikeOverviewChartProps {
 export const SpikeOverviewChart: React.FC<SpikeOverviewChartProps> = ({
   enrichedData,
   isPartialResult,
+  yAxisLabel,
   showMarkers,
   setShowMarkers,
   showCritical,
@@ -56,6 +58,7 @@ export const SpikeOverviewChart: React.FC<SpikeOverviewChartProps> = ({
     </div>
     <SpikeChart
       data={enrichedData}
+      yAxisLabel={yAxisLabel}
       showMarkers={showMarkers && !isPartialResult}
       showCriticalMarkers={showCritical}
       showWarningMarkers={showWarning}

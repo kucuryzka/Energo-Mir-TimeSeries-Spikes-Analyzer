@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dayjs from 'dayjs';
-import { message, Drawer, Table, Tabs, Typography, Popconfirm, Button, Space, Spin } from 'antd';
+import { message, Drawer, Table, Tabs, Typography, Popconfirm, Button, Space, Spin, Alert } from 'antd';
 import { DeleteOutlined } from '@ant-design/icons';
 import { analyticsApi } from '../../api/analyticsApi';
 import { enrichSpikeData, getStatistics } from '../../utils/spikeUtils';
@@ -9,7 +9,7 @@ import { confirmHeavyAnalysis } from '../../utils/granularityWarning';
 import { AnalysisJobProgress } from '../../ui/AnalysisJobProgress';
 import { DistributionChart } from '../../ui/charts/DistributionChart';
 import { TelemetryControls } from '../../ui/TelemetryControls';
-import type { ChannelDto, TimeGranularity, SpikePoint, ChannelContributionDto, DataSourceDto, DistributionItemDto } from '../../types/analytics.types';
+import type { ChannelDto, TimeGranularity, SpikePoint, ChannelContributionDto, DataSourceDto, DistributionItemDto, SpikeResponse } from '../../types/analytics.types';
 import { SpikeOverviewChart } from '../../ui/charts/SpikeOverviewChart';
 import { AnomalyDonut } from '../../ui/AnomalyDonut';
 import { AnomalyList } from '../../ui/AnomalyList';
@@ -22,6 +22,8 @@ import { loadAnalysisJobResult, type PendingAnalysisJobOpen } from '../../utils/
 import { GRANULARITY_LABEL } from '../../utils/granularityLabels';
 import { useAnalysisJobActions } from '../../hooks/useAnalysisJobActions';
 import { useDurationEstimate } from '../../hooks/useDurationEstimate';
+import { pollJobPointDetails } from '../../utils/jobPointDetailsPolling';
+import { analysisJobsApi } from '../../api/analysisJobsApi';
 import { useTablePreview } from '../../hooks/useTablePreview';
 import { useAnalysisHistory } from '../../hooks/useAnalysisHistory';
 
@@ -41,6 +43,12 @@ const TABLE_PREVIEW_CONFIG: Record<TabKey, { timeColumn: string; tableLabel: str
   dbo: { timeColumn: 'TIME_INSERT', tableLabel: 'dbo.METERINGS' },
   em: { timeColumn: 'InsertTime', tableLabel: 'em_protocol.Records' },
 };
+
+const dboChannelDistributionToChart = (items: ChannelContributionDto[]): DistributionItemDto[] =>
+  items.map(item => ({
+    category: item.channelName || `Объект ${item.channelId}`,
+    count: item.count,
+  }));
 
 export const TelemetryContent: React.FC<TelemetryContentProps> = ({
   database,
@@ -117,6 +125,12 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
   const [pointDetails, setPointDetails] = useState<any[]>([]);
   const [pointChannels, setPointChannels] = useState<ChannelContributionDto[]>([]);
   const [loadingDetails, setLoadingDetails] = useState(false);
+  const [detailsError, setDetailsError] = useState<string | null>(null);
+
+  const isDbo = activeTab === 'dbo';
+  const valueSuffix = isDbo ? 'измерений' : 'событий';
+  const yAxisLabel = isDbo ? 'Количество измерений' : 'Количество событий';
+  const aggregateValueLabel = isDbo ? 'Общее число измерений' : 'Общее число событий';
 
   const fetchTablePreview = useCallback(
     () => (activeTab === 'dbo'
@@ -239,6 +253,49 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
     }
   }, [activeTab, database, dateRange]);
 
+  const applyDistributionFromResult = useCallback((result: SpikeResponse | null) => {
+    if (!result) {
+      setDboObjectDistribution(null);
+      setDistributions({});
+      return;
+    }
+
+    if (activeTab === 'dbo') {
+      if (result.distribution && result.distribution.length > 0) {
+        setDboObjectDistribution(dboChannelDistributionToChart(result.distribution));
+      } else {
+        setDboObjectDistribution(null);
+      }
+      return;
+    }
+
+    if (activeTab === 'em') {
+      const stored = result.categoricalDistributions;
+      const hasStored = stored
+        && Object.keys(stored).length > 0
+        && Object.values(stored).some(items => items.length > 0);
+      if (hasStored) {
+        setDistributions(stored);
+      } else {
+        setDistributions({});
+      }
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (!visible || isPartialResult || !data) return;
+    applyDistributionFromResult(data);
+    if (activeTab === 'em') {
+      const stored = data.categoricalDistributions;
+      const hasStored = stored
+        && Object.keys(stored).length > 0
+        && Object.values(stored).some(items => items.length > 0);
+      if (!hasStored) {
+        void fetchDistributions();
+      }
+    }
+  }, [visible, data, isPartialResult, activeTab, applyDistributionFromResult, fetchDistributions]);
+
   const fetchData = async (periodOverride?: [string, string]) => {
     const startDate = periodOverride?.[0] ?? dateRange[0];
     const endDate = periodOverride?.[1] ?? dateRange[1];
@@ -293,8 +350,6 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
       applyFinalResult(result);
 
       message.success({ content: 'Анализ завершен!', key: 'jobProgress', duration: 2.5 });
-      await fetchDistributions();
-      setDboObjectDistribution(null);
 
       const spikes = result.series.filter(s => s.isSpike);
       if (spikes.length > 0) {
@@ -311,45 +366,91 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
     }
   };
 
+  const mapChannelBreakdown = useCallback((breakdown: ChannelContributionDto[]) => {
+    const meta = new Map(channels.map(c => [c.id, c]));
+    const fallbackLabel = activeTab === 'dbo' ? 'Объект' : 'Канал';
+    return breakdown.map(c => {
+      const fromList = meta.get(c.channelId)?.name;
+      const nameLooksLikeId = c.channelName && /^\d+$/.test(c.channelName.trim());
+      return {
+        ...c,
+        channelName: (nameLooksLikeId ? fromList : c.channelName) || fromList || `${fallbackLabel} ${c.channelId}`,
+        eventCode: c.eventCode ?? meta.get(c.channelId)?.eventCode,
+      };
+    });
+  }, [channels, activeTab]);
+
   useEffect(() => {
     if (!selectedPoint) {
       setPointDetails([]);
       setPointChannels([]);
+      setDetailsError(null);
       return;
     }
     setLoadingDetails(true);
+    setDetailsError(null);
     let cancelled = false;
-    const tasks: Promise<any>[] = activeTab === 'dbo'
-      ? [
-          analyticsApi.dbo.getPointDetails(database, selectedPoint.timestamp, granularity, granularity === 'Custom' ? customMinutes ?? undefined : undefined, channelId ?? undefined),
-          analyticsApi.dbo.getPointChannels(database, selectedPoint.timestamp, granularity, granularity === 'Custom' ? customMinutes ?? undefined : undefined, channelId ?? undefined),
-        ]
-      : [
-          Promise.resolve([]),
-          analyticsApi.emProtocol.getPointChannels(database, selectedPoint.timestamp, granularity, granularity === 'Custom' ? customMinutes ?? undefined : undefined, channelId ?? undefined),
-        ];
 
-    Promise.all(tasks).then(([details, breakdown]) => {
-      if (cancelled) return;
-      setPointDetails(details);
-      const meta = new Map(channels.map(c => [c.id, c]));
-      const fallbackLabel = activeTab === 'dbo' ? 'Объект' : 'Канал';
-      setPointChannels((breakdown as ChannelContributionDto[]).map(c => {
-        const fromList = meta.get(c.channelId)?.name;
-        const nameLooksLikeId = c.channelName && /^\d+$/.test(c.channelName.trim());
-        return {
-          ...c,
-          channelName: (nameLooksLikeId ? fromList : c.channelName) || fromList || `${fallbackLabel} ${c.channelId}`,
-          eventCode: c.eventCode ?? meta.get(c.channelId)?.eventCode,
-        };
-      }));
-    }).catch(err => {
-      if (!cancelled) console.error(err);
-    }).finally(() => {
-      if (!cancelled) setLoadingDetails(false);
-    });
+    const loadDetails = async () => {
+      try {
+        if (jobId) {
+          const result = await pollJobPointDetails(jobId, selectedPoint.timestamp, {
+            shouldContinue: () => !cancelled,
+            channelId,
+          });
+          if (cancelled) return;
+          if (result.status === 'failed') {
+            const text = result.errorMessage ?? 'Не удалось загрузить детали точки';
+            setDetailsError(text);
+            setPointDetails([]);
+            setPointChannels([]);
+            message.error(text);
+            return;
+          }
+          const breakdown = result.channelBreakdown ?? [];
+          const breakdownTotal = breakdown.reduce((sum, row) => sum + row.count, 0);
+          if (breakdown.length > 0 && breakdownTotal >= selectedPoint.value * 0.9) {
+            setDetailsError(null);
+          } else if (breakdown.length === 0) {
+            setDetailsError('Нет данных по источникам за этот срез.');
+          }
+          setPointDetails(result.meteringRows ?? []);
+          setPointChannels(mapChannelBreakdown(breakdown));
+          return;
+        }
+
+        const tasks: Promise<any>[] = activeTab === 'dbo'
+          ? [
+              analyticsApi.dbo.getPointDetails(database, selectedPoint.timestamp, granularity, granularity === 'Custom' ? customMinutes ?? undefined : undefined, channelId ?? undefined),
+              analyticsApi.dbo.getPointChannels(database, selectedPoint.timestamp, granularity, granularity === 'Custom' ? customMinutes ?? undefined : undefined, channelId ?? undefined),
+            ]
+          : [
+              Promise.resolve([]),
+              analyticsApi.emProtocol.getPointChannels(database, selectedPoint.timestamp, granularity, granularity === 'Custom' ? customMinutes ?? undefined : undefined, channelId ?? undefined),
+            ];
+
+        const [details, breakdown] = await Promise.all(tasks);
+        if (cancelled) return;
+        setPointDetails(details);
+        setPointChannels(mapChannelBreakdown(breakdown as ChannelContributionDto[]));
+      } catch (err: unknown) {
+        if (cancelled) return;
+        if (err instanceof DOMException && err.name === 'AbortError') return;
+        const text = err instanceof Error ? err.message : 'Не удалось загрузить детали точки';
+        setDetailsError(text);
+        setPointDetails([]);
+        setPointChannels([]);
+        message.error(jobId
+          ? 'Не удалось получить детали точки. Убедитесь, что сессия БД активна.'
+          : 'Не удалось загрузить детали точки. Запрос к БД может занимать несколько минут — попробуйте ещё раз.');
+      } finally {
+        if (!cancelled) setLoadingDetails(false);
+      }
+    };
+
+    void loadDetails();
     return () => { cancelled = true; };
-  }, [selectedPoint, granularity, channelId, database, activeTab, channels]);
+  }, [selectedPoint, granularity, customMinutes, channelId, database, activeTab, channels, jobId, mapChannelBreakdown]);
 
   const pendingJobForTab = pendingJobOpen
     && pendingJobOpen.database === database
@@ -367,7 +468,6 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
     setChannelId(job.channelId ? parseInt(job.channelId, 10) : null);
     setGranularity(job.granularity);
     setCustomMinutes(job.customMinutes ?? null);
-    setDboObjectDistribution(null);
   }, []);
 
   const applyJobResultToView = useCallback(async (
@@ -388,9 +488,6 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
         error: null,
       });
       setData(result);
-      if (activeTab === 'em') {
-        await fetchDistributions([job.startDate, job.endDate]);
-      }
       return result;
     }
 
@@ -406,9 +503,6 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
         progress: 100,
         error: null,
       });
-      if (activeTab === 'em') {
-        await fetchDistributions([job.startDate, job.endDate]);
-      }
       return result;
     }
 
@@ -439,9 +533,6 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
       void pollPromise
         .then((final) => {
           applyFinalResult(final);
-          if (activeTab === 'em') {
-            void fetchDistributions([job.startDate, job.endDate]);
-          }
         })
         .catch((err: unknown) => {
           if (err instanceof AnalysisJobCancelledError || (err as { cancelled?: boolean })?.cancelled) {
@@ -455,15 +546,11 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
     const final = await pollPromise;
 
     applyFinalResult(final);
-    if (activeTab === 'em') {
-      await fetchDistributions([job.startDate, job.endDate]);
-    }
     return final;
   }, [
     activeTab,
     sessionKey,
     setData,
-    fetchDistributions,
     applyLoadedResult,
     applyPartialResult,
     applyFinalResult,
@@ -475,7 +562,12 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
     if (activeTab !== 'dbo' || channelId != null) return;
     setLoadingDboDistribution(true);
     try {
-      message.loading({ content: 'Загрузка распределения по объектам...', key: 'dboDistribution' });
+      if (jobId) {
+        await analysisJobsApi.enqueueDistribution(jobId);
+        message.success({ content: 'Загрузка распределения поставлена в очередь', key: 'dboDistribution', duration: 3 });
+        return;
+      }
+      message.loading({ content: 'Загрузка распределения по объектам (запрос к БД)...', key: 'dboDistribution' });
       const rows = await analyticsApi.dbo.getObjectDistribution(
         database,
         dateRange[0],
@@ -492,7 +584,7 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
     } finally {
       setLoadingDboDistribution(false);
     }
-  }, [activeTab, channelId, database, dateRange]);
+  }, [activeTab, channelId, database, dateRange, jobId]);
 
   const durationEstimate = useDurationEstimate({
     enabled: visible,
@@ -570,6 +662,19 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
     () => (data?.series?.length ? getStatistics(data.series) : null),
     [data?.series],
   );
+
+  const dboDistributionChartData = useMemo(() => {
+    if (dboObjectDistribution && dboObjectDistribution.length > 0) return dboObjectDistribution;
+    if (data?.distribution && data.distribution.length > 0) {
+      return dboChannelDistributionToChart(data.distribution);
+    }
+    return null;
+  }, [dboObjectDistribution, data?.distribution]);
+
+  const showDboDistributionFallback = activeTab === 'dbo'
+    && !channelId
+    && !!stats
+    && !dboDistributionChartData?.length;
 
   const handlePointSelect = (timestamp: string) => {
     const point = enrichedData.find(s => s.timestamp === timestamp);
@@ -667,6 +772,7 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
           <SpikeOverviewChart
             enrichedData={enrichedData}
             isPartialResult={isPartialResult}
+            yAxisLabel={yAxisLabel}
             showMarkers={showMarkers}
             setShowMarkers={setShowMarkers}
             showCritical={showCritical}
@@ -682,6 +788,7 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
                 <AnomalyDonut critical={stats.criticalSpikes} warning={Math.max(0, stats.spikesCount - stats.criticalSpikes)} />
                 <AnomalyList
                   spikes={spikesOnly}
+                  valueSuffix={valueSuffix}
                   showCritical={showCritical}
                   showWarning={showWarning}
                   hoveredId={hoveredId}
@@ -692,11 +799,11 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
 
               {activeTab === 'dbo' && !channelId && stats && (
                 <div className="distributions-section">
-                  {dboObjectDistribution && dboObjectDistribution.length > 0 ? (
+                  {dboDistributionChartData && dboDistributionChartData.length > 0 ? (
                     <div className="distribution-card">
-                      <DistributionChart data={dboObjectDistribution} title="Распределение по объектам" />
+                      <DistributionChart data={dboDistributionChartData} title="Распределение по объектам" />
                     </div>
-                  ) : (
+                  ) : showDboDistributionFallback ? (
                     <button
                       type="button"
                       className="btn-secondary"
@@ -704,9 +811,9 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
                       onClick={loadDboObjectDistribution}
                       style={{ width: '100%', justifyContent: 'center' }}
                     >
-                      {loadingDboDistribution ? 'Загрузка…' : 'Загрузить распределение по объектам'}
+                      {loadingDboDistribution ? 'Загрузка…' : 'Загрузить распределение по объектам (из БД)'}
                     </button>
-                  )}
+                  ) : null}
                 </div>
               )}
 
@@ -742,13 +849,27 @@ export const TelemetryContent: React.FC<TelemetryContentProps> = ({
       >
         {selectedPoint && (
           <div>
+            {loadingDetails && (
+              <Alert
+                type="info"
+                showIcon
+                message={jobId ? 'Фоновая загрузка деталей точки' : 'Загрузка деталей с сервера БД'}
+                description={jobId
+                  ? 'Запрос выполняется на сервере (Hangfire) и сохраняется в JSONL результатов. На больших срезах это может занимать часы — drawer можно закрыть и вернуться позже: готовые детали подгрузятся из файла без повторного запроса к БД.'
+                  : 'Запрос к таблице METERINGS может занимать до нескольких десятков минут на больших периодах.'}
+                style={{ marginBottom: 16 }}
+              />
+            )}
+            {detailsError && !loadingDetails && (
+              <Alert type="error" showIcon message={detailsError} style={{ marginBottom: 16 }} />
+            )}
             <div style={{ marginBottom: 24 }}>
               <div style={{ marginBottom: 8 }}>
                 <Text type="secondary">Время начала среза:</Text><br />
                 <Text strong>{dayjs(selectedPoint.timestamp).format('DD.MM.YYYY HH:mm:ss')}</Text>
               </div>
               <div style={{ marginBottom: 8 }}>
-                <Text type="secondary">Общее число событий:</Text><br />
+                <Text type="secondary">{aggregateValueLabel}:</Text><br />
                 <Text strong>{selectedPoint.value.toLocaleString('ru-RU')}</Text>
               </div>
               <div style={{ marginBottom: 8 }}>

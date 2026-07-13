@@ -144,6 +144,8 @@ sequenceDiagram
   Poll->>Store: complete
 ```
 
+Отмена с дашборда: `analysisJobsApi.cancel`. Продолжение прерванных job — со страницы очереди (`resume` + `canResume`), см. [user-journey.md](user-journey.md#7-продолжение-resume-и-seed).
+
 ### Session keys
 
 Каждый analyzer привязан к ключу сессии:

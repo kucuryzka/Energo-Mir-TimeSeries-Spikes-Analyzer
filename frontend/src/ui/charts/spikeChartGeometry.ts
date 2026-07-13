@@ -11,7 +11,9 @@ export const MAX_POINTS = 3000;
 
 export const X_LABEL_FONT_SIZE = 9;
 export const X_LABEL_ROTATE_DEG = 60;
-const X_LABEL_CHARS = 'DD.MM HH:mm'.length;
+export const X_AXIS_DATE_FORMAT = 'DD.MM.YYYY HH:mm';
+export const ZOOM_EDGE_DATE_FORMAT = 'DD.MM.YYYY';
+const X_LABEL_CHARS = X_AXIS_DATE_FORMAT.length;
 const X_LABEL_TEXT_LENGTH = X_LABEL_CHARS * X_LABEL_FONT_SIZE * 0.62; 
 export const MIN_X_LABEL_SPACING = Math.ceil(
   X_LABEL_TEXT_LENGTH * Math.cos((X_LABEL_ROTATE_DEG * Math.PI) / 180) + 4,
@@ -117,7 +119,7 @@ export function getXAxisLabels(data: SpikePoint[], maxCount: number): { timestam
 
   if (data.length <= count) {
     return data.map((d, i) => ({
-      timestamp: dayjs(d.timestamp).format('DD.MM HH:mm'),
+      timestamp: dayjs(d.timestamp).format(X_AXIS_DATE_FORMAT),
       x: data.length === 1 ? LEFT_PADDING : (i / (data.length - 1)) * CHART_W + LEFT_PADDING,
     }));
   }
@@ -130,7 +132,7 @@ export function getXAxisLabels(data: SpikePoint[], maxCount: number): { timestam
     if (seenIdx.has(idx)) continue;
     seenIdx.add(idx);
     labels.push({
-      timestamp: dayjs(data[idx].timestamp).format('DD.MM HH:mm'),
+      timestamp: dayjs(data[idx].timestamp).format(X_AXIS_DATE_FORMAT),
       x: (idx / (data.length - 1)) * CHART_W + LEFT_PADDING,
     });
   }
@@ -147,4 +149,4 @@ export function getYAxisLabels(maxValue: number, count: number = 5): number[] {
   return labels;
 }
 
-export const fmtDate = (iso: string) => dayjs(iso).format('DD.MM HH:mm');
+export const fmtDate = (iso: string) => dayjs(iso).format(X_AXIS_DATE_FORMAT);

@@ -130,7 +130,7 @@ interface AnalysisJobQueueItem {
   database: string
   schema: string
   table: string
-  sourceKind: 'dbo' | 'em' | 'generic'
+  sourceKind: 'dbo' | 'em_protocol' | 'generic'
   startDate: string
   endDate: string
   granularity: string
@@ -138,10 +138,11 @@ interface AnalysisJobQueueItem {
   completedAt?: string
   timeColumn: string
   customMinutes?: number
-  channelId?: number
+  channelId?: string | null
   queuePosition?: number
   hasPartialResult: boolean
   hasResult: boolean
+  canResume?: boolean
   completedBatchCount?: number
   totalBatchCount?: number
   avgBatchDurationMs?: number
@@ -171,8 +172,11 @@ interface AnalysisJobsOverview {
 |-------|------|------|--------|---------|
 | `getOverview` | GET | `/analysis-jobs/overview` | `database?`, `recentLimit=50` | `AnalysisJobsOverview` |
 | `cancel` | POST | `/analysis-jobs/{jobId}/cancel` | — | void |
+| `resume` | POST | `/analysis-jobs/{jobId}/resume` | — | void |
 | `getEstimate` | GET | `/analysis-jobs/estimate` | `database`, `schema`, `table`, `granularity`, `startDate`, `endDate` | `AnalysisDurationEstimate` |
 | `downloadExport` | GET | `/analysis-jobs/{jobId}/export` | `loadDistribution=false`, `responseType: 'blob'` | browser download |
+
+**Resume:** доступен когда backend отдаёт `canResume: true` (Failed / Pending / Cancelled + checkpoint). Требует живую сессию к тому же серверу (fingerprint).
 
 ### downloadExport
 
@@ -198,6 +202,7 @@ interface AnalysisJobsOverview {
 | Duration hint | `analysisJobsApi.getEstimate` |
 | Excel export | `analysisJobsApi.downloadExport` |
 | Cancel job | `analysisJobsApi.cancel` |
+| Resume job | `analysisJobsApi.resume` |
 
 ---
 

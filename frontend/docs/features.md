@@ -184,8 +184,9 @@ generic:{database}:{schema}:{table}:{timeColumn}
 
 | Действие | Условие | API |
 |----------|---------|-----|
-| Cancel | status Running/Pending | `analysisJobsApi.cancel` |
-| Open | `canOpenAnalysisJob(item)` | callback `onOpenJob` |
+| Cancel / Стоп | status Running/Pending | `analysisJobsApi.cancel` |
+| Open / Смотреть | `canOpenAnalysisJob(item)` | callback `onOpenJob` |
+| Продолжить | `canResume === true` | `analysisJobsApi.resume` |
 
 ### canOpenAnalysisJob
 
@@ -194,6 +195,12 @@ generic:{database}:{schema}:{table}:{timeColumn}
 (Cancelled && hasPartialResult) ||
 (Running && hasPartialResult)
 ```
+
+### Resume
+
+Кнопка **«Продолжить»** в active/recent, когда `row.canResume`. После успеха — toast и `loadOverview()`.
+
+`canResume` с backend: статус Failed / Pending / Cancelled + `ProcessedUntil` + (partial-файл **или** `CompletedBatchCount > 0`).
 
 ### Open job flow
 

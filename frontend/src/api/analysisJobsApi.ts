@@ -4,9 +4,13 @@ import { downloadBlob, resolveDownloadFileName } from '../utils/downloadBlob';
 
 export interface AnalysisJobQueueItem {
   id: string;
+  queueJobKind?: string;
+  parentJobId?: string | null;
+  supplementLabel?: string | null;
   status: string;
   progress: number;
   database: string;
+  connectionHint?: string | null;
   schema: string;
   table: string;
   sourceKind: string;
@@ -22,11 +26,15 @@ export interface AnalysisJobQueueItem {
   hasPartialResult: boolean;
   hasResult: boolean;
   canResume?: boolean;
+  canRetry?: boolean;
+  errorMessage?: string | null;
   completedBatchCount?: number;
   totalBatchCount?: number;
   avgBatchDurationMs?: number | null;
   lastBatchDurationMs?: number | null;
   postProcessDurationMs?: number | null;
+  activeDurationMs?: number | null;
+  runningStartedAt?: string | null;
 }
 
 export interface AnalysisDurationEstimate {
@@ -61,6 +69,17 @@ export const analysisJobsApi = {
 
   resume: async (jobId: string): Promise<void> => {
     await apiClient.post(`/analysis-jobs/${jobId}/resume`);
+  },
+
+  retry: async (jobId: string): Promise<void> => {
+    await apiClient.post(`/analysis-jobs/${jobId}/retry`);
+  },
+
+  enqueueDistribution: async (parentJobId: string): Promise<{ supplementJobId: string }> => {
+    const response = await apiClient.post<{ supplementJobId: string }>(
+      `/analysis-jobs/${parentJobId}/distribution/enqueue`,
+    );
+    return response.data;
   },
 
   getEstimate: async (params: {

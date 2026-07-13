@@ -62,6 +62,23 @@ function getElapsedSeconds(startIso: string, endIso: string | null | undefined, 
   return Math.floor((endMs - startMs) / 1000);
 }
 
+function getJobDurationSeconds(row: AnalysisJobQueueItem, nowMs: number): number {
+  if (row.status === 'Running' && row.runningStartedAt) {
+    let ms = (row.avgBatchDurationMs ?? 0) * (row.completedBatchCount ?? 0);
+    const segmentStart = parseUtcTimestamp(row.runningStartedAt);
+    if (!Number.isNaN(segmentStart)) {
+      ms += Math.max(0, nowMs - segmentStart);
+    }
+    if (ms > 0) return Math.floor(ms / 1000);
+  }
+
+  if (row.activeDurationMs && row.activeDurationMs > 0) {
+    return Math.floor(row.activeDurationMs / 1000);
+  }
+
+  return getElapsedSeconds(row.createdAt, row.completedAt, nowMs);
+}
+
 export const AnalysisJobQueue: React.FC<AnalysisJobQueueProps> = ({
   database,
   currentJobId,
@@ -120,16 +137,21 @@ export const AnalysisJobQueue: React.FC<AnalysisJobQueueProps> = ({
     }
   }, [loadOverview, onCancelled]);
 
-  const handleResume = useCallback(async (jobId: string) => {
+  const handleResume = useCallback(async (jobId: string, retry = false) => {
     setResumingId(jobId);
     try {
-      await analysisJobsApi.resume(jobId);
-      message.success('Задача поставлена в очередь для продолжения');
+      if (retry) {
+        await analysisJobsApi.retry(jobId);
+        message.success('Задача поставлена в очередь для повторного запуска');
+      } else {
+        await analysisJobsApi.resume(jobId);
+        message.success('Задача поставлена в очередь для продолжения');
+      }
       await loadOverview();
     } catch (e: unknown) {
-      console.error('Failed to resume job', e);
+      console.error(retry ? 'Failed to retry job' : 'Failed to resume job', e);
       const err = e as { response?: { data?: { message?: string } }; message?: string };
-      message.error(err?.response?.data?.message || err?.message || 'Не удалось продолжить задачу');
+      message.error(err?.response?.data?.message || err?.message || (retry ? 'Не удалось перезапустить задачу' : 'Не удалось продолжить задачу'));
     } finally {
       setResumingId(null);
     }
@@ -141,13 +163,32 @@ export const AnalysisJobQueue: React.FC<AnalysisJobQueueProps> = ({
         ? [{
             title: 'База',
             dataIndex: 'database',
-            render: (value: string) => <span style={{ fontSize: 12 }}>{value}</span>,
+            render: (value: string, row: AnalysisJobQueueItem) => (
+              <span style={{ fontSize: 12 }}>
+                {value}
+                {row.connectionHint ? (
+                  <span
+                    style={{ display: 'block', color: '#8c8c8c', fontSize: 11 }}
+                    title={row.connectionHint}
+                  >
+                    {row.connectionHint}
+                  </span>
+                ) : null}
+              </span>
+            ),
           }]
         : []),
       {
         title: 'Источник',
         dataIndex: 'sourceKind',
-        render: (value: string) => SOURCE_LABELS[value] ?? value,
+        render: (value: string, row) => (
+          <span style={{ fontSize: 12 }}>
+            {SOURCE_LABELS[value] ?? value}
+            {row.supplementLabel ? (
+              <span style={{ display: 'block', color: '#8c8c8c', fontSize: 11 }}>{row.supplementLabel}</span>
+            ) : null}
+          </span>
+        ),
       },
       {
         title: 'Статус',
@@ -186,9 +227,7 @@ export const AnalysisJobQueue: React.FC<AnalysisJobQueueProps> = ({
         title: 'Длительность',
         key: 'duration',
         render: (_, row) => {
-          const elapsed = formatElapsedDuration(
-            getElapsedSeconds(row.createdAt, row.completedAt, nowMs),
-          );
+          const elapsed = formatElapsedDuration(getJobDurationSeconds(row, nowMs));
           const prefix = row.status === 'Pending' ? 'в очереди ' : '';
           return (
             <span style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
@@ -237,14 +276,15 @@ export const AnalysisJobQueue: React.FC<AnalysisJobQueueProps> = ({
         key: 'open',
         width: 110,
         render: (_, row) => {
-          const canOpen = canOpenAnalysisJob(row);
+          const openRow = row.parentJobId ? { ...row, id: row.parentJobId } : row;
+          const canOpen = row.parentJobId ? true : canOpenAnalysisJob(row);
           const isRunningPartial = row.status === 'Running' && row.hasPartialResult;
           return (
             <Button
               size="small"
               type={isRunningPartial ? 'primary' : 'link'}
               disabled={!canOpen}
-              onClick={() => onOpenJob(toPendingAnalysisJobOpen(row))}
+              onClick={() => onOpenJob(toPendingAnalysisJobOpen(openRow))}
             >
               {row.status === 'Running' ? 'Смотреть' : 'Открыть'}
             </Button>
@@ -284,17 +324,33 @@ export const AnalysisJobQueue: React.FC<AnalysisJobQueueProps> = ({
       title: '',
       key: 'resume',
       width: 120,
-      render: (_, row) =>
-        row.canResume ? (
-          <Button
-            size="small"
-            type="primary"
-            loading={resumingId === row.id}
-            onClick={() => handleResume(row.id)}
-          >
-            Продолжить
-          </Button>
-        ) : null,
+      render: (_, row) => {
+        if (row.canRetry) {
+          return (
+            <Button
+              size="small"
+              type="primary"
+              loading={resumingId === row.id}
+              onClick={() => handleResume(row.id, true)}
+            >
+              Перезапустить
+            </Button>
+          );
+        }
+        if (row.canResume) {
+          return (
+            <Button
+              size="small"
+              type="primary"
+              loading={resumingId === row.id}
+              onClick={() => handleResume(row.id)}
+            >
+              Продолжить
+            </Button>
+          );
+        }
+        return null;
+      },
     });
 
     return base;

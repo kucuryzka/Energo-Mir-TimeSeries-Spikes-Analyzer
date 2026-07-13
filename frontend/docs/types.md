@@ -213,17 +213,21 @@ JSON: camelCase на обеих сторонах.
 
 ```ts
 interface PendingAnalysisJobOpen {
-  jobId: string
-  sourceKind: 'dbo' | 'em' | 'generic'
+  id: string
+  status: string
+  progress: number
+  sourceKind: string  // 'dbo' | 'em_protocol' | 'generic'
   database: string
   schema: string
   table: string
-  timeColumn?: string
-  channelId?: number
+  timeColumn: string
+  channelId?: string | null
   startDate: string
   endDate: string
+  hasPartialResult: boolean
+  hasResult: boolean
   granularity: TimeGranularity
-  customMinutes?: number
+  customMinutes?: number | null
 }
 ```
 

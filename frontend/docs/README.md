@@ -98,5 +98,7 @@ src/
 2. **Выбор БД** — drawer `DatabaseTreeSidebar`
 3. **Анализ** — `TelemetryContent` (dbo/em) или `GenericAnalyzer`
 4. **Постановка задачи** — enqueue → polling → график + KPI
-5. **Очередь** — `AnalysisJobQueuePage` — отмена, открытие завершённых job
+5. **Очередь** — `AnalysisJobQueuePage` — отмена, открытие, **resume** (`canResume`)
 6. **Экспорт** — `GET /analysis-jobs/{id}/export` → скачивание Excel
+
+Полный разбор экранов и сценариев (текст + Mermaid): [user-journey.md](user-journey.md).

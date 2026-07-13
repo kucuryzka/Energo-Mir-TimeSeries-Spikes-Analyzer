@@ -176,9 +176,11 @@ Intervals:
 |--------|----------|
 | `PendingAnalysisJobOpen` | Type for queue → analyzer handoff |
 | `toPendingAnalysisJobOpen(item)` | From queue item |
-| `getAnalysisJobApi(sourceKind)` | Returns dbo/em/generic API |
-| `canOpenAnalysisJob(item)` | Boolean guard |
-| `loadAnalysisJobResult(api, jobId)` | Fetch full or partial result |
+| `canOpenAnalysisJob(item)` | Completed+result / Cancelled\|Running + partial |
+| `getAnalysisJobApi(sourceKind)` | dbo / `em_protocol` / generic clients |
+| `loadAnalysisJobResult(job)` | Fetch full or partial result |
+
+Resume вызывается напрямую из `AnalysisJobQueue` через `analysisJobsApi.resume` (не через session store).
 
 ### dateTimeUtils.ts
 

@@ -20,11 +20,13 @@ import {
   getXAxisLabels,
   getYAxisLabels,
   fmtDate,
+  ZOOM_EDGE_DATE_FORMAT,
 } from './spikeChartGeometry';
 import { useSpikeZoom } from './useSpikeZoom';
 
 interface Props {
   data: SpikePoint[];
+  yAxisLabel?: string;
   showMarkers?: boolean;
   showCriticalMarkers?: boolean;
   showWarningMarkers?: boolean;
@@ -35,6 +37,7 @@ interface Props {
 
 export const SpikeChart: React.FC<Props> = ({
   data,
+  yAxisLabel = 'Количество сообщений телеметрии',
   showMarkers = true,
   showCriticalMarkers = true,
   showWarningMarkers = true,
@@ -265,7 +268,7 @@ export const SpikeChart: React.FC<Props> = ({
               fontFamily="Manrope, sans-serif"
               transform={`rotate(-90, 18, ${VIEW_H / 2})`}
             >
-              Количество сообщений телеметрии
+              {yAxisLabel}
             </text>
 
             {/* Подписи оси Y — числовые значения */}
@@ -501,7 +504,7 @@ export const SpikeChart: React.FC<Props> = ({
           style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: 12, paddingLeft: LEFT_PADDING }}
         >
           <span className="zoom-label" style={{ font: '500 12px JetBrains Mono, monospace', color: 'var(--line-legend-color)' }}>
-            {firstTs ? dayjs(firstTs).format('DD.MM') : ''}
+            {firstTs ? dayjs(firstTs).format(ZOOM_EDGE_DATE_FORMAT) : ''}
           </span>
           <div
             className="zoom-track"
@@ -522,7 +525,7 @@ export const SpikeChart: React.FC<Props> = ({
             />
           </div>
           <span className="zoom-label" style={{ font: '500 12px JetBrains Mono, monospace', color: 'var(--line-legend-color)' }}>
-            {lastTs ? dayjs(lastTs).format('DD.MM') : ''}
+            {lastTs ? dayjs(lastTs).format(ZOOM_EDGE_DATE_FORMAT) : ''}
           </span>
         </div>
       </div>

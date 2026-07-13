@@ -4,6 +4,7 @@ import type { SpikePoint } from '../types/analytics.types';
 
 interface AnomalyListProps {
   spikes: SpikePoint[];
+  valueSuffix?: string;
   showCritical: boolean;
   showWarning: boolean;
   hoveredId: string | null;
@@ -11,7 +12,15 @@ interface AnomalyListProps {
   onRowClick?: (timestamp: string) => void;
 }
 
-export const AnomalyList: React.FC<AnomalyListProps> = ({ spikes, showCritical, showWarning, hoveredId, onHoverChange, onRowClick }) => {
+export const AnomalyList: React.FC<AnomalyListProps> = ({
+  spikes,
+  valueSuffix = 'сообщений',
+  showCritical,
+  showWarning,
+  hoveredId,
+  onHoverChange,
+  onRowClick,
+}) => {
   const filtered = spikes.filter(s => (s.severity === 'critical' ? showCritical : showWarning));
 
   return (
@@ -39,7 +48,7 @@ export const AnomalyList: React.FC<AnomalyListProps> = ({ spikes, showCritical, 
               <span className="anomaly-icon-dot" style={{ background: color, boxShadow: `0 0 0 4px ${bg}` }} />
             </div>
             <div className="anomaly-body">
-              <div className="anomaly-value">{Math.round(s.value).toLocaleString('ru-RU')} сообщений</div>
+              <div className="anomaly-value">{Math.round(s.value).toLocaleString('ru-RU')} {valueSuffix}</div>
               <div className="anomaly-date">{dayjs(s.timestamp).format('DD.MM HH:mm')}</div>
             </div>
             <div className="anomaly-chip" style={{ background: bg, color }}>
