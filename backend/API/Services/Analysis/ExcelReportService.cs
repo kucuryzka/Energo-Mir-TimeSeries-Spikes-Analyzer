@@ -1,71 +1,108 @@
 using API.DTOs;
-using ClosedXML.Excel;
+using OfficeOpenXml;
+using OfficeOpenXml.Drawing.Chart;
 
-namespace API.Services.Analysis;
+namespace API.Services;
 
 public class ExcelReportService
 {
     private readonly string _templatePath;
 
-    public ExcelReportService(IWebHostEnvironment environment)
+    public ExcelReportService(IWebHostEnvironment env)
     {
+        ExcelPackage.License.SetNonCommercialPersonal("Diploma");
+
         _templatePath = Path.Combine(
-            environment.ContentRootPath,
+            env.ContentRootPath,
             "Resources",
-            "ReportTemplate.xlsx"
-        );
+            "ReportTemplate.xlsx");
     }
 
     public byte[] GenerateReport(SpikeResponse response)
     {
         if (!File.Exists(_templatePath))
-            throw new FileNotFoundException($"Template not found: {_templatePath}");
+            throw new FileNotFoundException(_templatePath);
 
-        using var workbook = new XLWorkbook(_templatePath);
-        var dataSheet = workbook.Worksheet("Данные")
-            ?? throw new InvalidOperationException("Worksheet 'Данные' not found in report template.");
+        using var package = new ExcelPackage(new FileInfo(_templatePath));
+
+        var dataSheet = package.Workbook.Worksheets["Данные"];
+        var chartSheet = package.Workbook.Worksheets["График"];
 
         FillReport(dataSheet, response);
 
-        using var stream = new MemoryStream();
-        workbook.SaveAs(stream);
-        return stream.ToArray();
+        CreateChart(chartSheet, response.Series.Count);
+
+        return package.GetAsByteArray();
     }
 
-    private static void FillReport(IXLWorksheet sheet, SpikeResponse response)
+    private static void FillReport(ExcelWorksheet sheet, SpikeResponse response)
     {
-        var table = sheet.Tables.FirstOrDefault();
-        if (table?.DataRange != null)
-            table.DataRange.Clear(XLClearOptions.Contents);
+        if (sheet.Dimension != null && sheet.Dimension.End.Row >= 2)
+        {
+            sheet.Cells[
+                2,
+                1,
+                sheet.Dimension.End.Row,
+                sheet.Dimension.End.Column
+            ].Clear();
+        }
 
-        var row = 2;
+        int row = 2;
+
         foreach (var point in response.Series)
         {
-            sheet.Cell(row, 1).Value = point.Timestamp;
-            sheet.Cell(row, 1).Style.DateFormat.Format = "dd.MM.yyyy HH:mm:ss";
-            sheet.Cell(row, 2).Value = point.Value;
-            sheet.Cell(row, 3).Value = point.IsSpike;
-            sheet.Cell(row, 4).Value = point.PValue;
-            sheet.Cell(row, 5).Value = point.ChannelBreakdown.Count > 0
-                ? string.Join(
-                    "; ",
-                    point.ChannelBreakdown.Select(x =>
-                        $"{(string.IsNullOrWhiteSpace(x.ChannelName) ? x.ChannelId.ToString() : x.ChannelName)}: {x.Count}"
+            sheet.Cells[row, 1].Value = point.Timestamp;
+            sheet.Cells[row, 1].Style.Numberformat.Format =
+                "dd.MM.yyyy HH:mm:ss";
+
+            sheet.Cells[row, 2].Value = point.Value;
+
+            sheet.Cells[row, 3].Value = point.IsSpike;
+
+            sheet.Cells[row, 4].Value = point.PValue;
+
+            sheet.Cells[row, 5].Value =
+                point.ChannelBreakdown.Any()
+                    ? string.Join(
+                        "; ",
+                        point.ChannelBreakdown.Select(x =>
+                            $"{(string.IsNullOrWhiteSpace(x.ChannelName)
+                                ? x.ChannelId.ToString()
+                                : x.ChannelName)}: {x.Count}")
                     )
-                )
-                : "";
+                    : "";
+
             row++;
         }
+    }
 
-        if (table != null && row > 2)
-        {
-            table.Resize(sheet.Range(
-                table.RangeAddress.FirstAddress.RowNumber,
-                table.RangeAddress.FirstAddress.ColumnNumber,
-                row - 1,
-                table.RangeAddress.LastAddress.ColumnNumber
-            )
-            );
-        }
+    private static void CreateChart(
+        ExcelWorksheet sheet,
+        int pointCount)
+    {
+        foreach (var drawing in sheet.Drawings.ToList())
+            sheet.Drawings.Remove(drawing);
+
+        var chart = sheet.Drawings.AddChart(
+            "SpikeChart",
+            eChartType.LineMarkers);
+
+        chart.Title.Text = "Количество сообщений";
+
+        chart.SetPosition(1, 0, 1, 0);
+
+        chart.SetSize(1000, 500);
+
+        var lastRow = pointCount + 1;
+
+        var series = chart.Series.Add(
+            $"Данные!$B$2:$B${lastRow}",
+            $"Данные!$A$2:$A${lastRow}");
+
+        series.Header = "Количество";
+
+        chart.XAxis.Title.Text = "Время";
+
+        chart.YAxis.Title.Text = "Количество";
     }
 }
