@@ -21,6 +21,7 @@ export interface AnalysisJobQueueItem {
   queuePosition?: number | null;
   hasPartialResult: boolean;
   hasResult: boolean;
+  canResume?: boolean;
   completedBatchCount?: number;
   totalBatchCount?: number;
   avgBatchDurationMs?: number | null;
@@ -56,6 +57,10 @@ export const analysisJobsApi = {
 
   cancel: async (jobId: string): Promise<void> => {
     await apiClient.post(`/analysis-jobs/${jobId}/cancel`);
+  },
+
+  resume: async (jobId: string): Promise<void> => {
+    await apiClient.post(`/analysis-jobs/${jobId}/resume`);
   },
 
   getEstimate: async (params: {

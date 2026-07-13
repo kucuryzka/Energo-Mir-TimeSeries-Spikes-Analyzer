@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Button, Popconfirm, Table, Tag } from 'antd';
+import { Button, Popconfirm, Table, Tag, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
@@ -76,6 +76,7 @@ export const AnalysisJobQueue: React.FC<AnalysisJobQueueProps> = ({
   const [recentItems, setRecentItems] = useState<AnalysisJobQueueItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [resumingId, setResumingId] = useState<string | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
 
   const loadOverview = useCallback(async () => {
@@ -118,6 +119,21 @@ export const AnalysisJobQueue: React.FC<AnalysisJobQueueProps> = ({
       setCancellingId(null);
     }
   }, [loadOverview, onCancelled]);
+
+  const handleResume = useCallback(async (jobId: string) => {
+    setResumingId(jobId);
+    try {
+      await analysisJobsApi.resume(jobId);
+      message.success('Задача поставлена в очередь для продолжения');
+      await loadOverview();
+    } catch (e: unknown) {
+      console.error('Failed to resume job', e);
+      const err = e as { response?: { data?: { message?: string } }; message?: string };
+      message.error(err?.response?.data?.message || err?.message || 'Не удалось продолжить задачу');
+    } finally {
+      setResumingId(null);
+    }
+  }, [loadOverview]);
 
   const buildColumns = useCallback((includeCancel: boolean): ColumnsType<AnalysisJobQueueItem> => {
     const base: ColumnsType<AnalysisJobQueueItem> = [
@@ -264,8 +280,25 @@ export const AnalysisJobQueue: React.FC<AnalysisJobQueueProps> = ({
       });
     }
 
+    base.push({
+      title: '',
+      key: 'resume',
+      width: 120,
+      render: (_, row) =>
+        row.canResume ? (
+          <Button
+            size="small"
+            type="primary"
+            loading={resumingId === row.id}
+            onClick={() => handleResume(row.id)}
+          >
+            Продолжить
+          </Button>
+        ) : null,
+    });
+
     return base;
-  }, [showDatabaseColumn, onOpenJob, nowMs, cancellingId, currentJobId, handleCancel]);
+  }, [showDatabaseColumn, onOpenJob, nowMs, cancellingId, resumingId, currentJobId, handleCancel, handleResume]);
 
   const activeColumns = useMemo(() => buildColumns(true), [buildColumns]);
   const recentColumns = useMemo(() => buildColumns(false), [buildColumns]);
